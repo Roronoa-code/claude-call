@@ -165,13 +165,21 @@ const port = server.address().port;
 const TUNNEL_SETTLE_MS = 45_000;
 let tunnelPromise = null, tunnel = null, tunnelBornAt = 0;
 const ensureTunnel = () => {
-  if (!tunnelPromise || tunnel?.exitCode !== null) tunnelPromise = openTunnel().catch(e => { tunnelPromise = null; throw e; });
+  if (!tunnelPromise || tunnel?.exitCode !== null) tunnelPromise = openTunnelWithRetry().catch(e => { tunnelPromise = null; throw e; });
   return tunnelPromise.then(async url => {
     const wait = tunnelBornAt + TUNNEL_SETTLE_MS - Date.now();
     if (wait > 0) await new Promise(r => setTimeout(r, wait));
     return url;
   });
 };
+// trycloudflare rate-limits new tunnels (HTTP 429) after many in a short time; back off and retry.
+async function openTunnelWithRetry() {
+  for (const wait of [0, 10_000, 20_000, 30_000]) {
+    if (wait) { log(`tunnel retry in ${wait / 1000}s`); await new Promise(r => setTimeout(r, wait)); }
+    try { return await openTunnel(); } catch (e) { log('tunnel failed', e.message); }
+  }
+  throw new Error('could not open a tunnel (trycloudflare busy or offline); try again in a few minutes');
+}
 async function openTunnel() {
   tunnel = spawn(path.join(dir, 'bin', 'cloudflared.exe'),
     ['tunnel', '--no-autoupdate', '--url', `http://127.0.0.1:${port}`], { windowsHide: true });
