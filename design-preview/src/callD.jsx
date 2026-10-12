@@ -72,18 +72,24 @@ export default function CallD({ sim }) {
         const k = b.w / src.w;
         srcEl?.setAttribute('data-flown', ''); // stays hidden until it is the caption again
         fly(srcEl, [{ transform: 'none', opacity: 1 }, { opacity: 0, offset: 0.3 }, { transform: `translate(${b.x - src.x}px, ${b.y - src.y}px) scale(${k})`, opacity: 0 }]);
-        fly(bubble.current, [{ transform: `translate(${src.x - b.x}px, ${src.y - b.y}px) scale(${1 / k})`, opacity: 0 }, { opacity: 0, offset: 0.28 }, { opacity: 1, offset: 0.55 }, { transform: 'none', opacity: 1 }]);
+        fly(bubble.current, [{ transform: `translate(${src.x - b.x}px, ${src.y - b.y}px) scale(${1 / k})`, opacity: 0 }, { opacity: 0, offset: 0.18 }, { opacity: 1, offset: 0.45 }, { transform: 'none', opacity: 1 }]);
       } else bubble.current?.animate([{ opacity: 1 }, { opacity: 1 }], { duration: 1, fill: 'both' });
     } else {
       setPerch(null);
       bubble.current?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: d * 0.35 || 1, easing: 'linear', fill: 'both' });
-      const from = rects.current.orb || rects.current.bubble;
-      const dst = capLayer.current.querySelector('.swap-item.in .d-text');
-      dst?.removeAttribute('data-flown');
-      if (from && dst && !first.current) {
+      const from = rects.current.orb || rects.current.bubble, isFirst = first.current;
+      // The caption that flew into the bubble must not fade out again where it started.
+      capLayer.current.classList.add('fresh');
+      setTimeout(() => capLayer.current?.classList.remove('fresh'), 450);
+      // Swap puts the new caption in on its own re-render, which React flushes before paint:
+      // wait for it, so the new line (not the old one) grows out of the thread.
+      queueMicrotask(() => {
+        const dst = capLayer.current?.querySelector('.swap-item.in .d-text');
+        dst?.removeAttribute('data-flown');
+        if (!from || !dst || isFirst) return;
         const c = offsetIn(dst, stage.current), k = from.w / c.w;
         fly(dst, [{ transform: `translate(${from.x - c.x}px, ${from.y - c.y}px) scale(${k})`, opacity: 0 }, { opacity: 1, offset: 0.45 }, { transform: 'none', opacity: 1 }]);
-      }
+      });
     }
     first.current = false;
   }, [thread]);

@@ -59,7 +59,8 @@ const qwenUp = () => fetch(`http://127.0.0.1:${QWEN_PORT}/health`).then(r => r.o
 let qwenPromise = null;
 const loadQwen = () => qwenPromise ??= (async () => {
   if (await qwenUp()) return true;
-  if (!existsSync(path.join(dir, 'voice', 'voice.json'))) return false;
+  // Machines without the GPU voice set up (e.g. the laptop) skip straight to ElevenLabs / Kokoro.
+  if (!existsSync(path.join(dir, 'voice', 'voice.json')) || !existsSync(path.join(dir, 'voice', '.venv', 'Scripts', 'pythonw.exe'))) return false;
   const out = openSync(path.join(dir, 'voice', 'voice_server.log'), 'w');
   // pythonw: no console window at all (a detached python.exe gets a visible terminal on Windows).
   spawn(path.join(dir, 'voice', '.venv', 'Scripts', 'pythonw.exe'), ['voice_server.py', String(QWEN_PORT)],
@@ -205,9 +206,22 @@ async function ring(link, reason) {
   }).catch(e => log('ntfy failed', e.message));
 }
 
+// ElevenLabs, for machines without a GPU (e.g. the laptop): the user's own ElevenLabs voice.
+// Needs ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID; free plan is ~10k characters/month, then Kokoro takes over.
+async function eleven(text) {
+  const key = process.env.ELEVENLABS_API_KEY, voice = process.env.ELEVENLABS_VOICE_ID;
+  if (!key || !voice) return null;
+  const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}?output_format=mp3_44100_128`, {
+    method: 'POST',
+    headers: { 'xi-api-key': key, 'content-type': 'application/json' },
+    body: JSON.stringify({ text, model_id: process.env.ELEVENLABS_MODEL || 'eleven_flash_v2_5' }),
+  });
+  if (!r.ok) { log('elevenlabs', r.status, (await r.text()).slice(0, 200)); return null; }
+  return { data: Buffer.from(await r.arrayBuffer()), type: 'audio/mpeg' };
+}
 async function synth(text) {
   try {
-    const audio = await qwenSpeak(text);
+    const audio = await qwenSpeak(text) ?? await eleven(text);
     if (audio) return audio;
     const tts = await loadTts();
     if (tts) return { data: Buffer.from((await tts.generate(text, { voice: VOICE })).toWav()), type: 'audio/wav' };
