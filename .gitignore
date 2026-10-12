@@ -1,0 +1,26 @@
+# Secrets and personal state
+config.json
+status.json
+timing.log
+android/app/src/main/res/values/topic.xml
+*.apk
+
+# Your voice: recordings, transcripts and generated samples
+voice/*.mp3
+voice/*.wav
+voice/voice.json
+voice/refs.json
+voice/tests/
+voice/*.log
+
+# Downloads / environments / builds
+node_modules/
+bin/
+voice/.venv/
+__pycache__/
+android/.gradle/
+android/.kotlin/
+android/build/
+android/app/build/
+android/local.properties
+design-preview/node_modules/

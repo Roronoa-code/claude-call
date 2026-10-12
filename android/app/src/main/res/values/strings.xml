@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_description">Choose how Claude can reach you: calls, texts, both or none.</string>
+</resources>

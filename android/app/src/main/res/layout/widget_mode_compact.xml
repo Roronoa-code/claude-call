@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@android:id/background" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:padding="6dp" android:background="@drawable/widget_bg" android:clipToOutline="true"
+    android:theme="@android:style/Theme.DeviceDefault">
+<LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+        android:orientation="horizontal" android:layout_marginBottom="6dp">
+        <FrameLayout android:id="@+id/tile_call" android:layout_width="0dp" android:layout_height="match_parent"
+            android:layout_weight="1" android:layout_marginEnd="6dp" android:paddingStart="12dp" android:paddingTop="12dp" android:paddingEnd="12dp" android:paddingBottom="10dp" android:background="@drawable/widget_tile"
+            android:foreground="?android:attr/selectableItemBackground" android:clipToOutline="true"
+            android:contentDescription="Calls">
+            <ImageView android:id="@+id/icon_call" android:layout_width="22dp" android:layout_height="22dp"
+                android:layout_gravity="top|start" android:src="@drawable/glyph_call" android:tint="#8CFFFFFF"
+                android:importantForAccessibility="no" />
+            <TextView android:id="@+id/label_call" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_gravity="bottom|start" android:text="Calls" android:textSize="14sp" android:fontFamily="sans-serif"
+                android:textFontWeight="650" android:textColor="#8CFFFFFF" android:maxLines="1" android:importantForAccessibility="no" />
+        </FrameLayout>
+        <FrameLayout android:id="@+id/tile_text" android:layout_width="0dp" android:layout_height="match_parent"
+            android:layout_weight="1" android:paddingStart="12dp" android:paddingTop="12dp" android:paddingEnd="12dp" android:paddingBottom="10dp" android:background="@drawable/widget_tile"
+            android:foreground="?android:attr/selectableItemBackground" android:clipToOutline="true"
+            android:contentDescription="Texts">
+            <ImageView android:id="@+id/icon_text" android:layout_width="22dp" android:layout_height="22dp"
+                android:layout_gravity="top|start" android:src="@drawable/glyph_text" android:tint="#8CFFFFFF"
+                android:importantForAccessibility="no" />
+            <TextView android:id="@+id/label_text" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_gravity="bottom|start" android:text="Texts" android:textSize="14sp" android:fontFamily="sans-serif"
+                android:textFontWeight="650" android:textColor="#8CFFFFFF" android:maxLines="1" android:importantForAccessibility="no" />
+        </FrameLayout>
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+        android:orientation="horizontal">
+        <FrameLayout android:id="@+id/tile_both" android:layout_width="0dp" android:layout_height="match_parent"
+            android:layout_weight="1" android:layout_marginEnd="6dp" android:paddingStart="12dp" android:paddingTop="12dp" android:paddingEnd="12dp" android:paddingBottom="10dp" android:background="@drawable/widget_lit_both"
+            android:foreground="?android:attr/selectableItemBackground" android:clipToOutline="true"
+            android:contentDescription="Both, selected">
+            <ImageView android:id="@+id/icon_both" android:layout_width="26dp" android:layout_height="26dp"
+                android:layout_gravity="top|start" android:src="@drawable/glyph_both" android:tint="#FFFFFFFF"
+                android:importantForAccessibility="no" />
+            <TextView android:id="@+id/label_both" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_gravity="bottom|start" android:text="Both" android:textSize="14sp" android:fontFamily="sans-serif"
+                android:textFontWeight="650" android:textColor="#FFFFFFFF" android:maxLines="1" android:importantForAccessibility="no" />
+        </FrameLayout>
+        <FrameLayout android:id="@+id/tile_none" android:layout_width="0dp" android:layout_height="match_parent"
+            android:layout_weight="1" android:paddingStart="12dp" android:paddingTop="12dp" android:paddingEnd="12dp" android:paddingBottom="10dp" android:background="@drawable/widget_tile"
+            android:foreground="?android:attr/selectableItemBackground" android:clipToOutline="true"
+            android:contentDescription="None">
+            <ImageView android:id="@+id/icon_none" android:layout_width="22dp" android:layout_height="22dp"
+                android:layout_gravity="top|start" android:src="@drawable/glyph_none" android:tint="#8CFFFFFF"
+                android:importantForAccessibility="no" />
+            <TextView android:id="@+id/label_none" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_gravity="bottom|start" android:text="None" android:textSize="14sp" android:fontFamily="sans-serif"
+                android:textFontWeight="650" android:textColor="#8CFFFFFF" android:maxLines="1" android:importantForAccessibility="no" />
+        </FrameLayout>
+    </LinearLayout>
+</LinearLayout>
+</FrameLayout>
