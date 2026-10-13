@@ -51,197 +51,39 @@
     <button class="done" id="done" disabled>Done talking</button>
   </div>
 </div>
+<script src="call-engine.js"></script>
 <script>
-const t = new URLSearchParams(location.search).get('t');
-const api = p => `${p}?t=${t}`;
 const $ = id => document.getElementById(id);
-const SILENCE_MS = 1800, PREROLL_MS = 400, MAX_MS = 90_000;
-let lastSeq = null, muted = false, ended = false, busy = false;
-let listening = false, talking = false, segment = [], preroll = [], quietSince = 0, startedAt = 0, noiseFloor = 0.01;
-let ctx = null, rate = 48000, micStream = null;
-// Interrupting: while Claude talks, the mic keeps watching; ~250 ms of clear speech stops Claude and starts listening.
-let speaking = false, interrupted = false, bargeFrames = 0;
-
-const status = s => { $('status').textContent = s; };
-function bubble(text, who) {
-  const el = Object.assign(document.createElement('div'), { className: `msg ${who}`, textContent: text });
-  $('log').append(el); el.scrollIntoView({ block: 'end' }); return el;
+const bubbles = {};
+function bubble(key, text, who) {
+  let el = bubbles[key];
+  if (!el) { el = bubbles[key] = Object.assign(document.createElement('div'), { className: `msg ${who}` }); $('log').append(el); }
+  el.textContent = text; el.scrollIntoView({ block: 'end' });
+  return el;
 }
-const pulse = on => $('avatar').classList.toggle('pulse', on);
-
-// ---- Claude's voice ----
-const player = new Audio();
-const app = window.CallMeApp; // present inside the Claude Call app: plays through the earpiece like a phone call
-const appWaits = {};
-window.__played = (id, ok) => { appWaits[id]?.(ok); delete appWaits[id]; };
-// Plays one sentence of a line (part `i` of line `seq`).
-function play(seq, i, text) {
-  const url = new URL(`${api('audio')}&seq=${seq}&part=${i}`, location.href).href;
-  if (app) return new Promise(res => {
-    const id = seq * 1000 + i;
-    appWaits[id] = res;
-    setTimeout(() => window.__played(id, true), 15000 + text.split(/\s+/).length * 600); // never hang the call
-    app.play(url, id);
-  });
-  return new Promise(res => {
-    const backup = setTimeout(done, 5000 + text.split(/\s+/).length * 600);
-    function done() { clearTimeout(backup); player.onended = player.onerror = null; res(true); }
-    player.onended = done;
-    player.onerror = () => { clearTimeout(backup); res(false); };
-    player.src = url;
-    player.play().catch(() => { clearTimeout(backup); res(false); });
-  });
-}
-const getState = async () => (await fetch(api('state'), { cache: 'no-store' })).json();
-// Plays a line sentence by sentence, starting as soon as the first is ready.
-async function speakLine(s) {
-  interrupted = false; speaking = true; bargeFrames = 0; preroll = [];
-  try {
-    for (let i = 0; i < s.parts.length && !interrupted; i++) {
-      let st = s;
-      while (st.seq === s.seq && st.ready <= i && !interrupted) { await new Promise(r => setTimeout(r, 150)); st = await getState(); }
-      if (st.seq !== s.seq || interrupted) return; // replaced by a newer line, or the user cut in
-      if (!await play(s.seq, i, s.parts[i]) && !interrupted) await speakBrowser(s.parts[i]);
-    }
-  } finally { speaking = false; }
-}
-function stopPlayback() {
-  if (app?.stop) app.stop();
-  for (const id in appWaits) window.__played(Number(id), true);
-  player.pause(); player.onended?.();
-  speechSynthesis.cancel();
-}
-function interrupt(now) {
-  interrupted = true; speaking = false; stopPlayback();
-  listening = true; talking = true; segment = [...preroll]; preroll = [];
-  startedAt = quietSince = now;
-  status('Hearing you…'); pulse(false); $('done').disabled = false;
-}
-function speakBrowser(text) {
-  return new Promise(res => {
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = 'en-GB';
-    const backup = setTimeout(res, 2000 + text.split(/\s+/).length * 450);
-    u.onend = u.onerror = () => { clearTimeout(backup); res(); };
-    speechSynthesis.cancel(); speechSynthesis.speak(u);
-  });
-}
-
-// ---- Your voice: record on the phone, transcribe on the PC (Whisper) ----
-async function startMic() {
-  const stream = micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-  ctx = new AudioContext(); rate = ctx.sampleRate;
-  const src = ctx.createMediaStreamSource(stream);
-  const node = ctx.createScriptProcessor(4096, 1, 1);
-  src.connect(node); node.connect(ctx.destination);
-  node.onaudioprocess = e => {
-    const buf = new Float32Array(e.inputBuffer.getChannelData(0));
-    let sum = 0; for (const v of buf) sum += v * v;
-    const rms = Math.sqrt(sum / buf.length);
-    if (!listening) {
-      if (speaking && !muted) {
-        // Claude's own voice leaks back a little even with echo cancelling, so this needs clearly louder speech.
-        preroll.push(buf);
-        while (preroll.length * 4096 / rate * 1000 > PREROLL_MS) preroll.shift();
-        bargeFrames = rms > Math.max(0.035, noiseFloor * 6) ? bargeFrames + 1 : 0;
-        if (bargeFrames >= 3) interrupt(performance.now());
-      } else if (!speaking) noiseFloor = noiseFloor * 0.95 + rms * 0.05;
-      return;
-    }
-    const speech = rms > Math.max(0.012, noiseFloor * 3);
-    document.body.style.setProperty('--level', talking ? Math.min(1, rms * 12).toFixed(2) : 0);
-    const now = performance.now();
-    if (!talking) {
-      if (!speech) noiseFloor = noiseFloor * 0.95 + rms * 0.05;
-      preroll.push(buf);
-      while (preroll.length * 4096 / rate * 1000 > PREROLL_MS) preroll.shift();
-      if (speech) { talking = true; segment = [...preroll]; preroll = []; startedAt = now; quietSince = now; status('Hearing you…'); $('done').disabled = false; }
-      return;
-    }
-    segment.push(buf);
-    if (speech) quietSince = now;
-    if (now - quietSince > SILENCE_MS || now - startedAt > MAX_MS) finishSpeech();
-  };
-}
-function listen() {
-  if (muted || ended || !ctx) { status(ctx ? 'Mic muted, type a reply' : 'Type your reply'); return; }
-  ctx.resume(); listening = true; talking = false; segment = []; preroll = [];
-  status('Listening… take your time'); pulse(false);
-}
-function stopListening() { listening = false; talking = false; segment = []; $('done').disabled = true; document.body.style.setProperty('--level', 0); }
-function to16k(chunks) {
-  const len = chunks.reduce((n, c) => n + c.length, 0), all = new Float32Array(len);
-  let o = 0; for (const c of chunks) { all.set(c, o); o += c.length; }
-  const ratio = rate / 16000, out = new Float32Array(Math.floor(len / ratio));
-  for (let i = 0; i < out.length; i++) {
-    const a = Math.floor(i * ratio), b = Math.min(len, Math.floor((i + 1) * ratio));
-    let s = 0; for (let j = a; j < b; j++) s += all[j];
-    out[i] = s / Math.max(1, b - a);
-  }
-  return out;
-}
-async function finishSpeech() {
-  const chunks = segment, cutIn = interrupted; stopListening(); interrupted = false;
-  status('Got it, transcribing…'); pulse(true);
-  try {
-    const r = await fetch(`${api('speech')}${cutIn ? '&interrupted=1' : ''}`, { method: 'POST', body: to16k(chunks).buffer });
-    const { text } = await r.json();
-    if (text) { bubble(text, 'me'); status('Claude is thinking…'); }
-    else listen(); // only noise: keep listening
-  } catch { status('Could not send audio, type instead'); }
-}
-async function sendTyped(text) {
-  text = text.trim(); if (!text) return;
-  stopListening(); bubble(text, 'me');
-  status('Claude is thinking…'); pulse(true);
-  await fetch(api('reply'), { method: 'POST', body: text });
-}
-
-async function poll() {
-  if (ended) return;
-  try {
-    const s = await getState();
-    if (!s.say) status('Connecting…');
-    else if (s.seq !== lastSeq && !busy) {
-      busy = true; lastSeq = s.seq; stopListening();
-      bubble(s.say, 'claude'); status('Claude is talking…'); pulse(true);
-      await speakLine(s);
-      busy = false;
-      if (interrupted && !s.end) { setTimeout(poll, 700); return; } // already listening to the user
-      if (s.end) {
-        ended = true; status('Call ended'); pulse(false); $('controls').hidden = true;
-        micStream?.getTracks().forEach(tr => tr.stop()); ctx?.close(); // release the mic
-        if (app) setTimeout(() => app.ended(), 1200);
-        return;
-      }
-      listen();
-    }
-  } catch { status('Reconnecting…'); }
-  setTimeout(poll, 700);
-}
-
-$('answer').onclick = async () => {
-  // Audio playback must first start from a tap on mobile.
-  player.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
-  player.play().catch(() => {});
-  $('answer').hidden = true; $('controls').hidden = false; status('Connected');
-  try { await startMic(); } catch { muted = true; $('mute').textContent = 'Unmute mic'; }
-  fetch(api('answer'), { method: 'POST' }); poll();
-};
-if (app) {
+const call = CallEngine({
+  token: new URLSearchParams(location.search).get('t'),
+  on: {
+    status: s => { $('status').textContent = s; },
+    busy: on => $('avatar').classList.toggle('pulse', on),
+    level: x => document.body.style.setProperty('--level', x.toFixed(2)),
+    canFinish: on => { $('done').disabled = !on; },
+    claude: l => bubble('c' + l.id, '', 'claude'),          // Claude's words appear as the voice says them
+    playing: l => bubble('c' + l.id, l.shown, 'claude'),
+    partial: u => bubble('u' + u.id, u.text, 'me'),         // live caption while you talk
+    heard: u => { if (u.text) bubble('u' + u.id, u.text, 'me'); else bubbles['u' + u.id]?.remove(); },
+    muted: on => { $('mute').textContent = on ? 'Unmute mic' : 'Mute mic'; },
+    ended: () => { $('controls').hidden = true; },
+  },
+});
+$('answer').onclick = () => { $('answer').hidden = true; $('controls').hidden = false; call.answer(); };
+if (call.hasSpeaker) {
   $('speaker').hidden = false;
-  $('speaker').onclick = () => {
-    const on = !app.isSpeaker(); app.setSpeaker(on);
-    $('speaker').textContent = on ? 'Earpiece' : 'Speaker';
-  };
+  $('speaker').onclick = () => { $('speaker').textContent = call.setSpeaker(!call.speaker) ? 'Earpiece' : 'Speaker'; };
 }
-$('done').onclick =() => { if (talking) finishSpeech(); };
-$('form').onsubmit = e => { e.preventDefault(); sendTyped($('text').value); $('text').value = ''; };
-$('mute').onclick = async () => {
-  if (!ctx) { try { await startMic(); } catch { status('Mic blocked, type a reply'); return; } }
-  muted = !muted; $('mute').textContent = muted ? 'Unmute mic' : 'Mute mic';
-  if (muted) { stopListening(); status('Mic muted, type a reply'); } else if (!busy) listen();
-};
+$('done').onclick = () => call.finish();
+$('form').onsubmit = e => { e.preventDefault(); call.sendTyped($('text').value); $('text').value = ''; };
+$('mute').onclick = () => call.setMuted(!call.muted);
 // Answer straight away when opened from the app's call screen.
 if (new URLSearchParams(location.search).has('auto')) $('answer').click();
 </script>
