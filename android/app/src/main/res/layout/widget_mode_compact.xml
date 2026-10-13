@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Outer frame fills the launcher cell; the card inside keeps the preview's proportions (height set in code). -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@android:id/background" android:layout_width="match_parent" android:layout_height="match_parent"
-    android:padding="6dp" android:background="@drawable/widget_bg" android:clipToOutline="true"
+    android:layout_width="match_parent" android:layout_height="match_parent"
     android:theme="@android:style/Theme.DeviceDefault">
+<FrameLayout android:id="@android:id/background" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:layout_gravity="center" android:padding="6dp" android:background="@drawable/widget_bg" android:clipToOutline="true">
 <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical">
     <LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
         android:orientation="horizontal" android:layout_marginBottom="6dp">
@@ -11,7 +13,7 @@
             android:foreground="?android:attr/selectableItemBackground" android:clipToOutline="true"
             android:contentDescription="Calls">
             <ImageView android:id="@+id/icon_call" android:layout_width="22dp" android:layout_height="22dp"
-                android:layout_gravity="top|start" android:src="@drawable/glyph_call" android:tint="#8CFFFFFF"
+                android:layout_gravity="top|start" android:src="@drawable/glyph_call"
                 android:importantForAccessibility="no" />
             <TextView android:id="@+id/label_call" android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:layout_gravity="bottom|start" android:text="Calls" android:textSize="14sp" android:fontFamily="sans-serif"
@@ -22,7 +24,7 @@
             android:foreground="?android:attr/selectableItemBackground" android:clipToOutline="true"
             android:contentDescription="Texts">
             <ImageView android:id="@+id/icon_text" android:layout_width="22dp" android:layout_height="22dp"
-                android:layout_gravity="top|start" android:src="@drawable/glyph_text" android:tint="#8CFFFFFF"
+                android:layout_gravity="top|start" android:src="@drawable/glyph_text"
                 android:importantForAccessibility="no" />
             <TextView android:id="@+id/label_text" android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:layout_gravity="bottom|start" android:text="Texts" android:textSize="14sp" android:fontFamily="sans-serif"
@@ -36,7 +38,7 @@
             android:foreground="?android:attr/selectableItemBackground" android:clipToOutline="true"
             android:contentDescription="Both, selected">
             <ImageView android:id="@+id/icon_both" android:layout_width="26dp" android:layout_height="26dp"
-                android:layout_gravity="top|start" android:src="@drawable/glyph_both" android:tint="#FFFFFFFF"
+                android:layout_gravity="top|start" android:src="@drawable/glyph_both"
                 android:importantForAccessibility="no" />
             <TextView android:id="@+id/label_both" android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:layout_gravity="bottom|start" android:text="Both" android:textSize="14sp" android:fontFamily="sans-serif"
@@ -47,7 +49,7 @@
             android:foreground="?android:attr/selectableItemBackground" android:clipToOutline="true"
             android:contentDescription="None">
             <ImageView android:id="@+id/icon_none" android:layout_width="22dp" android:layout_height="22dp"
-                android:layout_gravity="top|start" android:src="@drawable/glyph_none" android:tint="#8CFFFFFF"
+                android:layout_gravity="top|start" android:src="@drawable/glyph_none"
                 android:importantForAccessibility="no" />
             <TextView android:id="@+id/label_none" android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:layout_gravity="bottom|start" android:text="None" android:textSize="14sp" android:fontFamily="sans-serif"
@@ -55,4 +57,5 @@
         </FrameLayout>
     </LinearLayout>
 </LinearLayout>
+</FrameLayout>
 </FrameLayout>

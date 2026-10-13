@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Outer frame fills the launcher cell; the card inside keeps the preview's proportions (height set in code). -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@android:id/background" android:layout_width="match_parent" android:layout_height="match_parent"
-    android:padding="6dp" android:background="@drawable/widget_bg" android:clipToOutline="true"
+    android:layout_width="match_parent" android:layout_height="match_parent"
     android:theme="@android:style/Theme.DeviceDefault">
+<FrameLayout android:id="@android:id/background" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:layout_gravity="center" android:padding="6dp" android:background="@drawable/widget_bg" android:clipToOutline="true">
 <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="horizontal">
     <FrameLayout android:id="@+id/hero" android:layout_width="0dp" android:layout_height="match_parent"
         android:layout_weight="1" android:layout_marginEnd="6dp" android:background="@drawable/widget_lit_both"
@@ -12,14 +14,14 @@
             android:layout_gravity="top|start" android:src="@drawable/glyph_both" android:importantForAccessibility="no" />
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
             android:layout_gravity="bottom" android:orientation="vertical">
-            <TextView android:id="@+id/hero_title" android:layout_width="match_parent" android:layout_height="24dp"
+            <TextView android:id="@+id/hero_title" android:layout_width="match_parent" android:layout_height="23dp" android:includeFontPadding="false"
                 android:text="Calls and texts" android:textSize="19sp" android:fontFamily="sans-serif"
                 android:textFontWeight="650" android:textColor="#FFFFFFFF" android:maxLines="1"
-                android:autoSizeTextType="uniform" android:autoSizeMinTextSize="14sp" android:autoSizeMaxTextSize="19sp"
+                android:autoSizeTextType="uniform" android:autoSizeMinTextSize="14sp" android:autoSizeMaxTextSize="32sp"
                 android:autoSizeStepGranularity="0.5sp" android:gravity="center_vertical|start" />
             <TextView android:id="@+id/hero_line" android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:layout_marginTop="2dp" android:text="Claude can call or message you" android:textSize="13sp"
-                android:lineHeight="17sp" android:textColor="#D1FFFFFF" android:maxLines="2" android:ellipsize="end"
+                android:lineSpacingMultiplier="1.12" android:textColor="#D1FFFFFF" android:maxLines="2" android:ellipsize="end"
                 android:breakStrategy="balanced" />
             <TextView android:id="@+id/hero_since" android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:layout_marginTop="6dp" android:text="Changed 9:12" android:textSize="12sp"
@@ -36,7 +38,7 @@
             <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent"
                 android:orientation="vertical" android:gravity="center">
                 <ImageView android:id="@+id/icon_call" android:layout_width="20dp" android:layout_height="20dp"
-                    android:src="@drawable/glyph_call" android:tint="#8CFFFFFF" android:importantForAccessibility="no" />
+                    android:src="@drawable/glyph_call" android:importantForAccessibility="no" />
                 <TextView android:id="@+id/label_call" android:layout_width="wrap_content" android:layout_height="wrap_content"
                     android:layout_marginTop="6dp" android:text="Calls" android:textSize="14sp" android:fontFamily="sans-serif"
                     android:textFontWeight="650" android:textColor="#8CFFFFFF" android:maxLines="1" android:importantForAccessibility="no" />
@@ -49,7 +51,7 @@
             <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent"
                 android:orientation="vertical" android:gravity="center">
                 <ImageView android:id="@+id/icon_text" android:layout_width="20dp" android:layout_height="20dp"
-                    android:src="@drawable/glyph_text" android:tint="#8CFFFFFF" android:importantForAccessibility="no" />
+                    android:src="@drawable/glyph_text" android:importantForAccessibility="no" />
                 <TextView android:id="@+id/label_text" android:layout_width="wrap_content" android:layout_height="wrap_content"
                     android:layout_marginTop="6dp" android:text="Texts" android:textSize="14sp" android:fontFamily="sans-serif"
                     android:textFontWeight="650" android:textColor="#8CFFFFFF" android:maxLines="1" android:importantForAccessibility="no" />
@@ -65,7 +67,7 @@
             <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent"
                 android:orientation="vertical" android:gravity="center">
                 <ImageView android:id="@+id/icon_both" android:layout_width="20dp" android:layout_height="20dp"
-                    android:src="@drawable/glyph_both" android:tint="#FFFFFFFF" android:importantForAccessibility="no" />
+                    android:src="@drawable/glyph_both" android:importantForAccessibility="no" />
                 <TextView android:id="@+id/label_both" android:layout_width="wrap_content" android:layout_height="wrap_content"
                     android:layout_marginTop="6dp" android:text="Both" android:textSize="14sp" android:fontFamily="sans-serif"
                     android:textFontWeight="650" android:textColor="#FFFFFFFF" android:maxLines="1" android:importantForAccessibility="no" />
@@ -78,7 +80,7 @@
             <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent"
                 android:orientation="vertical" android:gravity="center">
                 <ImageView android:id="@+id/icon_none" android:layout_width="20dp" android:layout_height="20dp"
-                    android:src="@drawable/glyph_none" android:tint="#8CFFFFFF" android:importantForAccessibility="no" />
+                    android:src="@drawable/glyph_none" android:importantForAccessibility="no" />
                 <TextView android:id="@+id/label_none" android:layout_width="wrap_content" android:layout_height="wrap_content"
                     android:layout_marginTop="6dp" android:text="None" android:textSize="14sp" android:fontFamily="sans-serif"
                     android:textFontWeight="650" android:textColor="#8CFFFFFF" android:maxLines="1" android:importantForAccessibility="no" />
@@ -87,4 +89,5 @@
     </LinearLayout>
 </LinearLayout>
 </LinearLayout>
+</FrameLayout>
 </FrameLayout>
