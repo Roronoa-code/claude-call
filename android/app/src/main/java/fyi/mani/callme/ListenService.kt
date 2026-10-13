@@ -13,15 +13,11 @@ import android.content.pm.ServiceInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.IBinder
-import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 import kotlin.concurrent.thread
 
 /** Holds a streaming connection to the ntfy topic and rings when Claude calls. */
 class ListenService : Service() {
     @Volatile private var running = false
-    private var worker: Thread? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -78,52 +74,15 @@ class ListenService : Service() {
 
         if (!running) {
             running = true
-            worker = thread(name = "ntfy") { loop(Prefs.topic(this)) }
+            Native.app = applicationContext
+            thread(name = "ntfy") { Native.listen(Prefs.topic(this)) } // in Rust (phone/src/net.rs)
         }
         return START_STICKY
     }
 
-    private fun loop(topic: String) {
-        var lastId: String? = null
-        var backoff = 2_000L
-        while (running) {
-            try {
-                // After a drop, catch up on anything missed (the age check below skips stale calls).
-                val since = "?since=" + (lastId ?: "75s")
-                val conn = URL("https://ntfy.sh/$topic/json$since").openConnection() as HttpURLConnection
-                conn.connectTimeout = 15_000
-                conn.readTimeout = 60_000 // ntfy sends a keepalive every ~45s; silence longer than this = dead link
-                conn.inputStream.bufferedReader().useLines { lines ->
-                    backoff = 2_000L
-                    for (line in lines) {
-                        if (!running) break
-                        val msg = JSONObject(line)
-                        if (msg.optString("event") != "message") continue
-                        lastId = msg.optString("id")
-                        val ageMs = System.currentTimeMillis() - msg.optLong("time") * 1000
-                        val link = msg.optString("click")
-                        if (msg.optString("title") == "Contact mode") {
-                            ContactMode.received(applicationContext, msg.optString("message").trim(), msg.optLong("time") * 1000)
-                            continue
-                        }
-                        val isCall = msg.optString("title") == "Claude is calling"
-                        // Claude keeps a call open ~75s; anything older has already given up.
-                        if (isCall && ageMs < 75_000 && link.startsWith("https://")) {
-                            Ringer.ring(applicationContext, link, msg.optString("message"))
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                if (!running) break
-                Thread.sleep(backoff)
-                backoff = (backoff * 2).coerceAtMost(60_000L)
-            }
-        }
-    }
-
     override fun onDestroy() {
         running = false
-        worker?.interrupt()
+        Native.stop()
         super.onDestroy()
     }
 

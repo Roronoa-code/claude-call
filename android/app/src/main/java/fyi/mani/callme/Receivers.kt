@@ -3,9 +3,6 @@ package fyi.mani.callme
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import java.net.HttpURLConnection
-import java.net.URL
-import kotlin.concurrent.thread
 
 class DeclineReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -23,16 +20,8 @@ class DeclineReceiver : BroadcastReceiver() {
 
         /** Tells Claude the call was declined / hung up, so it stops waiting. */
         fun hangUp(link: String, pending: PendingResult? = null) {
-            if (!link.startsWith("https://")) { pending?.finish(); return }
-            thread {
-                try {
-                    (URL(link.replace("/?t=", "/decline?t=")).openConnection() as HttpURLConnection).run {
-                        requestMethod = "POST"; connectTimeout = 10_000; readTimeout = 10_000
-                        responseCode; disconnect()
-                    }
-                } catch (_: Exception) {
-                } finally { pending?.finish() }
-            }
+            Native.hangUp(link)
+            pending?.finish()
         }
     }
 }
@@ -67,26 +56,8 @@ object ContactMode {
     }
 
     /** Latest mode set from anywhere (phone, Claude, Discord) in the last 12h with its time (ms), or null. Network: call off the main thread. */
-    fun latest(context: Context): Pair<String, Long>? = try {
-        val conn = URL("https://ntfy.sh/${Prefs.topic(context)}/json?poll=1&since=12h").openConnection() as HttpURLConnection
-        conn.connectTimeout = 8_000; conn.readTimeout = 8_000
-        conn.inputStream.bufferedReader().readLines().mapNotNull { runCatching { org.json.JSONObject(it) }.getOrNull() }
-            .lastOrNull { it.optString("title") == "Contact mode" && it.optString("message").trim() in MODES }
-            ?.let { it.optString("message").trim() to it.optLong("time") * 1000 }
-    } catch (_: Exception) { null }
+    fun latest(context: Context): Pair<String, Long>? =
+        Native.latestMode(Prefs.topic(context))?.split(" ")?.let { (mode, at) -> mode to at.toLong() }
 
-    fun publish(context: Context, mode: String) {
-        val topic = Prefs.topic(context)
-        thread {
-            try {
-                (URL("https://ntfy.sh/$topic").openConnection() as HttpURLConnection).run {
-                    requestMethod = "POST"; doOutput = true; connectTimeout = 10_000; readTimeout = 10_000
-                    setRequestProperty("Title", "Contact mode")
-                    setRequestProperty("Priority", "1")
-                    outputStream.use { it.write(mode.toByteArray()) }
-                    responseCode; disconnect()
-                }
-            } catch (_: Exception) { }
-        }
-    }
+    fun publish(context: Context, mode: String) = Native.publishMode(Prefs.topic(context), mode)
 }
