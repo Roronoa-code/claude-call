@@ -19,12 +19,14 @@ Fallbacks: Kokoro for the voice, small Whisper on the CPU for hearing, and the p
 **Tools:** `call_user`, `continue_call`, `end_call`. Registered for all projects: `claude mcp add --scope user callme -- node B:\Projects\CallMe\server.mjs`.
 
 **Checks**
+- `node speech-check.mjs`: offline checks of audio packet ordering and final transcript reuse. No sockets, models, microphone or notifications.
+- `cd call-ui; npm run build; node check.mjs`: offline screen checks in headless Edge with a fake engine and all requests intercepted. Covers interrupted captions, scrolling and long replies at three viewport heights; no phone or call service involved.
 - `node test-call.mjs`: a whole call against the real call page in headless Edge with a fake mic (`phone-sim.mjs`, started by the test). Private test topic, no tunnel, its own status file: it never rings the real phone. Prints the latencies. `node test-call.mjs fallback` checks the no-GPU voices.
 - `node asr-check.mjs`: checks that context fixes misheard names.
 - `node voice/server_check.mjs`: checks the voice server's speed and audio.
 
 **Open issues (from the first real call on the S25, 2026-10-13; recording `Downloads\Screen_Recording_20261013_141027.mp4`)**
-Status: code changes for the giant bubble, empty caption, Whisper vocabulary hint, handover wait, route flip, earpiece mic and the stage flicker are written and pushed but NOT yet checked on the phone or with `test-call.mjs` (see `CODEX-HANDOFF.md` section 3b for what each one did and what to verify). Still unlocated: the control row vanishing at turn end.
+Status: Codex continued on 2026-10-13 with **no phone operations or call-service restarts**, because the user is expecting a call. Offline checks pass for the first interrupted-caption render, manual scrolling, long reply layout and speech handover packet handling. The server now retains late audio packets during final transcription (fixing a three-second timeout path), rejects missing audio, and avoids replacing a long reply with only its last 28 seconds. Real-call timing remains unmeasured. The page was rebuilt. See `CODEX-HANDOFF.md` section 3c for deployment and remaining checks. Stage/control flicker and quiet earpiece interrupts remain unverified on the S25.
 - Call screen (`call-ui/`):
   - After an interrupt, the whole long line, including the unspoken words, becomes a giant Claude bubble that pushes the user's live bubble behind the status line. The bubble should keep only the spoken words, be capped, and scroll so the user's bubble stays visible.
   - Clawd vanishes for a frame or two during caption↔bubble moves.

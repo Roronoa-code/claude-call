@@ -128,7 +128,7 @@ const NOISE = /^\s*(\[.*\]|\(.*\)|you|thank you\.?|thanks for watching!?|\.+)?\s
 
 // What the user says arrives in pieces while they talk (16 kHz mono 16-bit PCM, POST /listen), so live captions,
 // the early end of their turn and the final transcript all work on audio this PC already has.
-// Utterances by id (the last few): { pieces: Map(offset -> Int16Array), partial: {text, upTo}, busy: Promise|null }
+// Utterances by id (the last few): { pieces: Map(offset -> Int16Array), partial: {text, from, upTo}, busy: Promise|null }
 const utts = new Map();
 function takeAudio(u, off, buf) {
   if (!utts.has(u)) {
@@ -136,7 +136,8 @@ function takeAudio(u, off, buf) {
     if (utts.size > 6) utts.delete(utts.keys().next().value);
   }
   const utt = utts.get(u);
-  if (buf.length >= 2) utt.pieces.set(off, new Int16Array(buf.buffer.slice(buf.byteOffset, buf.byteOffset + (buf.length & ~1))));
+  // Keep even an empty final piece: its offset tells us earlier audio is still missing.
+  utt.pieces.set(off, new Int16Array(buf.buffer.slice(buf.byteOffset, buf.byteOffset + (buf.length & ~1))));
   utt.arrived?.(); // wakes a final transcript waiting for a piece still on its way
   return utt;
 }
@@ -152,11 +153,13 @@ function uttPcm(utt) {
 const PARTIAL_WINDOW = 28 * 16000; // live captions look at the last 28 s (Whisper's window is 30 s)
 function partial(utt) {
   if (utt.busy) return utt.busy; // one at a time; the page asks again
-  const { pcm } = uttPcm(utt), upTo = pcm.length;
-  return utt.busy = hearQuick(pcm.subarray(Math.max(0, upTo - PARTIAL_WINDOW)), call.say)
+  const { pcm, whole } = uttPcm(utt), upTo = pcm.length;
+  if (!whole) return Promise.resolve(null);
+  const from = Math.max(0, upTo - PARTIAL_WINDOW);
+  return utt.busy = hearQuick(pcm.subarray(from), call.say)
     .then(text => {
       if (text === null) return null;
-      utt.partial = { text: NOISE.test(text) ? '' : text, upTo };
+      utt.partial = { text: NOISE.test(text) ? '' : text, from, upTo };
       return utt.partial;
     }, () => null)
     .finally(() => { utt.busy = null; });
@@ -228,19 +231,29 @@ const server = http.createServer(async (req, res) => {
       // The user finished talking: the last piece, then the final transcript goes to Claude.
       mark(`turn sent (you stopped talking ${q('quiet') ?? '?'}ms before)`, true);
       const utt = takeAudio(q('u'), Number(q('off')), await readBody(req, 16_000 * 2 * 120));
-      utts.delete(q('u'));
-      let { pcm, whole } = uttPcm(utt);
-      for (let i = 0; !whole && i < 30; i++) { // a piece is still on its way (the page doesn't wait for it)
-        await new Promise(r => { utt.arrived = r; setTimeout(r, 100); });
+      let pcm, reuse, heard;
+      try {
+        let whole;
         ({ pcm, whole } = uttPcm(utt));
+        for (let i = 0; !whole && i < 30; i++) { // keep the utterance registered until late pieces arrive
+          await new Promise(r => {
+            const done = () => { clearTimeout(timer); r(); };
+            const timer = setTimeout(done, 100);
+            utt.arrived = done;
+          });
+          ({ pcm, whole } = uttPcm(utt));
+        }
+        if (!whole) throw new Error('incomplete speech audio');
+        const end = Number(q('end') ?? pcm.length);
+        // A rolling caption may omit the start of a long reply; only reuse one covering the whole turn.
+        const covers = p => p && p.from === 0 && p.upTo >= end - 160;
+        const live = covers(utt.partial) ? utt.partial : (await utt.busy) ?? utt.partial;
+        reuse = covers(live);
+        heard = reuse ? live.text : await hear(pcm, call.say);
+      } finally {
+        utt.arrived = null;
+        utts.delete(q('u'));
       }
-      const end = Number(q('end') ?? pcm.length);
-      // Reuse the live transcript when it already covers everything they said (only silence came after it).
-      const covers = p => p && p.upTo >= end - 160 && p.upTo > pcm.length - PARTIAL_WINDOW;
-      // Use the transcript we already have if it covers the speech: waiting on a newer one only costs time.
-      const live = covers(utt.partial) ? utt.partial : (await utt.busy) ?? utt.partial;
-      const reuse = covers(live);
-      const heard = reuse ? live.text : await hear(pcm, call.say);
       mark(`transcribed (${(pcm.length / 16000).toFixed(1)}s of audio${reuse ? ', reused live transcript' : ''}) -> handed to Claude`);
       const ok = !NOISE.test(heard);
       json(res, { text: ok ? heard : '' });

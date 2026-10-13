@@ -84,7 +84,11 @@ export class CallView {
     if (this.view.phase === 'ended') return;
     if (/^Listening|^Mic muted/.test(s)) return this.emit({ phase: this.holdAfter ? 'hold' : 'listening', sub: null, notice: '' });
     if (/^Type your reply/.test(s)) return this.emit({ phase: this.holdAfter ? 'hold' : 'listening', notice: s });
-    if (/^Hearing you/.test(s)) { this.setVoice('me'); this.holdAfter = false; return this.emit({ phase: 'hearing', sub: null, notice: '' }); }
+    if (/^Hearing you/.test(s)) {
+      this.setVoice('me'); this.holdAfter = false;
+      // Playback cleanup follows this event; hide unheard words before the first thread render.
+      return this.emit({ phase: 'hearing', sub: null, notice: '', msgs: this.view.msgs.map(m => m.live ? { ...m, cut: true } : m) });
+    }
     if (/^Got it/.test(s)) { this.setVoice(null); return this.emit({ phase: 'thinking', sub: 'transcribing', notice: '' }); }
     if (/^Claude is thinking/.test(s)) { this.setVoice(null); this.holdAfter = false; return this.emit({ phase: 'thinking', sub: 'thinking', notice: '' }); }
     if (/^Connect/.test(s)) return this.view.phase === 'incoming' || this.view.phase === 'connecting' ? this.emit({ phase: 'connecting' }) : undefined;

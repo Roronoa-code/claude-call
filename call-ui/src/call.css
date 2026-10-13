@@ -134,9 +134,9 @@ input:focus { outline: none; }
 .d-bubble { margin: 0; max-width: 82%; padding: 10px 14px; border-radius: 20px; font-size: 16.5px; line-height: 1.45; text-wrap: pretty; transform-origin: 0 0; }
 .d-bubble.claude { align-self: flex-start; background: #202227; border-top-left-radius: 6px; }
 /* In the thread, a long line never pushes your bubble away: words Claude never said are dropped, and the rest scrolls. */
-.d-thread .d-bubble.claude { max-height: 190px; overflow-y: auto; flex-shrink: 0; scrollbar-width: none; }
+.d-thread .d-bubble.claude { min-height: 46px; max-height: 190px; overflow-y: auto; scrollbar-width: none; }
 .d-thread .d-bubble.claude .w.unsaid { display: none; }
-.d-thread .d-bubble.me { flex-shrink: 0; }
+.d-thread .d-bubble.me { min-height: 46px; overflow-y: auto; scrollbar-width: none; }
 .d-bubble.me { align-self: flex-end; background: var(--me); color: #fff; border-bottom-right-radius: 6px; overflow: hidden; }
 .d-bubble.dots { padding: 13px 18px; }
 .d-dots { display: flex; gap: 6px; height: 20px; align-items: center; }
@@ -146,7 +146,7 @@ input:focus { outline: none; }
 .d-dots.idle i:nth-child(3) { animation-delay: .3s; }
 @keyframes dotPulse { 50% { opacity: .35; } }
 .d-me-text { display: block; animation: swapIn 220ms var(--ease-out) both; }
-.d-pending { display: flex; align-items: center; gap: 10px; padding: 2px 4px; font-size: 15px; line-height: 20px; color: var(--fg2); }
+.d-pending { display: flex; flex-shrink: 0; align-items: center; gap: 10px; padding: 2px 4px; font-size: 15px; line-height: 20px; color: var(--fg2); }
 .d-status { position: absolute; z-index: 5; top: 576px; left: 16px; right: 16px; height: 22px; margin: 0; font-size: 15px; line-height: 22px; color: var(--fg2); text-align: center; }
 .d-status .swap { width: 100%; justify-items: center; }
 .d-transcript { top: 44px; height: 662px; background: #1c1d21; }

@@ -46,11 +46,12 @@ Timing rules the engine uses today: live captions every ~0.9 s; the user's turn 
 | `asr.mjs` | CPU Whisper fallback |
 | `test-call.mjs`, `phone-sim.mjs` | Full call test in headless Edge with a fake mic (see section 6) |
 | `asr-check.mjs`, `voice/server_check.mjs` | Self-checks for hearing and voice speed |
+| `speech-check.mjs`, `call-ui/check.mjs` | Offline packet/transcript and screen regression checks, with fake I/O and no call services |
 | `design-preview/` | Preview site for UI alternatives (`npm start`, http://127.0.0.1:5178) |
 | `android/` | Kotlin app, no libraries: `ListenService`, `Ringer`, `CallActivity`, `CallAudio`, `ModeWidget`, `MainActivity`, `Receivers` |
 | `README.md` / `LAPTOP.md` | How it works / second-machine setup |
 
-## 3b. Status update (written after the first draft, 2026-10-13)
+## 3b. Claude status update (historical, 2026-10-13; current status is in 3c)
 
 Claude then edited code for items 1, 4 and 8. **Written and built, NOT tested** (the user said not to run tests):
 - **Item 8 (Whisper vocabulary):** `VOCAB` in `voice/voice_server.py` is now always put in front of the prompt in `hear()`. Needs a voice-server restart to apply (it is a long-running hidden pythonw process). Then check with `node asr-check.mjs`.
@@ -61,7 +62,28 @@ Claude then edited code for items 1, 4 and 8. **Written and built, NOT tested** 
 - **Items 2 and 3, finding from the recording** (frames pulled with ffmpeg at 10 fps): the glitch is NOT only Clawd. For single frames the whole `.d-stage` (Clawd, "Claude" label and caption) goes blank while the header, status line, controls and glow stay, roughly every half second during a line. That looks like a compositor/layer flicker on the phone, not an animation bug. Guard added: `.d-stage { isolation: isolate; transform: translateZ(0) }` in `call.css` (page.html rebuilt). UNVERIFIED: it can only be confirmed on the phone with a new screen recording. If it still flickers, next suspects: `.mascot-host { will-change: transform }` plus its per-frame `svg.innerHTML` rewrite in `mascot.jsx`, and the 250 ms `useNow` re-render of the whole screen. The control row was steady in the frames I checked; the "disappears at turn end" part is still unlocated.
 - **Item 6, one cheap try written, UNVERIFIED:** `call-engine.js` now opens the mic with `echoCancellation: false` inside the app on the earpiece, and turns it on again (via `applyConstraints`) when Speaker is chosen; in a plain browser it stays on. Idea: the browser echo canceller may eat quiet speech while Claude plays. If the mic is still about 0 during playback on the earpiece (check `rms` with debug on), the mute is the Samsung call-mode hardware path, and the next things to try are `AudioSource.VOICE_RECOGNITION` / `UNPROCESSED` capture natively in `CallAudio.kt` and sending that audio to the page, or accepting loud-only interrupts on the earpiece.
 - **Still open:** real-phone verification of 6, the "control row disappears at turn end" part of item 3 (not seen in the frames I checked), and verifying everything above on the real phone.
-- Verify 1 and 4 first with `CALLME_SHOTS=<folder> node test-call.mjs`. These changes are uncommitted.
+- Claude subsequently committed and pushed these changes in `9941ae4`, added the CPU vocabulary hint in `86c0f85`, and updated the README in `38b0f58`.
+
+## 3c. Codex continuation, 2026-10-13
+
+**Current boundary: the user is expecting a call and explicitly prohibited phone tests.** No ADB, Android build/install, real calls, microphone access, model startup, contact-mode changes or service restarts were performed in this continuation. Keep this boundary until the user reauthorizes phone work.
+
+The pasted Claude handoff reports that the app was built and installed over the S25 app, its listener restarted, and the old voice server stopped after the earlier section 3b was written. These are prior-session reports; Codex has not independently checked the device or service state.
+
+Changes made here:
+- **Handover:** `/speech` used to remove the utterance from the shared map before waiting for delayed `/listen` packets. Late packets then went into a different utterance, leaving the final request waiting up to three seconds and transcribing gaps. The same utterance now survives through final transcription and is cleaned up in `finally`. Empty final packets preserve their offset, so missing preceding audio is detected. Permanently missing audio fails instead of submitting incomplete speech.
+- **Transcript completeness:** live transcripts of incomplete audio are skipped, and rolling 28-second captions record their starting offset. Only a caption covering the whole reply can replace final transcription. A complete available caption still bypasses redundant in-flight recognition.
+- **First interrupted frame:** `CallView.status()` marks live Claude words as cut in the same update that enters hearing, before asynchronous playback cleanup. Unspoken words are hidden from the first thread render.
+- **Bubble scrolling/layout:** Claude's bubble no longer resets manual scrolling on every 250ms clock tick. Both bubbles can shrink and scroll within the stage; the user's bubble scrolls to new text, and the thinking row retains its height. The approved design/motion remains in place.
+
+Verification completed:
+- `node speech-check.mjs` **PASS**: delayed and empty final packets, complete-caption reuse while a newer recognition is pending, long replies, gaps, failure cleanup. Evaluates the actual request handler with fake I/O; no server startup or network.
+- `cd call-ui; npm run build; node check.mjs` **PASS**: real built page with mocked engine in headless Edge, all requests intercepted. First interrupted render, hidden initial label, manual scroll retention, long live/final replies at 412x892, 412x740 and 412x640, and retained mascot/control DOM nodes. Browser closed afterwards.
+- Read-only second review found no concrete regression in the changed source or checks.
+
+Remaining: the S25 stage/control flicker's cause is still unlocated; continuously mounted DOM nodes do not prove glitch-free phone rendering. Quiet earpiece interrupts, route stability, actual Whisper accuracy and real-call timing are unverified. No claim of reaching the 0.3s handover target. The full audio integration checks were not run because they can use the shared voice service.
+
+Delivery: `page.html` was rebuilt and will be read by an existing call server on the next page load. The `server.mjs` fixes require a newly started CallMe MCP server process; no existing server was restarted. No Android source changed, so this batch needs no APK update.
 
 ## 4. Open issues (the work left). Recording: `C:\Users\abdul\Downloads\Screen_Recording_20261013_141027.mp4`
 
@@ -70,7 +92,7 @@ All came from the first real call on the S25. Items 1 to 4 are call-screen (`cal
 1. **Giant bubble after an interrupt.** After the user cuts in, the whole long line, including the words never spoken, becomes one giant Claude bubble that pushes the user's live bubble behind the status line.
    Fix: keep only the *spoken* words in the bubble (the engine already reports `spoken` with a cut index), cap the bubble height, and scroll so the user's bubble always stays visible.
 2. **Clawd vanishes for a frame or two** during caption-to-bubble moves. Keep the mascot mounted and continuous across those transitions.
-3. **Control row disappears for a frame** at turn end. Same cause class: an element unmounted and remounted between states. Keep it mounted and animate in place.
+3. **Control row disappears for a frame** at turn end. Source review and offline checks show it stays mounted; the phone-specific cause is still unlocated.
 4. **Empty "Claude" caption** flashes before a line's first words. Don't render the caption until there is text.
 5. **Turn handover takes 3.3 s** even when it reuses the live transcript; target about **0.3 s**. Trace from "user stopped" (engine) to `/speech` sent to the agent receiving the text to the next line arriving. `timing.log` has marks; `node test-call.mjs` prints "you stopped -> turn sent X ms, transcript back Y ms". Find the first stage that waits longer than it needs to (likely a final `/stt` request being awaited when the last live partial is already complete).
 6. **Quiet interrupts fail on the earpiece.** Samsung's call mode mutes the mic (rms about 0) while Claude is playing, so only loud speech gets through (one normal-volume interrupt worked). Needs a real-device experiment: try a different `AudioSource` (e.g. `VOICE_COMMUNICATION` vs `MIC`), mic gain, or different audio mode/route during playback. This needs the phone, not the simulator.
@@ -87,6 +109,7 @@ They are not mine. Review them, build, and commit them if they are done and look
 
 ## 6. How to test (never ring the user's real phone)
 
+- While phone/service work is restricted, use only `node speech-check.mjs` and `cd call-ui; npm run build; node check.mjs`. They use fake I/O and do not load voice models or start call services.
 - `node test-call.mjs` runs a whole call against the real call page in headless Edge with a fake mic (`phone-sim.mjs`). It uses a private test topic, no tunnel, and its own status file. It sets `CALLME_STATUS` / `CALLME_LOCAL` so it **never touches the real `status.json` or the real ntfy topic**. Expect PASS plus latency lines.
 - `node test-call.mjs fallback` checks the no-GPU voices.
 - `node asr-check.mjs` checks that context fixes misheard names.
@@ -130,7 +153,7 @@ adb install -r ClaudeCall.apk
   - `claude-call` is public: code only, no secrets.
   - `claude-call-private` is private: holds `config.json`, `topic.xml`, `debug.keystore`.
   - `discord-input-mcp` is private.
-- Latest pushed commit on the call work: `0b7b7c9` (README "Open issues").
+- Baseline before the Codex continuation: `38b0f58`; use `git log` for the latest delivered continuation commit.
 
 ## 10. Suggested order
 

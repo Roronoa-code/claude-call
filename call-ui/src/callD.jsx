@@ -97,7 +97,7 @@ export default function CallD({ sim, statusBar = null }) {
     first.current = false;
   }, [thread]);
 
-  useLayoutEffect(() => { if (bubble.current) bubble.current.scrollTop = bubble.current.scrollHeight; }); // long line: show its latest words
+  useLayoutEffect(() => { if (bubble.current) bubble.current.scrollTop = bubble.current.scrollHeight; }, [bubbleMsg]); // new content: show its latest words
 
   const send = e => { e.preventDefault(); sim.sendTyped(draft); setDraft(''); setTyping(false); };
   const mascotAt = perch ? `translate(${perch.x}px, ${perch.y - 88}px)` : 'translate(24px, 20px)';
@@ -200,6 +200,7 @@ function MeBubble({ sim, text, live }) {
   const ref = useRef(null), dots = useRef(null), size = useRef(null);
   useLayoutEffect(() => {
     const el = ref.current, w = el.offsetWidth, h = el.offsetHeight, prev = size.current;
+    el.scrollTop = el.scrollHeight;
     size.current = { w, h, text: !!text };
     // Reshape only when the dots turn into words (or back). Live captions that grow word by word
     // just grow, so their text is never clipped mid-animation.
