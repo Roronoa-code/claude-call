@@ -240,34 +240,37 @@ export component Morph {
     in property <length> radius: 24px;
     in property <string> face;
     in property <color> panel: T.btn;
-    property <bool> shown: open || closing.running;
-    x: open ? tx : fx;
-    y: open ? ty : fy;
-    width: open ? tw : fsize;
-    height: open ? th : fsize;
-    animate x, y, width, height { duration: open ? 500ms : 300ms; easing: open ? T.spring : T.close; }
-    closing := Timer { interval: 320ms; running: false; triggered => { self.running = false; } }
-    changed open => { closing.running = !open; }
-    visible: shown;
+    // One value from shut (0, exactly the button) to open (1), so shape, place and corners always move together
+    // and closing always lands back in the button, from wherever it was.
+    property <float> k: open ? 1 : 0;
+    animate k { duration: open ? 500ms : 300ms; easing: open ? T.spring : T.close; }
+    visible: open || k > 0.002; // visible at once when opening, so its text field can take focus
+    x: fx + (tx - fx) * k;
+    y: fy + (ty - fy) * k;
+    width: fsize + (tw - fsize) * k;
+    height: fsize + (th - fsize) * k;
     Rectangle {
-        border-radius: root.open ? root.radius : root.fsize / 2;
-        animate border-radius { duration: root.open ? 500ms : 300ms; easing: root.open ? T.spring : T.close; }
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        border-radius: root.fsize / 2 + (root.radius - root.fsize / 2) * Math.min(1, root.k);
         background: root.panel;
         clip: true;
+        // The button's face fades as the contents fade in.
         Icon {
             d: root.face;
             x: (parent.width - self.width) / 2;
             y: (parent.height - self.height) / 2;
-            opacity: root.open ? 0 : 1;
-            animate opacity { duration: 140ms; delay: root.open ? 0ms : 160ms; }
+            opacity: Math.max(0, 1 - root.k * 4);
         }
-        body := Rectangle {
-            x: 0;
-            y: 0;
+        // The contents stay where they will be once open; the growing surface reveals them.
+        Rectangle {
+            x: root.tx - root.x;
+            y: root.ty - root.y;
             width: root.tw;
             height: root.th;
-            opacity: root.open ? 1 : 0;
-            animate opacity { duration: root.open ? 220ms : 90ms; delay: root.open ? 120ms : 0ms; easing: T.out; }
+            opacity: Math.max(0, Math.min(1, (root.k - 0.25) * 2.5));
             @children
         }
     }

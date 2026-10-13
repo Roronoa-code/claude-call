@@ -8,6 +8,7 @@ export component CallScreen inherits Window {
     // ---- From Rust ----
     in property <length> sat: 36px; // status bar and gesture bar
     in property <length> sab: 24px;
+    in property <length> kb; // how far the keyboard reaches up from the bottom edge (0 when hidden)
     in property <string> phase: "incoming"; // incoming connecting talking listening hearing thinking hold ended
     in property <string> time-text: "Calling you";
     in property <string> status;
@@ -50,7 +51,8 @@ export component CallScreen inherits Window {
     property <bool> in-call: !incoming;
     property <bool> thread: phase == "hearing" || phase == "thinking";
     property <length> stage-top: sat + 60px;
-    property <length> stage-bottom: self.height - sab - 302px;
+    // While typing, the stage and the reply field sit above the keyboard (the window itself never resizes).
+    property <length> stage-bottom: self.height - (typing ? kb + max(158px, sab + 302px - kb) : sab + 302px);
     property <length> controls-y: self.height - sab - 28px - 224px;
     property <length> col-w: (self.width - 32px) / 4;
 
@@ -126,7 +128,7 @@ export component CallScreen inherits Window {
                         Spoken {
                             text: c.text;
                             lit: c.lit;
-                            font-size: c.size == 2 ? 20px : c.size == 1 ? 24px : 30px;
+                            font-size: root.typing || c.size == 2 ? 20px : c.size == 1 ? 24px : 30px; // smallest while the keyboard is up
                             weight: 500;
                             tracking: -0.012;
                             lit-color: c.tone == "dim" ? T.fg2 : T.fg;
@@ -417,7 +419,7 @@ export component CallScreen inherits Window {
             fx: 16px + root.col-w * 3.5 - 32px;
             fy: root.controls-y;
             tx: 16px;
-            ty: root.height - root.sab - 162px - 90px;
+            ty: root.height - root.kb - max(48px, root.sab + 162px - root.kb) - 90px;
             tw: root.width - 32px;
             th: 64px;
             radius: 32px;
@@ -435,6 +437,8 @@ export component CallScreen inherits Window {
                     single-line: true;
                     accepted => { if (root.draft != "") { root.send(root.draft); root.draft = ""; root.typing = false; root.typing-changed(false); } }
                     Text {
+                        x: 0;
+                        width: parent.width;
                         visible: root.draft == "";
                         text: "Type a reply";
                         font-size: 17px;
@@ -467,7 +471,9 @@ export component CallScreen inherits Window {
         }
     }
 
-    changed typing => { if (self.typing) { input.focus(); } else { input.clear-focus(); } }
+    // Focus once the field has grown into view (Android won't raise the keyboard for a field still clipped away).
+    focusSoon := Timer { interval: 220ms; running: false; triggered => { self.running = false; if (root.typing) { input.focus(); } } }
+    changed typing => { if (self.typing) { focusSoon.running = true; } else { input.clear-focus(); } }
     // A new caption crossfades in over the old one; the same caption (more words said) updates in place.
     changed cap => {
         if (capSlots.pa == 1 && capSlots.a.key != self.cap.key) { capSlots.b = self.cap; capSlots.pb = 0; capSlots.pb = 1; capSlots.pa = 2; }

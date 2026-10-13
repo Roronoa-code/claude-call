@@ -178,3 +178,18 @@ pub fn set_frame_rate(window: *mut std::ffi::c_void, fps: f32) -> bool {
         f(window, fps, 0) == 0
     }
 }
+
+/// How far the on-screen keyboard reaches up from the bottom edge, in px (0 when hidden).
+pub fn keyboard() -> f32 {
+    with(|env, act| {
+        let win = env.call_method(act, "getWindow", "()Landroid/view/Window;", &[])?.l()?;
+        let decor = env.call_method(&win, "getDecorView", "()Landroid/view/View;", &[])?.l()?;
+        let ins = env.call_method(&decor, "getRootWindowInsets", "()Landroid/view/WindowInsets;", &[])?.l()?;
+        if ins.is_null() {
+            return Ok(0.0);
+        }
+        let i = env.call_method(&ins, "getInsets", "(I)Landroid/graphics/Insets;", &[JValue::Int(8)])?.l()?; // Type.ime()
+        Ok(env.get_field(&i, "bottom", "I")?.i()? as f32)
+    })
+    .unwrap_or(0.0)
+}

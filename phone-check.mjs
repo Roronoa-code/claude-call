@@ -77,6 +77,34 @@ shot('4-hold');
 const idle = [];
 for (let i = 0; i < 4; i++) { await sleep(2000); idle.push(cpu()); }
 report.push(`cpu on hold: ${idle.join(', ')}%`);
+
+// The two sheets, tapped like a person would, on a recording: Captions (the transcript) and Type (the keyboard).
+const [W, H] = String(adb('shell', 'wm', 'size')).match(/(\d+)x(\d+)/).slice(1).map(Number);
+const rowY = H * 0.7077; // the round buttons' centre row (measured on the S25 screenshots)
+// Never tap anything but the call screen (a tap on another app would be a real tap on the user's phone).
+const onCall = () => /fyi\.mani\.callme/.test(String(adb('shell', 'dumpsys', 'window')).match(/mCurrentFocus=.*/)?.[0] ?? '');
+const keyboardUp = () => /mInputShown=true/.test(String(adb('shell', 'dumpsys', 'input_method')));
+const tap = (x, y, what) => { if (!onCall()) throw new Error(`call screen not in front; not tapping ${what}`); adb('shell', 'input', 'tap', String(Math.round(x)), String(Math.round(y))); say('tap', what); };
+const sheets = spawn('adb', adbArgs(['shell', 'screenrecord', '--time-limit', '30', '/sdcard/callme-sheets.mp4']), { stdio: 'ignore' });
+await sleep(1000);
+tap(W * 0.6146, rowY, 'Captions');
+await sleep(1500); shot('6-captions-open');
+tap(W * 0.6146, rowY, 'Captions (close)');
+await sleep(1500);
+tap(W * 0.843, rowY, 'Type');
+await sleep(1800); shot('7-type-open');
+adb('shell', 'input', 'text', 'hello%sthere');
+await sleep(1000); shot('8-type-text');
+say('keyboard shown:', keyboardUp());
+if (keyboardUp()) adb('shell', 'input', 'keyevent', 'KEYCODE_BACK'); say('Back (keyboard away: the reply field should close)');
+await sleep(1500); shot('9-type-back');
+tap(W * 0.843, rowY, 'Type again');
+await sleep(1500);
+adb('shell', 'input', 'text', 'sent%sfrom%sthe%sphone');
+adb('shell', 'input', 'keyevent', 'KEYCODE_ENTER'); say('Enter (sends)');
+await sleep(1800); shot('10-type-sent');
+await new Promise(r => sheets.on('exit', r));
+adb('pull', '/sdcard/callme-sheets.mp4', path.join(out, 'sheets.mp4'));
 const r3 = reply('Also make the button blue.', 0);
 say('REPLY 3', await call('continue_call', 'Okay, I am back. The main Claude says yes.'));
 await r3;

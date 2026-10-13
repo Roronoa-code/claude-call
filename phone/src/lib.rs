@@ -51,6 +51,7 @@ mod screen {
         finished: bool,
         rate_set: bool,
         last_route: f64,
+        density: f32,
     }
 
     fn hash(s: &str) -> i32 {
@@ -118,6 +119,7 @@ mod screen {
             f.last_route = now;
             e.keep_route();
             if let Some((top, bottom, density)) = android::insets() {
+                f.density = density;
                 ui.set_sat((top / density).max(36.0));
                 ui.set_sab((bottom / density).max(24.0));
             }
@@ -351,6 +353,7 @@ mod screen {
             finished: false,
             rate_set: false,
             last_route: -1e9,
+            density: 0.0,
         }));
         ui.on_poke({
             let (f, e) = (frame.clone(), e.clone());
@@ -366,6 +369,31 @@ mod screen {
             move || {
                 if let Some(ui) = ui.upgrade() {
                     present(&ui, &e, &mut f.borrow_mut(), &app);
+                }
+            }
+        });
+        // The keyboard, every frame while typing: the reply field rides up with it as it slides in.
+        let keys = slint::Timer::default();
+        keys.start(slint::TimerMode::Repeated, Duration::from_millis(16), {
+            let (ui, f) = (ui.as_weak(), frame.clone());
+            let mut had = false;
+            move || {
+                let Some(ui) = ui.upgrade() else { return };
+                let density = f.borrow().density;
+                if density == 0.0 || (!ui.get_typing() && ui.get_kb() == 0.0) {
+                    had = false;
+                    return;
+                }
+                let kb = (android::keyboard() / density).round();
+                if ui.get_kb() != kb {
+                    ui.set_kb(kb);
+                }
+                // The keyboard was put away (Back, or swiped down): the reply field closes with it.
+                if kb > 0.0 {
+                    had = true;
+                } else if had && ui.get_typing() {
+                    had = false;
+                    ui.set_typing(false);
                 }
             }
         });
