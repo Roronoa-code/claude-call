@@ -96,10 +96,24 @@ class MainActivity : Activity() {
             Ringer.ring(applicationContext, CallActivity.TEST_LINK, "Test ring")
         })
         setContentView(root)
+        returnToCall()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        returnToCall()
+    }
+
+    private fun returnToCall() {
+        val link = ListenService.activeCallLink ?: return
+        startActivity(CallActivity.intent(this, link, answer = true))
+        finish()
     }
 
     override fun onResume() {
         super.onResume()
+        if (isFinishing) return
         refresh()
         if (missing().isEmpty()) ListenService.start(this)
         // Show a mode changed elsewhere (Claude or Discord).

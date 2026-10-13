@@ -25,6 +25,7 @@ export class CallView {
     this.listeners = new Set();
     this.view = { phase: 'incoming', sub: null, msgs: [], muted: false, speaker: false, speakerAvailable: true, canFinish: false, callStart: 0, endedAt: 0, closed: false, cutIn: false, holdStart: 0, holdLabel: '', notice: '', partial: '' };
     this.voice = null; this.voiceSince = 0; this.micLevel = 0;
+    this.partialId = null;
     this.last = {}; this.holdAfter = false;
     this.call = window.CallEngine({
       token: qs.get('t'),
@@ -53,10 +54,11 @@ export class CallView {
             this.emit({ holdStart: performance.now(), holdLabel: (this.last.holdLabel || '').replace(/[.!?…\s]+$/, '') });
           }
         },
-        partial: u => this.emit({ partial: u.text || '' }),
+        partial: u => { this.partialId = u.id; this.emit({ partial: u.text || '' }); },
         heard: u => {
-          if (u.text) this.emit({ msgs: [...this.view.msgs, { id: 'u' + u.id, who: 'me', text: u.text }], partial: '' });
-          else this.emit({ partial: '' });
+          const clear = this.partialId == null || this.partialId === u.id || u.typed;
+          if (clear) this.partialId = null;
+          this.emit({ ...(u.text ? { msgs: [...this.view.msgs, { id: 'u' + u.id, who: 'me', text: u.text }] } : {}), partial: clear ? '' : this.view.partial });
         },
         interrupted: () => this.emit({ cutIn: true }),
         level: x => { this.micLevel = x; },

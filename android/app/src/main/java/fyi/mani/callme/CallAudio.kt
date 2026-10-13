@@ -10,6 +10,9 @@ import android.media.MediaPlayer
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.os.Build
+import android.view.WindowInsets
+import android.view.inputmethod.InputMethodManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import java.net.HttpURLConnection
@@ -20,7 +23,7 @@ import java.net.URL
  * with the screen switching off when the phone is held to the ear.
  * Exposed to the call page as `window.CallMeApp`.
  */
-class CallAudio(context: Context, private val web: WebView, private val origin: String, private val onEnd: () -> Unit) {
+class CallAudio(context: Context, private val web: WebView, private val origin: String, private val onBegin: () -> Unit, private val onEnd: () -> Unit) {
     private val main = Handler(Looper.getMainLooper())
     private val executor = context.mainExecutor
     private val audio = context.getSystemService(AudioManager::class.java)
@@ -33,6 +36,7 @@ class CallAudio(context: Context, private val web: WebView, private val origin: 
     @Volatile private var voice: Voice? = null
     @Volatile private var speaker = false
     private var started = false
+    val isActive get() = started
 
     // The WebView's microphone switches the call to the loudspeaker when it opens; put our choice back.
     private val routeWatch = AudioManager.OnCommunicationDeviceChangedListener { d ->
@@ -46,6 +50,7 @@ class CallAudio(context: Context, private val web: WebView, private val origin: 
     private fun start() {
         if (started) return
         started = true
+        onBegin()
         audio.mode = AudioManager.MODE_IN_COMMUNICATION
         audio.addOnCommunicationDeviceChangedListener(executor, routeWatch)
         route()
@@ -59,6 +64,11 @@ class CallAudio(context: Context, private val web: WebView, private val origin: 
 
     /** The call was answered: switch to call audio (earpiece) now, before Claude's first word. */
     @JavascriptInterface fun begin() = main.post { start() }
+
+    @JavascriptInterface fun hideKeyboard() = main.post {
+        if (Build.VERSION.SDK_INT >= 30) web.windowInsetsController?.hide(WindowInsets.Type.ime())
+        else web.context.getSystemService(InputMethodManager::class.java)?.hideSoftInputFromWindow(web.windowToken, 0)
+    }
 
     @JavascriptInterface fun isSpeaker() = speaker
 
@@ -202,5 +212,6 @@ class CallAudio(context: Context, private val web: WebView, private val origin: 
             audio.removeOnCommunicationDeviceChangedListener(routeWatch)
             audio.clearCommunicationDevice(); audio.mode = AudioManager.MODE_NORMAL
         }
+        started = false
     }
 }

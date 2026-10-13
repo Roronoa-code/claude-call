@@ -160,19 +160,17 @@ input:focus { outline: none; }
    from the bottom (above the gesture bar), the header from the top (below the status bar). */
 :root { --sat: max(env(safe-area-inset-top), 36px); --sab: max(env(safe-area-inset-bottom), 24px); }
 #root > div { position: fixed; inset: 0; } /* the call screen fills the window */
-.screen.d { position: absolute; inset: 0; width: auto; height: auto; border-radius: 0; background: var(--bg); overflow: hidden; }
+.screen.d { position: absolute; inset: 0; width: auto; height: calc(100% - var(--native-keyboard-height, 0px)); border-radius: 0; background: var(--bg); overflow: hidden; }
 .d-head { top: calc(var(--sat) + 4px); }
 .d-stage { top: calc(var(--sat) + 60px); bottom: calc(var(--sab) + 302px); height: auto; }
 .d-status { top: auto; bottom: calc(var(--sab) + 270px); }
 .a-controls { top: auto; bottom: calc(var(--sab) + 28px); }
-.a-type { top: auto; bottom: calc(var(--sab) + 162px); }
-@media (max-height: 600px) {
-  .screen.d .a-type { bottom: 0; } /* Keep the reply field above the keyboard in the resized viewport. */
-  .screen.d:has(.a-type[data-state="open"]) .d-stage { bottom: 110px; }
-  .screen.d:has(.a-type[data-state="open"]) .d-caps { inset: 140px 24px 0; padding: 0; overflow-y: auto; }
-  .screen.d:has(.a-type[data-state="open"]) .d-status,
-  .screen.d .a-controls.typing { visibility: hidden; }
-}
+/* Leave room for the native keyboard frame that arrives before its WebView inset update. */
+.a-type { top: auto; bottom: max(48px, calc(var(--sab) + 162px - var(--keyboard-height, 0px))); }
+.screen.d:has(.a-type[data-state="open"]) .d-stage { bottom: max(158px, calc(var(--sab) + 302px - var(--keyboard-height, 0px))); }
+.screen.d:has(.a-type[data-state="open"]) .d-caps { inset: 140px 24px 0; padding: 0; overflow-y: auto; }
+.screen.d:has(.a-type[data-state="open"]) .d-status,
+.screen.d .a-controls.typing { visibility: hidden; }
 .d-transcript { top: calc(var(--sat) + 8px); height: auto; bottom: calc(var(--sab) + 162px); }
 /* The phone fades the screen out itself when the call ends. */
 .screen.d.closed > :not(.d-glow) { opacity: 0; transition: opacity 500ms var(--close-ease); }

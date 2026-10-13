@@ -10,7 +10,12 @@ import kotlin.concurrent.thread
 class DeclineReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         Ringer.stop(context)
-        intent.getStringExtra(EXTRA_LINK)?.let { hangUp(it, goAsync()) }
+        intent.getStringExtra(EXTRA_LINK)?.let {
+            if (!CallActivity.finishCall(it)) {
+                ListenService.callEnded(context, it)
+                hangUp(it, goAsync())
+            }
+        }
     }
 
     companion object {

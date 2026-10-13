@@ -2,13 +2,18 @@ package fyi.mani.callme;
 
 import android.app.Activity;
 import android.app.Instrumentation;
+import android.app.Notification;
+import android.app.NotificationManager;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Build;
 import android.os.SystemClock;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.WebView;
+import android.service.notification.StatusBarNotification;
+import org.json.JSONObject;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -45,7 +50,10 @@ public final class PhoneCheckInstrumentation extends Instrumentation {
                 runOnMainSync(() -> {
                     WebView web = findWebView(call.getWindow().getDecorView());
                     if (web == null) { read.countDown(); return; }
-                    web.evaluateJavascript("Boolean(window.__phoneCheckDone)", value -> {
+                    String liveUpdate;
+                    try { liveUpdate = liveUpdateDiagnostics().toString(); }
+                    catch (Exception error) { liveUpdate = "{\"error\":\"" + error.getClass().getSimpleName() + "\"}"; }
+                    web.evaluateJavascript("window.__phoneLiveUpdate = " + liveUpdate + "; Boolean(window.__phoneCheckDone)", value -> {
                         complete.set("true".equals(value));
                         read.countDown();
                     });
@@ -67,6 +75,27 @@ public final class PhoneCheckInstrumentation extends Instrumentation {
             });
         }
         finish(code, result);
+    }
+
+    private JSONObject liveUpdateDiagnostics() throws Exception {
+        JSONObject result = new JSONObject();
+        boolean supported = Build.VERSION.SDK_INT >= 36 && Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA_1;
+        result.put("supported", supported).put("present", false);
+        if (!supported) return result;
+        NotificationManager manager = getTargetContext().getSystemService(NotificationManager.class);
+        result.put("systemAllowed", manager.canPostPromotedNotifications());
+        for (StatusBarNotification posted : manager.getActiveNotifications()) {
+            if (posted.getId() != 1) continue;
+            Notification notification = posted.getNotification();
+            result.put("present", true)
+                    .put("requested", notification.isRequestPromotedOngoing())
+                    .put("hasPromotableCharacteristics", notification.hasPromotableCharacteristics())
+                    .put("promoted", (notification.flags & Notification.FLAG_PROMOTED_ONGOING) != 0)
+                    .put("flags", notification.flags)
+                    .put("channel", notification.getChannelId())
+                    .put("channelImportance", manager.getNotificationChannel(notification.getChannelId()).getImportance());
+        }
+        return result;
     }
 
     private static WebView findWebView(View view) {

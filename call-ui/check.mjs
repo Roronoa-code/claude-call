@@ -116,9 +116,14 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Speaker', exact: true }).getAttribute('aria-pressed'), 'true');
   await page.getByRole('button', { name: 'Captions', exact: true }).click();
   await page.getByRole('button', { name: 'Close transcript', exact: true }).click();
+  await page.setViewportSize({ width: 384, height: 798 });
   await page.getByRole('button', { name: 'Type', exact: true }).click();
   await page.getByRole('textbox', { name: 'Type a reply', exact: true }).fill('Offline layout check');
-  await page.setViewportSize({ width: 384, height: 439 }); // The S25 viewport above its open keyboard.
+  for (const height of [758, 678, 598, 518, 439]) {
+    await page.evaluate(inset => document.documentElement.style.setProperty('--native-keyboard-height', `${inset}px`), 798 - height);
+    await page.waitForFunction(inset => document.querySelector('.screen').style.getPropertyValue('--keyboard-height') === `${inset}px`, 798 - height);
+    assert.equal(await page.locator('.a-controls').evaluate(el => getComputedStyle(el).visibility), 'hidden', 'Done must stay hidden throughout keyboard movement');
+  }
   const typing = await page.evaluate(() => ({
     inputBottom: document.querySelector('input').getBoundingClientRect().bottom,
     composerTop: document.querySelector('.a-type').getBoundingClientRect().top,
@@ -129,8 +134,23 @@ try {
   assert.ok(typing.inputBottom <= 439 && typing.stageBottom < typing.composerTop, 'caption and input must fit above the keyboard');
   assert.equal(typing.status, 'hidden');
   assert.equal(typing.controls, 'hidden');
-  await page.setViewportSize({ width: 412, height: 892 });
   await page.getByRole('button', { name: 'Close', exact: true }).click();
+  assert.equal(await page.locator('.a-type').getAttribute('data-state'), 'open', 'closing waits for the keyboard before measuring the return button');
+  for (const height of [479, 559, 639, 719, 798]) {
+    await page.evaluate(inset => document.documentElement.style.setProperty('--native-keyboard-height', `${inset}px`), 798 - height);
+    if (height < 798) {
+      await page.waitForFunction(inset => document.querySelector('.screen').style.getPropertyValue('--keyboard-height') === `${inset}px`, 798 - height);
+      assert.equal(await page.locator('.a-controls').evaluate(el => getComputedStyle(el).visibility), 'hidden');
+      assert.equal(await page.locator('.a-type').getAttribute('data-state'), 'open');
+    }
+  }
+  await page.waitForFunction(() => document.querySelector('.a-type').dataset.state === 'shut');
+  const returnPosition = await page.evaluate(() => {
+    const a = document.querySelector('.a-type .morph-face').getBoundingClientRect();
+    const b = document.querySelector('button[aria-label="Type"]').getBoundingClientRect();
+    return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+  });
+  assert.ok(returnPosition < 1, 'the closing keyboard face must land on the restored Type button');
   await page.evaluate(() => events.ended());
   await page.waitForFunction(() => getComputedStyle(document.querySelector('.d-stage')).opacity === '0');
   assert.equal(await page.locator('[data-voice-beam]').evaluate(el => getComputedStyle(el).opacity), '1', 'closing must retain the glow while foreground fades');

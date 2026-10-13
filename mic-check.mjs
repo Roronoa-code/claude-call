@@ -8,11 +8,11 @@ assert.ok(original.includes('    function end() {'), 'test-only end hook must ma
 const source = original.replace('    function end() {', '    window.__micCheckEnd = end;\n    function end() {');
 const settle = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
 function harness() {
-  const pending = [], streams = [], contexts = [], statuses = [], routes = [];
-  const window = { CallMeApp: { stream() {}, begin() {}, setSpeaker: on => routes.push(on), ended() {} } };
+  const pending = [], streams = [], contexts = [], statuses = [], routes = [], startup = [];
+  const window = { CallMeApp: { stream() {}, begin() { startup.push('native begin'); }, setSpeaker: on => routes.push(on), ended() {} } };
   class AudioContext {
-    constructor() { this.sampleRate = 48000; this.destination = {}; this.processors = []; this.sources = []; this.closed = false; contexts.push(this); }
-    resume() { return Promise.resolve(); }
+    constructor() { this.sampleRate = 48000; this.destination = {}; this.processors = []; this.sources = []; this.closed = false; contexts.push(this); startup.push('context'); }
+    resume() { startup.push('resume'); return Promise.resolve(); }
     close() { this.closed = true; return Promise.resolve(); }
     createScriptProcessor() {
       const node = { connected: false, connect() { this.connected = true; }, disconnect() { this.connected = false; } };
@@ -24,7 +24,7 @@ function harness() {
     }
   }
   vm.runInNewContext(source, { window, AudioContext, Audio: class { play() { return Promise.resolve(); } },
-    navigator: { mediaDevices: { getUserMedia: constraints => new Promise((resolve, reject) => pending.push({ constraints, resolve, reject })) } },
+    navigator: { mediaDevices: { getUserMedia: constraints => { startup.push('capture request'); return new Promise((resolve, reject) => pending.push({ constraints, resolve, reject })); } } },
     performance: { now: () => 0 }, console, setInterval: () => 1, clearInterval() {}, setTimeout: () => 1, clearTimeout() {},
     fetch: url => url.startsWith('state?') ? new Promise(() => {}) : Promise.resolve({ ok: true }),
   });
@@ -35,11 +35,12 @@ function harness() {
     const stream = { tracks, getTracks: () => tracks };
     streams.push(stream); pending[index].resolve(stream); return stream;
   };
-  return { call, pending, streams, contexts, statuses, routes, resolve, end: window.__micCheckEnd };
+  return { call, pending, streams, contexts, statuses, routes, startup, resolve, end: window.__micCheckEnd };
 }
 
 {
   const h = harness(), answering = h.call.answer();
+  assert.deepEqual(h.startup, ['context', 'resume', 'native begin', 'capture request'], 'native answer must resume the context synchronously before capture awaits the microphone');
   assert.equal(h.pending[0].constraints.audio.echoCancellation, false);
   const initial = h.resolve(0); await answering;
   assert.equal(h.contexts.length, 1);
@@ -80,7 +81,7 @@ function harness() {
   const h = harness(), answering = h.call.answer();
   h.call.setSpeaker(true);
   const stale = h.resolve(0); await settle();
-  assert.equal(h.contexts.length, 0, 'answer must await a newer pending route before attaching capture');
+  assert.equal(h.contexts[0].processors.length, 0, 'answer must await a newer pending route before attaching capture');
   const speaker = h.resolve(1); await answering;
   assert.ok(stale.tracks.every(t => t.stopped), 'pending answer must not overwrite a newer speaker choice');
   assert.equal(h.contexts.length, 1);
@@ -95,7 +96,7 @@ function harness() {
   h.call.setSpeaker(true);
   const stale = h.resolve(1); await settle();
   assert.ok(stale.tracks.every(t => t.stopped));
-  assert.equal(h.contexts.length, 0, 'a stale unmute capture must wait for the current route capture');
+  assert.equal(h.contexts[0].processors.length, 0, 'a stale unmute capture must wait for the current route capture');
   h.resolve(2); assert.equal(await unmuting, false, 'unmute must wait for the latest capture startup after initial failure');
   h.end();
 }
@@ -112,7 +113,7 @@ for (const unmute of [false, true]) {
   const stale = h.resolve(staleIndex); await waiting;
   assert.ok(stale.tracks.every(t => t.stopped), 'stale capture must stay released after the newer capture fails');
   assert.equal(h.call.muted, true, 'answer/unmute must retain failure after the newest request has settled');
-  assert.equal(h.contexts.length, 0, 'failed newest capture must not enter listening with a missing context');
+  assert.equal(h.contexts[0].processors.length, 0, 'failed newest capture must not attach a capture graph');
   h.end();
 }
-console.log('PASS: initial capture, route swap, preserved capture on failure, one graph, rapid toggles, pending answer, unmute and late/end cleanup (offline)');
+console.log('PASS: synchronous native context resume, initial capture, route swap, preserved capture on failure, one graph, rapid toggles, pending answer, unmute and late/end cleanup (offline)');

@@ -28,6 +28,31 @@ export default function CallD({ sim, statusBar = null }) {
   const [caps, setCaps] = useState(false);
   const [typing, setTyping] = useState(false);
   const [draft, setDraft] = useState('');
+  const keyboardHeight = useRef(0);
+  useLayoutEffect(() => {
+    if (!typing) return;
+    const el = root.current, height = el.clientHeight, width = el.clientWidth;
+    let hadKeyboard = false;
+    const resize = new ResizeObserver(() => {
+      const inset = Math.max(0, height - el.clientHeight);
+      keyboardHeight.current = inset;
+      el.style.setProperty('--keyboard-height', `${inset}px`);
+      if (inset > 0) hadKeyboard = true;
+      // Close into the restored button position, after the keyboard has finished moving.
+      if ((hadKeyboard && inset === 0) || el.clientWidth !== width) {
+        input.current?.blur();
+        setTyping(false);
+      }
+    });
+    resize.observe(el);
+    input.current?.focus({ preventScroll: true });
+    return () => { resize.disconnect(); keyboardHeight.current = 0; el.style.removeProperty('--keyboard-height'); };
+  }, [typing]);
+  const closeTyping = () => {
+    input.current?.blur();
+    window.CallMeApp?.hideKeyboard?.();
+    if (!keyboardHeight.current) setTyping(false);
+  };
   const incoming = v.phase === 'incoming', ended = v.phase === 'ended', inCall = !incoming;
   const thread = v.phase === 'hearing' || v.phase === 'thinking';
   const lastClaude = [...v.msgs].reverse().find(m => m.who === 'claude');
@@ -99,7 +124,7 @@ export default function CallD({ sim, statusBar = null }) {
 
   useLayoutEffect(() => { if (bubble.current) bubble.current.scrollTop = bubble.current.scrollHeight; }, [bubbleMsg]); // new content: show its latest words
 
-  const send = e => { e.preventDefault(); sim.sendTyped(draft); setDraft(''); setTyping(false); };
+  const send = e => { e.preventDefault(); sim.sendTyped(draft); setDraft(''); closeTyping(); };
   const mascotAt = perch ? `translate(${perch.x}px, ${perch.y - 88}px)` : 'translate(24px, 20px)';
 
   return (
@@ -160,11 +185,11 @@ export default function CallD({ sim, statusBar = null }) {
         </Morph>
 
         <Morph open={typing && inCall && !ended} from={typeBtn} root={root} className="a-type" label="Type a reply" radius={32}
-          to={{ top: 0, right: 16, bottom: 26, left: 16 }} face={<Icon.keyboard />} onClose={() => setTyping(false)}>
+          to={{ top: 0, right: 16, bottom: 26, left: 16 }} face={<Icon.keyboard />} onClose={closeTyping}>
           <form className="a-form" onSubmit={send}>
             <input ref={input} value={draft} onChange={e => setDraft(e.target.value)} placeholder="Type a reply" aria-label="Type a reply" autoComplete="off" />
             <button className="a-send" disabled={!draft.trim()} aria-label="Send"><Icon.send /></button>
-            <button type="button" className="a-x" onClick={() => setTyping(false)} aria-label="Close"><Icon.close /></button>
+            <button type="button" className="a-x" onClick={closeTyping} aria-label="Close"><Icon.close /></button>
           </form>
         </Morph>
 
@@ -173,7 +198,7 @@ export default function CallD({ sim, statusBar = null }) {
             <Round i={0} label={v.muted ? 'Unmute' : 'Mute'} pressed={v.muted} onClick={() => sim.toggleMute()} icon={v.muted ? <Icon.micOff /> : <Icon.mic />} hidden={!inCall} disabled={ended} />
             <Round i={1} label="Speaker" pressed={v.speaker} onClick={() => sim.toggleSpeaker()} icon={<Icon.speaker />} hidden={!inCall} disabled={ended || v.speakerAvailable === false} />
             <Round i={2} label="Captions" pressed={caps} expanded={caps} onClick={() => setCaps(c => !c)} icon={<Icon.captions />} hidden={!inCall} btnRef={capBtn} disabled={ended} />
-            <Round i={3} label="Type" pressed={typing} expanded={typing} onClick={() => { setTyping(t => !t); setTimeout(() => input.current?.focus({ preventScroll: true }), 200); }} icon={<Icon.keyboard />} hidden={!inCall} btnRef={typeBtn} disabled={ended} />
+            <Round i={3} label="Type" pressed={typing} expanded={typing} onClick={() => setTyping(t => !t)} icon={<Icon.keyboard />} hidden={!inCall} btnRef={typeBtn} disabled={ended} />
           </div>
           <div className="a-main">
             <button className={`a-big ${incoming ? 'answer' : 'done'}`} disabled={!incoming && !(v.canFinish ?? v.phase === 'hearing')}

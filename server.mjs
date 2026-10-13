@@ -13,9 +13,9 @@ import path from 'node:path';
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const configPath = path.join(dir, 'config.json');
 if (!existsSync(configPath)) writeFileSync(configPath, JSON.stringify({ topic: 'claude-' + randomBytes(12).toString('hex') }, null, 2));
-const topic = process.env.CALLME_TOPIC || JSON.parse(readFileSync(configPath, 'utf8')).topic;
+const topic = process.env.CALLME_TOPIC || JSON.parse(readFileSync(configPath, 'utf8').replace(/^\uFEFF/, '')).topic;
 const token = randomBytes(16).toString('hex');
-const config = () => { try { return JSON.parse(readFileSync(configPath, 'utf8')); } catch { return {}; } };
+const config = () => { try { return JSON.parse(readFileSync(configPath, 'utf8').replace(/^\uFEFF/, '')); } catch { return {}; } };
 // Debug log of the phone's mic levels and interrupts (for tuning): CALLME_DEBUG=1, or "debug": true in config.json.
 const debugOn = () => process.env.CALLME_DEBUG === '1' || config().debug === true;
 const log = (...a) => console.error('[callme]', ...a);

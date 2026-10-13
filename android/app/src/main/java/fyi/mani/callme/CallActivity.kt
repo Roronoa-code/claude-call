@@ -10,7 +10,9 @@ import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowInsets
+import android.view.WindowInsetsAnimation
 import android.view.WindowManager
+import android.window.OnBackInvokedDispatcher
 import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -18,12 +20,16 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
+import java.lang.ref.WeakReference
 
 /** The call screen: shows Claude's call page; the mic is granted by the app, so the page never asks. */
 class CallActivity : Activity() {
     private lateinit var web: WebView
     private var callAudio: CallAudio? = null
     private var retries = 0
+    private var loadedLink: String? = null
+    private var keyboardHeightCss = 0f
+    private var publishedKeyboardHeightCss = -1f
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -46,6 +52,10 @@ class CallActivity : Activity() {
             }
             // A brand-new tunnel address can take a few seconds to resolve on the phone: keep retrying.
             webViewClient = object : WebViewClient() {
+                override fun onPageFinished(view: WebView, url: String) {
+                    publishedKeyboardHeightCss = -1f
+                    publishKeyboardHeight()
+                }
                 override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
                     if (request.isForMainFrame && retries++ < 30) {
                         view.loadData(RETRY_PAGE, "text/html", "utf-8")
@@ -57,17 +67,52 @@ class CallActivity : Activity() {
         val frame = FrameLayout(this).apply {
             setBackgroundColor(Color.parseColor("#111214"))
             addView(web, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-            // Resize the WebView itself so CSS controls move above the keyboard.
-            setOnApplyWindowInsetsListener { v, insets ->
+            val imeAnimations = mutableSetOf<WindowInsetsAnimation>()
+            var finalInsets: WindowInsets? = null
+            fun applyInsets(insets: WindowInsets) {
+                val bars = insets.getInsets(WindowInsets.Type.systemBars())
+                setPadding(bars.left, bars.top, bars.right, bars.bottom)
+                val overlap = maxOf(0, insets.getInsets(WindowInsets.Type.ime()).bottom - bars.bottom)
+                val scale = web.scale.takeIf { it > 0 } ?: resources.displayMetrics.density
+                keyboardHeightCss = overlap / scale
+                publishKeyboardHeight()
+            }
+            // Keep the renderer viewport stable; only the page's foreground follows the keyboard.
+            setOnApplyWindowInsetsListener { _, insets ->
                 if (Build.VERSION.SDK_INT >= 30) {
-                    val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.ime())
-                    v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+                    finalInsets = insets
+                    if (imeAnimations.isEmpty()) applyInsets(insets)
                     WindowInsets.CONSUMED
                 } else insets // Android 10's decor handles system bars and keyboard resizing.
             }
+            if (Build.VERSION.SDK_INT >= 30) {
+                setWindowInsetsAnimationCallback(object : WindowInsetsAnimation.Callback(DISPATCH_MODE_STOP) {
+                    override fun onPrepare(animation: WindowInsetsAnimation) {
+                        if (animation.typeMask and WindowInsets.Type.ime() != 0) imeAnimations += animation
+                    }
+                    override fun onProgress(insets: WindowInsets, runningAnimations: MutableList<WindowInsetsAnimation>): WindowInsets {
+                        applyInsets(insets)
+                        return WindowInsets.CONSUMED
+                    }
+                    override fun onEnd(animation: WindowInsetsAnimation) {
+                        imeAnimations -= animation
+                        if (imeAnimations.isEmpty()) finalInsets?.let { applyInsets(it) }
+                    }
+                })
+            }
         }
         setContentView(frame)
+        current = WeakReference(this)
+        if (Build.VERSION.SDK_INT >= 33) {
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) { leaveCall() }
+        }
         load(intent)
+    }
+
+    private fun publishKeyboardHeight() {
+        if (Build.VERSION.SDK_INT < 30 || keyboardHeightCss == publishedKeyboardHeightCss) return
+        publishedKeyboardHeightCss = keyboardHeightCss
+        web.evaluateJavascript("document.documentElement.style.setProperty('--native-keyboard-height', '${keyboardHeightCss}px')", null)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -81,12 +126,17 @@ class CallActivity : Activity() {
         val answer = intent.getBooleanExtra(EXTRA_ANSWER, false)
         // Opened by "Answer": stop now. Opened by the ringing itself (locked phone): keep ringing until touched.
         if (answer) Ringer.stop(this)
+        if (link == loadedLink && callAudio?.isActive == true) return
         if (link == TEST_LINK) {
             web.loadData(TEST_PAGE, "text/html", "utf-8")
             return
         }
         callAudio?.let { web.removeJavascriptInterface("CallMeApp"); it.release() }
-        callAudio = CallAudio(this, web, link.substringBefore("/?")) { finish() }.also { web.addJavascriptInterface(it, "CallMeApp") }
+        loadedLink?.let { ListenService.callEnded(this, it) }
+        loadedLink = link
+        callAudio = CallAudio(this, web, link.substringBefore("/?"),
+            onBegin = { ListenService.callStarted(this, link) }, onEnd = { finish() })
+            .also { web.addJavascriptInterface(it, "CallMeApp") }
         retries = 0
         web.loadUrl(if (answer) "$link&auto=1" else link)
     }
@@ -97,16 +147,31 @@ class CallActivity : Activity() {
         Ringer.stop(this)
     }
 
-    // Leaving the call screen hangs up.
+    private fun leaveCall() {
+        if (callAudio?.isActive == true) moveTaskToBack(true) else finish()
+    }
+
+    @Deprecated("Used on Android 12 and earlier")
+    override fun onBackPressed() = leaveCall()
+
+    // Finishing the call screen releases the call; Home and Back keep the activity alive.
     override fun onDestroy() {
         Ringer.stop(this)
         intent.getStringExtra(EXTRA_LINK)?.let { DeclineReceiver.hangUp(it) }
         callAudio?.release()
+        loadedLink?.let { ListenService.callEnded(this, it) }
+        if (current?.get() === this) current = null
         web.destroy()
         super.onDestroy()
     }
 
     companion object {
+        private var current: WeakReference<CallActivity>? = null
+        fun finishCall(link: String): Boolean {
+            val activity = current?.get()?.takeIf { it.loadedLink == link && !it.isFinishing } ?: return false
+            activity.finish()
+            return true
+        }
         private const val EXTRA_LINK = "link"
         private const val EXTRA_ANSWER = "answer"
         const val TEST_LINK = "test:ring"

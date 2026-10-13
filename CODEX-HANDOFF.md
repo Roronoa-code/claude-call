@@ -46,12 +46,12 @@ Timing rules the engine uses today: live captions every ~0.9 s; the user's turn 
 | `asr.mjs` | CPU Whisper fallback |
 | `test-call.mjs`, `phone-sim.mjs` | Full call test in headless Edge with a fake mic (see section 6) |
 | `asr-check.mjs`, `voice/server_check.mjs` | Self-checks for hearing and voice speed |
-| `speech-check.mjs`, `call-ui/check.mjs` | Offline packet/transcript and screen regression checks, with fake I/O and no call services |
+| `speech-check.mjs`, `mic-check.mjs`, `turn-check.mjs`, `call-ui/check.mjs` | Offline packet/transcript, capture lifecycle, turn handling and screen checks with fake I/O and no call services |
 | `design-preview/` | Preview site for UI alternatives (`npm start`, http://127.0.0.1:5178) |
 | `android/` | Kotlin app, no libraries: `ListenService`, `Ringer`, `CallActivity`, `CallAudio`, `ModeWidget`, `MainActivity`, `Receivers` |
 | `README.md` / `LAPTOP.md` | How it works / second-machine setup |
 
-## 3b. Claude status update (historical, 2026-10-13; current status is in 3c)
+## 3b. Claude status update (historical, 2026-10-13; current status is in 3f)
 
 Claude then edited code for items 1, 4 and 8. **Written and built, NOT tested** (the user said not to run tests):
 - **Item 8 (Whisper vocabulary):** `VOCAB` in `voice/voice_server.py` is now always put in front of the prompt in `hear()`. Needs a voice-server restart to apply (it is a long-running hidden pythonw process). Then check with `node asr-check.mjs`.
@@ -64,7 +64,7 @@ Claude then edited code for items 1, 4 and 8. **Written and built, NOT tested** 
 - **Still open:** real-phone verification of 6, the "control row disappears at turn end" part of item 3 (not seen in the frames I checked), and verifying everything above on the real phone.
 - Claude subsequently committed and pushed these changes in `9941ae4`, added the CPU vocabulary hint in `86c0f85`, and updated the README in `38b0f58`.
 
-## 3c. Codex continuation, 2026-10-13
+## 3c. Initial Codex continuation (historical), 2026-10-13
 
 **Initial boundary (subsequently superseded by the user's phone-test authorization; see 3e):** the user was expecting a call and prohibited phone tests. No ADB, Android build/install, real calls, microphone access, model startup, contact-mode changes or service restarts were performed in this initial batch.
 
@@ -102,7 +102,7 @@ A separate **pre-separation** desktop replay inspected 1,287 screencast deliveri
 
 Local evidence is in `D:\Outputs\CallMe\recording-20261013\` (frames, timestamps, metrics, contact sheets, four-frame evidence strips and second-opinion comparisons), with the offline replay in `D:\Outputs\CallMe\offline-flicker-probe\`. Recording/screenshots were not added to Git. Phone confirmation remains deferred under the user's no-phone-test boundary. No APK update is needed for this page-only change.
 
-## 3e. Authorized S25 verification and fixes, 2026-10-13
+## 3e. First authorized S25 verification batch (historical), 2026-10-13
 
 The user explicitly authorized all phone tests at `192.168.0.210:44567`, then left the phone available while AFK. This superseded the earlier no-phone boundary for this task. Checks used the normal `fyi.mani.callme` release app, with a temporary signed instrumentation runner opening its real CallActivity without ringing. Contact mode stayed **text**; the real-audio fixture used its own status file and private test topic.
 
@@ -122,14 +122,36 @@ The user explicitly authorized all phone tests at `192.168.0.210:44567`, then le
 
 **Final cleanup:** temporary instrumentation APK and ADB forwarding removed; owned fixture, audio helpers, GPU server and Gradle stopped. The normal app's foreground ListenService was restarted and verified active, then the phone returned home. Contact mode remains text; shared gateway/tunnel and other session servers remain running. No test call was sent to the real notification topic.
 
+## 3f. Current continuation and remaining acceptance, 2026-10-13
+
+**STOP / HANDOFF TO CLAUDE:** Abdul ended this session with "hi ur job is done im handing it to claude". Do not resume tests or place another call from this session. The latest batch is **uncommitted and unpushed** on `main` after `14329ace78431e1cee03f467e1eb12a5292dab64`; all current CallMe source changes belong to this batch. No second real call was placed. The facts below supersede pending statements farther down this historical section.
+
+- The normal app is installed with data retained. Current release APK SHA256: `537B7FA5D3B428CA479E9D78E43E193D085E4AB9D482C4ABE5FB7624848CEEE3`. Source/built page match the latest keyboard margin. `npm run build`, `node check.mjs`, `node turn-check.mjs`, and `node mic-check.mjs` passed for their affected final changes.
+- `keyboard-insets.mp4`: all 1,464 original frames reviewed; no foreground loss, detached glyph or Done artifact, and zero renderer tile warnings. It still briefly overlapped the rising keyboard by 37.3 CSS px. Final CSS therefore reserves 48px below the composer and 158px below the stage. `keyboard-gap.mp4` checks **Close only** (its console success label incorrectly also names Back/Send). Its geometry passed; 734 original frames scanned with no mascot/header/Claude-first-line/thinking-row loss flags; maximum encoded timestamp gap 41.522ms. **Visual review and measured composer clearance of this final margin remain unfinished** because the user stopped work. Files: `D:\Outputs\CallMe\phone-20261013\frame-analysis\keyboard-gap\`.
+- Live Activity is now confirmed promoted by the phone: `live-update-final.json` reports `hasPromotableCharacteristics=true`, `promoted=true`, flags `262250`. Samsung's own framework excludes CallStyle from promotable styles; the implementation falls back to BigTextStyle with End action only when CallStyle is ineligible. Now Bar/lockscreen appearance and real user Return/End interactions remain unchecked.
+- Native background checks retained the same page and advancing microphone frames through Home/Back/launcher return (latest 14 -> 77 -> 106). Quiet human interruptions, followup speech while thinking and subjective lag still need a real call. An intermittent suspended AudioContext fixture occurred; early synchronous startup was added and a diagnostic rerun passed, but this is not proof of universal startup reliability.
+- Cleanup: owned GPU Python processes 15852/19028 and fixture 48420 stopped; ADB forward 9230 removed. Normal ListenService restored and verified foreground with listener-only type `0x40000000`. Shared gateway/tunnel/other MCP servers left alone; global contact mode remains text. **Temporary `fyi.mani.callme.test` is still installed**: a combined cleanup command was rejected by automatic policy review with only "blocked by policy" and no detailed reason; no removal was confirmed. Gradle was already stopped. Do not infer that the earlier section 3e cleanup applies to this batch.
+- Prepared but NOT executed: `D:\Outputs\CallMe\phone-20261013\live-call.mjs` rings immediately when run, and `live-record.mjs` records while CallActivity is visible. `live-control.json` is stale. Do not treat either helper's existence as a completed call. Start a fresh MCP process to load current server code; preserve other sessions' processes.
+
+The user returned, explicitly requested a real call and tests, then reported that it still felt laggy and that leaving the call screen lost the call. Earlier sections describe completed batches, not a claim that the present UI is fully fixed.
+
+- **New recording:** all 128 original frames of `Screen_Recording_20261013_165949.mp4` were reviewed without resampling. They show keyboard-driven jumps, a Done circle appearing in the conversation, and detached keyboard glyphs during dismissal. Clawd/header remain present; this is not the earlier random blank-tile failure. Evidence: `D:\Outputs\CallMe\recording-165949\REPORT.md`. The previous stable replay/static checks did not cover this transition.
+- **Keyboard:** the first candidate resized the WebView on every native IME frame and still failed in four reviewed frames. The replacement keeps WebView/glow height fixed at 798 CSS px, pads only system bars, and sends native keyboard overlap through `--native-keyboard-height`. The foreground shrinks 798 -> 439 -> 798 while typing follows the insets. Close/Back/Send wait for restoration before the approved morph closes into the real Type button; focus now happens after the opening commit, removing the 200ms delay. `keyboard-insets-results.json` passes all three native geometry cases and `keyboard-insets-logcat.txt` has zero tile warnings. **Full visual review of `keyboard-insets.mp4` is pending; do not claim complete smoothness or final visual acceptance.**
+- **Speech while thinking:** the old engine left capture in `idle` after a submitted reply, discarding followup speech. It now silently resumes listening after transcription, orders final uploads, protects newer live captions/status from older results, and waits for active user speech/final transcription before refreshing and playing the newest held answer. Hangup/mute release that hold; queued uploads do not start after end, and stalled final transcription is bounded by the existing 90s limit. `turn-check.mjs` and `mic-check.mjs` pass with the actual source and fake I/O/clock. `audioCtx()` now starts before awaiting microphone acquisition, including native startup. These changes still need real-call followup/interruption acceptance.
+- **Measured live timing:** the first human reply transcribed in 195ms. Codex then took 40.978s to issue the next prompt; voice preparation took 339ms. That long pause was this session's agent orchestration, not the app or a measured model-thinking latency. No claim of reaching the 0.3s conversation target. Quiet human interruption has not yet been tested; GPU prewarming is planned for the next call.
+- **Background call:** Home, Back and the launcher keep the active activity/page rather than destroying and reloading it. Two native checks passed with the same page marker and live microphone/context; the latest observed frame counts continued 12 -> 52 -> 82 across leaving and returning. The ongoing CallStyle notification has a timer and Return/End actions. Live Update promotion is requested, but diagnostics show posting allowed and `hasPromotableCharacteristics=false`, `promoted=false`. The Android agent is investigating; requested promotion is not proof of promotion.
+- **Config startup:** both `config.json` reads in `server.mjs` now strip a UTF-8 BOM before parsing. MCP startup against an actual BOM-prefixed config passed. Config contents remain private and were not added to Git.
+
+Evidence stays under `D:\Outputs\CallMe\phone-20261013\` and `recording-165949\`. The normal app was updated over its existing package. Current-turn device/visual/call work is still active; this section does not assert final cleanup, delivery or a completed human-call test. Replace pending facts with the final results after those checks finish.
+
 ## 4. Original issues and remaining acceptance. Recording: `C:\Users\abdul\Downloads\Screen_Recording_20261013_141027.mp4`
 
 All came from the first real call on the S25. Items 1 to 4 are call-screen (`call-ui/`); no app rebuild needed for those.
 
 1. **Giant bubble after an interrupt.** After the user cuts in, the whole long line, including the words never spoken, becomes one giant Claude bubble that pushes the user's live bubble behind the status line.
    Fix: keep only the *spoken* words in the bubble (the engine already reports `spoken` with a cut index), cap the bubble height, and scroll so the user's bubble always stays visible.
-2. **Clawd vanishes for a frame or two:** the original recording and failed first approach are in 3d; final native verification is in 3e.
-3. **Control row disappears repeatedly:** confirmed in the original video, then fixed with the glow-layer reduction; see 3e for final frame evidence and limits.
+2. **Clawd vanishes for a frame or two:** the original recording and failed first approach are in 3d; earlier native replay evidence is in 3e. Current keyboard acceptance is in 3f.
+3. **Control row disappears repeatedly:** glow reduction passed the earlier native replay, but the newer user recording revealed separate keyboard dismissal artifacts. See 3f; current full visual acceptance is pending.
 4. **Empty "Claude" caption** flashes before a line's first words. Don't render the caption until there is text.
 5. **Turn handover takes 3.3 s** even when it reuses the live transcript; target about **0.3 s**. Trace from "user stopped" (engine) to `/speech` sent to the agent receiving the text to the next line arriving. `timing.log` has marks; `node test-call.mjs` prints "you stopped -> turn sent X ms, transcript back Y ms". Find the first stage that waits longer than it needs to (likely a final `/stt` request being awaited when the last live partial is already complete).
 6. **Quiet interrupts fail on the earpiece.** The original report had near-zero microphone levels during playback; Samsung call-mode suppression was a hypothesis. The authorized automatic check received live microphone frames during playback, but no human quiet-speech test was possible while the user was AFK. See 3e for the route-specific echo-cancellation fix. Quiet interruption sensitivity remains open.
@@ -148,6 +170,7 @@ They are not mine. Review them, build, and commit them if they are done and look
 
 - While phone/service work is restricted, use only `node speech-check.mjs` and `cd call-ui; npm run build; node check.mjs`. They use fake I/O and do not load voice models or start call services.
 - `node mic-check.mjs` checks the actual engine's capture lifecycle with deferred fake microphone requests: replacements, failures, rapid toggles, pending startup and call-end cleanup. It is also safe offline.
+- `node turn-check.mjs` checks the actual engine/CallView with fake I/O/clock: followup capture during thinking, protected newer captions/status, latest held answers, ordered/duplicate/end-safe submissions, timeout and mute/hangup release.
 - `node test-call.mjs` runs a whole call against the real call page in headless Edge with a fake mic (`phone-sim.mjs`). It uses a private test topic, no tunnel, and its own status file. It sets `CALLME_STATUS` / `CALLME_LOCAL` so it **never touches the real `status.json` or the real ntfy topic**. Expect PASS plus latency lines.
 - `node test-call.mjs fallback` checks the no-GPU voices.
 - `node asr-check.mjs` checks that context fixes misheard names.
@@ -196,5 +219,6 @@ adb install -r ClaudeCall.apk
 ## 10. Remaining acceptance
 
 1. With the user present, check quiet earpiece interruptions, Whisper's recognition of the reported phrase, route stability and full conversation handover timing. Automatic microphone and playback checks do not substitute for this.
-2. Keep the native frame evidence in 3e as the baseline. If flicker returns, capture the normal app and inspect Chromium tile warnings; do not restore the removed glow layers or add speculative compositing layers.
-3. The phone APK is already updated. `page.html` and `call-engine.js` load on the next call-page load. The earlier `server.mjs` packet-ordering fixes require a newly started MCP process; shared existing session servers were not restarted.
+2. Finish the current native keyboard frame review and a real call covering repeated Close/Back/Send, background/return, and spoken followups during thinking. The earlier stable replay in 3e is a baseline, not proof of the newer keyboard transition.
+3. Verify Live Update promotion from actual notification diagnostics; posting permission and a request flag are insufficient. Current status is in 3f.
+4. The phone APK is updated over the existing app. `page.html` and `call-engine.js` load on the next call-page load. Server changes require a newly started MCP process; preserve other sessions' running servers.

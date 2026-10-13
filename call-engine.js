@@ -64,6 +64,7 @@
     let noiseFloor = 0.01, echo = 0.004, preroll = [];
     let mode = 'idle';      // idle | listen (waiting for speech) | talk (user speaking) | claude (Claude's line)
     let utt = null, barge = null, cutIn = false, quietSince = 0, startedAt = 0;
+    let lastTurn = null, speechPending = 0, speechReady = Promise.resolve();
     let hot = [], loudRun = 0;
     let line = null;        // Claude's line now: { id, text, startAt, pos, posAt, posFn, dur, cut, audioId }
     let stopLine = null;    // silences it at once
@@ -209,8 +210,9 @@
     }
     function startTalking(u, interrupted, now) {
       utt = u; mode = 'talk'; cutIn = interrupted; startedAt = quietSince = now; u.speechEndRaw = u.raw;
+      lastTurn = u.id;
+      emit('partial', { id: u.id, text: u.partial?.text || '' });
       emit('status', 'Hearing you…'); emit('busy', false); emit('canFinish', true);
-      if (u.partial?.text) emit('partial', { id: u.id, text: u.partial.text });
     }
     function listen() {
       if (ended) return;
@@ -229,12 +231,26 @@
       emit('status', 'Got it…'); emit('busy', true);
       dbg(`turn end (${why}) after ${quiet}ms quiet, caption "${u.partial?.text || ''}"`);
       const { off, body } = take(u);
+      speechPending++;
       try {
-        const r = await (await fetch(`${api('speech')}&u=${u.id}&off=${off}&end=${to16(u.speechEndRaw)}&quiet=${quiet}${wasCut ? '&interrupted=1' : ''}`,
-          { method: 'POST', body })).json();
+        const request = speechReady.then(async () => {
+          if (ended) return null;
+          return (await fetch(`${api('speech')}&u=${u.id}&off=${off}&end=${to16(u.speechEndRaw)}&quiet=${quiet}${wasCut ? '&interrupted=1' : ''}`,
+            { method: 'POST', body, signal: AbortSignal.timeout(MAX_MS) })).json();
+        });
+        speechReady = request.catch(() => {}); // submit successive turns in order, including after a failed request
+        const r = await request;
+        if (ended) return;
         emit('heard', { id: u.id, text: r.text });
-        if (r.text) emit('status', 'Claude is thinking…'); else if (mode === 'idle' && !line) listen();
-      } catch { emit('status', 'Could not send audio, type instead'); }
+        if (lastTurn === u.id && !muted && mode === 'idle' && !line) {
+          if (r.text) emit('status', 'Claude is thinking…'); else listen();
+        }
+      } catch { if (!ended && lastTurn === u.id && mode !== 'talk' && mode !== 'claude') emit('status', 'Could not send audio, type instead'); }
+      finally {
+        speechPending--;
+        // Keep hearing followups during agent thinking without replacing its thinking caption.
+        if (!ended && !muted && micStream && !line && mode === 'idle' && lastTurn === u.id) mode = 'listen';
+      }
     }
 
     // ---- Claude's voice ----
@@ -364,8 +380,31 @@
         v = s.v; debug = s.debug; emit('state', s);
         if (!s.say) { emit('status', 'Connecting…'); continue; }
         if (s.seq === lastSeq) continue;
+        if (mode === 'talk' || speechPending) {
+          const until = performance.now() + MAX_MS;
+          const watch = new AbortController();
+          let waiting = true;
+          // The usual long poll also lets a hangup replace an answer while the user is still talking.
+          (async () => {
+            let seen = s.v;
+            while (waiting && !ended && !s.end) {
+              const next = await (await fetch(`${api('state')}&v=${seen}`, { cache: 'no-store', signal: watch.signal })).json();
+              if (!waiting) return;
+              s = next; seen = next.v;
+            }
+          })().catch(() => {});
+          while (!ended && !muted && !s.end && (mode === 'talk' || speechPending) && performance.now() < until) await sleep(50);
+          waiting = false; watch.abort();
+          if (ended) return;
+          if (s.end) return end();
+          try { s = await getState(); }
+          catch { emit('status', 'Reconnecting…'); await sleep(1000); continue; }
+          v = s.v; debug = s.debug; emit('state', s);
+          if (s.end && (mode === 'talk' || speechPending)) return end();
+          if (mode === 'talk' || (!muted && speechPending)) { v = -1; continue; }
+          if (!s.say || s.seq === lastSeq) continue;
+        }
         lastSeq = s.seq;
-        if (mode === 'talk') finish('new line'); // keep what they were saying (it reaches Claude's next turn)
         await playLine(s);
         if (s.end) return end();
         if (mode === 'talk') continue; // they cut in: already listening
@@ -385,7 +424,7 @@
     return {
       async answer() {
         player.src = SILENT_WAV; player.play().catch(() => {}); // mobile audio must first start from a tap
-        if (!app?.stream) audioCtx();
+        audioCtx();
         app?.begin?.(); // call audio (earpiece) from now on
         emit('status', 'Connected');
         try { await startMic(); } catch { muted = true; emit('muted', true); }
@@ -397,7 +436,8 @@
       async sendTyped(text) {
         text = (text || '').trim(); if (!text) return;
         if (mode === 'talk' || mode === 'listen') dropUtterance();
-        emit('heard', { id: 'typed-' + Date.now(), text, typed: true });
+        lastTurn = 'typed-' + Date.now();
+        emit('heard', { id: lastTurn, text, typed: true });
         emit('status', 'Claude is thinking…'); emit('busy', true);
         await fetch(api('reply'), { method: 'POST', body: text });
       },
