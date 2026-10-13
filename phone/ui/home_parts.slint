@@ -1,4 +1,4 @@
-// The home screen's state (set from Rust), the contact modes, Clawd's pixels, and the setup card.
+// The home screen's state (set from Rust), the contact modes, Clawd and Null, and the setup card.
 import { T, Icons, Px } from "parts.slint";
 
 export struct Mode { id: string, label: string, icon: string, title: string, desc: string }
@@ -10,6 +10,7 @@ export global Home {
     in property <string> topic;
     in property <bool> can-pin: true;
     in property <[Px]> clawd; // in grid cells: 1px = one cell
+    in property <int> null-frame; // Codex's pet: which frame of null.png (row * 6 + column)
     in property <length> sat: 36px;
     in property <length> sab: 24px;
     in property <length> kb; // the keyboard's height while the channel is being edited
@@ -40,6 +41,23 @@ export component Clawd {
         height: p.h * 2 * root.u;
         background: p.c;
         opacity: p.o;
+    }
+}
+
+// Null, Codex's pet, standing on the same line as Clawd: its frames drawn pixel for pixel (see call.slint).
+export component Null {
+    width: 64px;
+    height: 80px;
+    Image {
+        source: @image-url("null.png");
+        source-clip-x: Math.mod(Home.null-frame, 6) * 252;
+        source-clip-y: floor(Home.null-frame / 6) * 364;
+        source-clip-width: 252;
+        source-clip-height: 364;
+        x: parent.width / 2 - 126phx;
+        y: parent.height - 346phx;
+        width: 252phx;
+        height: 364phx;
     }
 }
 

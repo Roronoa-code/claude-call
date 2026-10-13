@@ -1,9 +1,0 @@
-{
-  "name": "callme-tests",
-  "private": true,
-  "type": "module",
-  "description": "Test tool only: phone-check.mjs drives the Rust server and the real phone app.",
-  "devDependencies": {
-    "@modelcontextprotocol/sdk": "^1.32.1"
-  }
-}

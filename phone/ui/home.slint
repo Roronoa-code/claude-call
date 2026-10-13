@@ -1,7 +1,7 @@
-// The home screen ("stage"): Clawd on a soft light in the middle, how agents can reach you as one sliding control,
+// The home screen ("stage"): Clawd and Null on a soft light in the middle, how agents can reach you as one sliding control,
 // and the call screen's round buttons along the bottom. Widget and Channel grow out of their buttons.
 import { T, Icon, Icons, Morph } from "parts.slint";
-import { Home, Clawd, SetupCard } from "home_parts.slint";
+import { Home, Clawd, Null, SetupCard } from "home_parts.slint";
 
 component Round {
     in property <string> icon;
@@ -69,10 +69,10 @@ export component HomeScreen inherits Window {
     property <length> col-w: (self.width - 40px) / n;
     property <length> sheet-w: self.width - 40px;
 
-    // The stage light behind Clawd.
+    // The stage light behind Clawd and Null.
     Rectangle {
         x: (parent.width - 440px) / 2;
-        y: stage.y + 50px - 220px; // centred on Clawd
+        y: stage.y + 40px - 220px; // centred on the pair
         width: 440px;
         height: 440px;
         background: @radial-gradient(circle, #d977572e 0%, #8a5cff14 40%, #11121400 70%);
@@ -96,7 +96,8 @@ export component HomeScreen inherits Window {
         width: parent.width - 40px;
         y: Home.sat + 52px + (root.row-y - Home.sat - 52px - self.preferred-height) / 2;
         height: self.preferred-height;
-        HorizontalLayout { alignment: center; Clawd { u: 5; } }
+        // Whoever may call: Clawd (Claude) and Null (Codex), side by side.
+        HorizontalLayout { alignment: center; spacing: 30px; Clawd { u: 4; } Null { } }
         Rectangle { height: 28px; }
         Text {
             text: Home.ready ? Home.modes[Home.index].title : "Almost ready";
@@ -231,6 +232,7 @@ export component HomeScreen inherits Window {
                     x: 14px;
                     width: parent.width - 28px;
                     text <=> root.draft;
+                    enabled: root.channel; // closed, it can't take focus (and bring up the keyboard on its own)
                     font-size: 15px;
                     color: T.fg;
                     single-line: true;

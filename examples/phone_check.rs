@@ -1,0 +1,268 @@
+//! Real-phone check of the call screen, without ringing: places a call on a private test topic (nobody listens to it),
+//! opens it on the phone through the app's CallCheck instrumentation, answers with typed replies, and saves
+//! screenshots, screen recordings and CPU readings to D:/Outputs/CallMe.
+//!   cargo run --release --example phone_check -- [adb serial]      (CALLME_AGENT=Codex: a call from Codex)
+//! Needs: callme built (cargo build --release), the app and its check APK installed
+//! (gradlew installRelease installReleaseAndroidTest).
+use serde_json::{Value, json};
+use std::{
+    collections::HashMap,
+    process::{Command, Stdio},
+    sync::{Arc, Mutex},
+    time::{Duration, Instant, SystemTime},
+};
+use tokio::{
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    sync::oneshot,
+    time::sleep,
+};
+
+type Pending = Arc<Mutex<HashMap<u64, oneshot::Sender<Value>>>>;
+
+struct Check {
+    device: Option<String>,
+    out: std::path::PathBuf,
+    t0: Instant,
+}
+
+impl Check {
+    fn say(&self, msg: impl AsRef<str>) {
+        println!("[{:.1}s] {}", self.t0.elapsed().as_secs_f32(), msg.as_ref());
+    }
+    fn adb_cmd(&self, args: &[&str]) -> Command {
+        let mut c = Command::new("adb");
+        if let Some(d) = &self.device {
+            c.args(["-s", d]);
+        }
+        c.args(args);
+        c
+    }
+    fn adb(&self, args: &[&str]) -> String {
+        let out = self.adb_cmd(args).output().expect("adb");
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    }
+    fn shot(&self, name: &str) {
+        let png = self.adb_cmd(&["exec-out", "screencap", "-p"]).output().expect("adb").stdout;
+        std::fs::write(self.out.join(format!("{name}.png")), png).unwrap();
+        self.say(format!("shot {name}"));
+    }
+    fn cpu(&self) -> String {
+        let pid = self.adb(&["shell", "pidof", "fyi.mani.callme"]).trim().to_string();
+        let top = self.adb(&["shell", "top", "-b", "-n", "1", "-p", &pid]);
+        let line = top.lines().find(|l| l.contains(&pid)).unwrap_or("");
+        line.split_whitespace().nth(8).unwrap_or("?").to_string()
+    }
+    fn record(&self, secs: u32, file: &str) -> std::process::Child {
+        self.adb_cmd(&["shell", "screenrecord", "--time-limit", &secs.to_string(), &format!("/sdcard/{file}")])
+            .stdout(Stdio::null())
+            .spawn()
+            .expect("adb")
+    }
+    fn pull(&self, file: &str, name: &str) {
+        self.adb(&["pull", &format!("/sdcard/{file}"), &self.out.join(name).to_string_lossy()]);
+    }
+    /// Only ever taps the call screen (a tap anywhere else would be a real tap on the user's phone).
+    fn tap(&self, x: f32, y: f32, what: &str) {
+        let focus = self.adb(&["shell", "dumpsys", "window"]);
+        let focus = focus.lines().find(|l| l.contains("mCurrentFocus=")).unwrap_or("");
+        assert!(focus.contains("fyi.mani.callme"), "call screen not in front; not tapping {what}");
+        self.adb(&["shell", "input", "tap", &(x.round() as i32).to_string(), &(y.round() as i32).to_string()]);
+        self.say(format!("tap {what}"));
+    }
+    fn keyboard_up(&self) -> bool {
+        self.adb(&["shell", "dumpsys", "input_method"]).contains("mInputShown=true")
+    }
+}
+
+/// A minimal MCP client for callme.exe: newline-delimited JSON-RPC, calls may overlap.
+struct Mcp {
+    stdin: tokio::sync::Mutex<tokio::process::ChildStdin>,
+    pending: Pending,
+    next: Mutex<u64>,
+}
+
+impl Mcp {
+    async fn request(&self, method: &str, params: Value) -> Value {
+        let id = {
+            let mut n = self.next.lock().unwrap();
+            *n += 1;
+            *n
+        };
+        let (tx, rx) = oneshot::channel();
+        self.pending.lock().unwrap().insert(id, tx);
+        let msg = json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params });
+        self.stdin.lock().await.write_all(format!("{msg}\n").as_bytes()).await.unwrap();
+        rx.await.unwrap()
+    }
+    async fn call(&self, name: &str, message: &str) -> String {
+        let r = self.request("tools/call", json!({ "name": name, "arguments": { "message": message } })).await;
+        r["result"]["content"][0]["text"].as_str().unwrap_or("").to_string()
+    }
+}
+
+async fn reply(link: &str, text: &str) {
+    let (base, query) = link.split_once("/?").unwrap();
+    let token = query.split('&').next().unwrap();
+    reqwest::Client::new().post(format!("{base}/reply?{token}")).body(text.to_string()).send().await.unwrap();
+}
+
+#[tokio::main]
+async fn main() {
+    let stamp: String = humantime::format_rfc3339_seconds(SystemTime::now()).to_string().chars().filter(char::is_ascii_digit).take(12).collect();
+    let c = Arc::new(Check {
+        device: std::env::args().nth(1),
+        out: std::path::PathBuf::from(format!("D:/Outputs/CallMe/phone-check-{stamp}")),
+        t0: Instant::now(),
+    });
+    std::fs::create_dir_all(&c.out).unwrap();
+    let now_ms = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
+    let exe = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/release/callme.exe");
+    let mut child = tokio::process::Command::new(exe)
+        .env("CALLME_TOPIC", format!("claude-check-{now_ms}"))
+        .env("CALLME_STATUS", std::env::temp_dir().join(format!("callme-check-{now_ms}.json")))
+        .env("CALLME_DEBUG", "1")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .expect("callme.exe (cargo build --release first)");
+
+    // The call link appears on callme's log: open the call screen on the phone with it.
+    let link = Arc::new(Mutex::new(None::<String>));
+    let instrument = Arc::new(Mutex::new(None::<std::process::Child>));
+    let mut err = BufReader::new(child.stderr.take().unwrap()).lines();
+    tokio::spawn({
+        let (link, instrument, c) = (link.clone(), instrument.clone(), c.clone());
+        async move {
+            while let Ok(Some(line)) = err.next_line().await {
+                let Some(l) = line.split("call link ").nth(1).and_then(|s| s.split_whitespace().next()) else { continue };
+                if link.lock().unwrap().is_none() {
+                    *link.lock().unwrap() = Some(l.to_string());
+                    c.say("opening the call screen on the phone");
+                    let cmd = format!("am instrument -w -e link '{l}' fyi.mani.callme.test/fyi.mani.callme.CallCheck");
+                    *instrument.lock().unwrap() = Some(c.adb_cmd(&["shell", &cmd]).stdout(Stdio::null()).spawn().expect("adb"));
+                }
+            }
+        }
+    });
+    let pending: Pending = Arc::default();
+    let mut out = BufReader::new(child.stdout.take().unwrap()).lines();
+    tokio::spawn({
+        let pending = pending.clone();
+        async move {
+            while let Ok(Some(line)) = out.next_line().await {
+                let Ok(v) = serde_json::from_str::<Value>(&line) else { continue };
+                if let Some(tx) = v["id"].as_u64().and_then(|id| pending.lock().unwrap().remove(&id)) {
+                    let _ = tx.send(v);
+                }
+            }
+        }
+    });
+    let mcp = Arc::new(Mcp { stdin: tokio::sync::Mutex::new(child.stdin.take().unwrap()), pending, next: Mutex::new(0) });
+    mcp.request("initialize", json!({ "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": { "name": "phone-check", "version": "1" } })).await;
+
+    let mut report = vec![];
+    let spawn_call = |name: &'static str, msg: &'static str| {
+        let mcp = mcp.clone();
+        tokio::spawn(async move { mcp.call(name, msg).await })
+    };
+    let first = spawn_call("call_user", "Hi, it is Claude. This is a quick test of the new call screen.");
+    let link = loop {
+        if let Some(l) = link.lock().unwrap().clone() {
+            break l;
+        }
+        sleep(Duration::from_millis(200)).await;
+    };
+    sleep(Duration::from_secs(9)).await;
+    c.shot("1-talking");
+    report.push(format!("ongoing-call notification: {}", c.adb(&["shell", "dumpsys", "notification"]).contains("channel=ongoing_calls")));
+    sleep(Duration::from_secs(3)).await;
+    reply(&link, "Looks good so far.").await;
+    c.say(format!("REPLY 1 {}", first.await.unwrap()));
+    sleep(Duration::from_millis(800)).await;
+    c.shot("2-thinking");
+
+    // A long line: captions word by word, the glow and the mascot's dance; recorded and measured.
+    let mut rec = c.record(20, "callme-check.mp4");
+    let long = spawn_call(
+        "continue_call",
+        "Great. So the plan is to move the settings into a side panel, change the colours to match the new theme, and rename a few of the buttons so they read more clearly. Then I will run the tests and push it.",
+    );
+    let mut cpus = vec![];
+    for i in 0..6 {
+        sleep(Duration::from_millis(2500)).await;
+        cpus.push(c.cpu());
+        if i == 2 {
+            c.shot("3-talking-long");
+        }
+    }
+    report.push(format!("cpu while talking: {}%", cpus.join(", ")));
+    reply(&link, "Sounds right.").await;
+    c.say(format!("REPLY 2 {}", long.await.unwrap()));
+    rec.wait().unwrap();
+    c.pull("callme-check.mp4", "talking.mp4");
+
+    c.say(mcp.call("hold_call", "One sec, let me check with the main Claude.").await);
+    sleep(Duration::from_secs(5)).await;
+    c.shot("4-hold");
+    let mut idle = vec![];
+    for _ in 0..4 {
+        sleep(Duration::from_secs(2)).await;
+        idle.push(c.cpu());
+    }
+    report.push(format!("cpu on hold: {}%", idle.join(", ")));
+
+    // The two sheets, tapped like a person would, on a recording: Captions (the transcript) and Type (the keyboard).
+    let size = c.adb(&["shell", "wm", "size"]);
+    let (w, h) = size.rsplit(' ').next().unwrap().trim().split_once('x').map(|(w, h)| (w.parse::<f32>().unwrap(), h.parse::<f32>().unwrap())).unwrap();
+    let row_y = h * 0.7077; // the round buttons' centre row (measured on the S25 screenshots)
+    let mut sheets = c.record(30, "callme-sheets.mp4");
+    sleep(Duration::from_secs(1)).await;
+    c.tap(w * 0.6146, row_y, "Captions");
+    sleep(Duration::from_millis(1500)).await;
+    c.shot("6-captions-open");
+    c.tap(w * 0.6146, row_y, "Captions (close)");
+    sleep(Duration::from_millis(1500)).await;
+    c.tap(w * 0.843, row_y, "Type");
+    sleep(Duration::from_millis(1800)).await;
+    c.shot("7-type-open");
+    c.adb(&["shell", "input", "text", "hello%sthere"]);
+    sleep(Duration::from_secs(1)).await;
+    c.shot("8-type-text");
+    c.say(format!("keyboard shown: {}", c.keyboard_up()));
+    if c.keyboard_up() {
+        c.adb(&["shell", "input", "keyevent", "KEYCODE_BACK"]);
+    }
+    c.say("Back (keyboard away: the reply field should close)");
+    sleep(Duration::from_millis(1500)).await;
+    c.shot("9-type-back");
+    c.tap(w * 0.843, row_y, "Type again");
+    sleep(Duration::from_millis(1500)).await;
+    c.adb(&["shell", "input", "text", "sent%sfrom%sthe%sphone"]);
+    c.adb(&["shell", "input", "keyevent", "KEYCODE_ENTER"]);
+    c.say("Enter (sends)");
+    sleep(Duration::from_millis(1800)).await;
+    c.shot("10-type-sent");
+    sheets.wait().unwrap();
+    c.pull("callme-sheets.mp4", "sheets.mp4");
+    let back = spawn_call("continue_call", "Okay, I am back. The main Claude says yes.");
+    reply(&link, "Also make the button blue.").await;
+    c.say(format!("REPLY 3 {}", back.await.unwrap()));
+    let bye = spawn_call("end_call", "Okay, all done. Bye!");
+    sleep(Duration::from_millis(2500)).await;
+    c.shot("5-ending");
+    bye.await.unwrap();
+    let inst = instrument.lock().unwrap().take();
+    if let Some(mut i) = inst {
+        let _ = i.wait();
+    }
+    // The check ends by stopping the app (Android does that after instrumentation): start its call listener again.
+    c.adb(&["shell", "am", "start", "-n", "fyi.mani.callme/.MainActivity"]);
+    sleep(Duration::from_secs(3)).await;
+    c.adb(&["shell", "am", "start", "-a", "android.intent.action.MAIN", "-c", "android.intent.category.HOME"]);
+    let listening = c.adb(&["shell", "dumpsys", "activity", "services", "fyi.mani.callme"]).contains("ListenService");
+    c.say(format!("call listener restarted: {listening}"));
+    std::fs::write(c.out.join("report.txt"), report.join("\n") + "\n").unwrap();
+    c.say(format!("saved to {}", c.out.display()));
+}

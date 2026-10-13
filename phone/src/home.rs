@@ -3,6 +3,7 @@
 use crate::{
     Home, HomeScreen, Px, android, jx,
     mascot::{Mascot, Phase},
+    null::Null,
     ring, service, settings,
 };
 use slint::{ComponentHandle, ModelRc, VecModel};
@@ -71,9 +72,11 @@ pub fn run(_app: android_activity::AndroidApp) {
     });
     let mut density = refresh(&ui);
 
-    // Clawd idles on the home screen (asleep while it is quiet); only changed pixels are drawn.
+    // Clawd idles on the home screen (asleep while it is quiet) and Null idles beside it (at its laptop while it is
+    // quiet: they keep working); only what changed is drawn.
     let start = Instant::now();
     let mascot = Rc::new(RefCell::new(Mascot::new(0.0)));
+    let mut null = Null::default();
     let mut last: Vec<Px> = vec![];
     let mut last_refresh = Instant::now();
     let timer = slint::Timer::default();
@@ -96,7 +99,12 @@ pub fn run(_app: android_activity::AndroidApp) {
                 home.set_kb(kb);
             }
             let phase = if home.get_mode() == "none" { Phase::Hold } else { Phase::Listening };
-            let cells = mascot.borrow_mut().frame(start.elapsed().as_secs_f32(), phase, false, 0.0, 0.0);
+            let now = start.elapsed().as_secs_f32();
+            let n = null.frame(now, if phase == Phase::Hold { Phase::Hold } else { Phase::Hearing });
+            if home.get_null_frame() != n {
+                home.set_null_frame(n);
+            }
+            let cells = mascot.borrow_mut().frame(now, phase, false, 0.0, 0.0);
             let px: Vec<Px> = cells
                 .iter()
                 .map(|c| Px {

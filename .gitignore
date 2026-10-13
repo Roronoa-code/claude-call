@@ -9,12 +9,9 @@ android/app/src/main/res/values/topic.xml
 voice/*.mp3
 voice/*.wav
 voice/voice.json
-voice/refs.json
-voice/tests/
 voice/*.log
 
 # Downloads / environments / builds
-node_modules/
 bin/
 voice/.venv/
 __pycache__/
@@ -23,7 +20,6 @@ android/.kotlin/
 android/build/
 android/app/build/
 android/local.properties
-design-preview/node_modules/
 gateway.log
 
 # Rust build
