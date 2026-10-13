@@ -1,0 +1,275 @@
+// Building blocks of the call screen: colours, icons, crossfading text, Claude's spoken lines, the voice glow,
+// the thinking orb, round controls, and surfaces that grow out of their button.
+
+// One pixel of Clawd (or a particle), in px from the top-left of the mascot's box.
+export struct Px { x: length, y: length, w: length, h: length, c: color, o: float }
+// The big caption. `lit` is the part already spoken (the start of `text`); key changes swap it with a crossfade.
+export struct Cap { key: int, label: string, text: string, lit: string, size: int, tone: string, orb: bool }
+// A transcript row.
+export struct Msg { me: bool, text: string, lit: string }
+
+export global T {
+    out property <color> bg: #111214;
+    out property <color> fg: #f2f2f3;
+    out property <color> fg2: #c9cbd1;
+    out property <color> muted: #9a9ca3;
+    out property <color> accent: #d97757;
+    out property <color> ok: #2fa84f;
+    out property <color> me: #2f4f7a;
+    out property <color> btn: #26282d;
+    out property <color> btn-on: #ececee;
+    out property <color> unlit: #f2f2f347;
+    // Liquid: a spring-like ease for opening, a sine for closing, ease-out for the rest.
+    out property <easing> spring: cubic-bezier(0.2, 1.1, 0.3, 1);
+    out property <easing> out: cubic-bezier(0.16, 1, 0.3, 1);
+    out property <easing> close: cubic-bezier(0.33, 0, 0.3, 1);
+}
+
+export component Icon inherits Path {
+    in property <string> d;
+    width: 24px;
+    height: 24px;
+    viewbox-width: 24;
+    viewbox-height: 24;
+    commands: d;
+    fill: transparent;
+    stroke: T.fg;
+    stroke-width: 2px;
+    stroke-line-cap: round;
+}
+
+export global Icons {
+    out property <string> mic: "M9 6a3 3 0 0 1 6 0v5a3 3 0 0 1 -6 0z M5.5 11a6.5 6.5 0 0 0 13 0 M12 17.5V21";
+    out property <string> mic-off: "M15 9.3V6a3 3 0 0 0 -5.7 -1.3 M9 9v2a3 3 0 0 0 4.9 2.3 M18.5 11a6.5 6.5 0 0 1 -1.1 3.6 M5.5 11a6.5 6.5 0 0 0 10.4 5.2 M12 17.5V21 M3 3l18 18";
+    out property <string> speaker: "M11 5L6.5 9H3v6h3.5l4.5 4z M15.5 8.5a5 5 0 0 1 0 7 M18.5 5.5a9 9 0 0 1 0 13";
+    out property <string> captions: "M6 5h12a3 3 0 0 1 3 3v8a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3v-8a3 3 0 0 1 3 -3z M7 10h4 M13 10h4 M7 14h7 M16 14h1";
+    out property <string> keyboard: "M5 6h14a2.5 2.5 0 0 1 2.5 2.5v7a2.5 2.5 0 0 1 -2.5 2.5h-14a2.5 2.5 0 0 1 -2.5 -2.5v-7a2.5 2.5 0 0 1 2.5 -2.5z M6.5 10h0.01 M10 10h0.01 M14 10h0.01 M17.5 10h0.01 M7.5 14h9";
+    out property <string> check: "M5 12.5L10 17.5L19 7";
+    out property <string> phone: "M5 4h3.2l1.6 4l-2 1.3a10 10 0 0 0 4.9 4.9l1.3 -2l4 1.6V17a2 2 0 0 1 -2 2A15 15 0 0 1 3 6a2 2 0 0 1 2 -2z";
+    out property <string> send: "M5 12h13 M13 6l6 6l-6 6";
+    out property <string> close: "M6 6l12 12 M18 6L6 18";
+}
+
+// Text that changes crossfades in place: the old line rises out as the new one rises in.
+// Each of the two slots is below (waiting), shown, or above (gone); "above -> below" is instant.
+export component SwapText {
+    in property <string> text;
+    in property <length> font-size: 14px;
+    in property <color> color: T.fg2;
+    in property <TextHorizontalAlignment> align: left;
+    in property <int> weight: 400;
+    property <string> a;
+    property <string> b;
+    property <int> pa: 1; // 0 below, 1 shown, 2 above
+    property <int> pb: 0;
+    init => { a = text; }
+    changed text => {
+        if (pa == 1) { b = text; pb = 0; pb = 1; pa = 2; } else { a = text; pa = 0; pa = 1; pb = 2; }
+    }
+    for slot in [0, 1]: Text {
+        property <int> p: slot == 0 ? root.pa : root.pb;
+        width: parent.width;
+        height: parent.height;
+        text: slot == 0 ? root.a : root.b;
+        font-size: root.font-size;
+        font-weight: root.weight;
+        color: root.color;
+        horizontal-alignment: root.align;
+        vertical-alignment: center;
+        opacity: p == 1 ? 1 : 0;
+        y: p == 0 ? 6px : p == 1 ? 0 : -6px;
+        animate opacity, y {
+            duration: p == 0 ? 0ms : p == 1 ? 280ms : 140ms;
+            delay: p == 1 ? 112ms : 0ms;
+            easing: p == 1 ? T.out : T.close;
+        }
+    }
+}
+
+// A line of Claude's: every word laid out from the start (so it never reflows), the spoken part lit.
+// Greedy word wrap of a prefix breaks exactly where the whole line does, so the lit copy lines up.
+export component Spoken inherits VerticalLayout {
+    in property <string> text;
+    in property <string> lit;
+    in property <length> font-size: 16.5px;
+    in property <int> weight: 400;
+    in property <color> lit-color: T.fg;
+    in property <color> dim-color: T.unlit;
+    in property <bool> hide-unsaid: false;
+    in property <float> tracking: 0; // letter spacing, in em
+    // The whole line sits in the layout (so wrapping sets its height); the lit copy is drawn on top of it.
+    full := Text {
+        text: root.text;
+        wrap: word-wrap;
+        font-size: root.font-size;
+        font-weight: root.weight;
+        letter-spacing: root.tracking * root.font-size;
+        color: root.hide-unsaid ? transparent : root.dim-color;
+        vertical-alignment: top;
+        Text {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: parent.height;
+            text: root.lit;
+            wrap: word-wrap;
+            font-size: root.font-size;
+            font-weight: root.weight;
+            letter-spacing: root.tracking * root.font-size;
+            color: root.lit-color;
+            vertical-alignment: top;
+            animate color { duration: 220ms; easing: T.out; }
+        }
+    }
+}
+
+// The voice glow: soft coloured light rising from the bottom edge with the level of whoever is talking.
+// A handful of radial gradients; it only moves while someone talks.
+export component Glow {
+    in property <float> level;
+    in property <float> t;
+    in property <bool> on: true;
+    property <float> lv: on ? level : 0;
+    for blob in [
+        { c: #ff4fa3, x: 0.18, w: 0.62, s: 0.9, ph: 0.0 },
+        { c: #8a5cff, x: 0.38, w: 0.7, s: 1.15, ph: 1.7 },
+        { c: #2ad1c9, x: 0.62, w: 0.66, s: 1.0, ph: 3.1 },
+        { c: #ffb347, x: 0.82, w: 0.58, s: 0.85, ph: 4.4 },
+        { c: #4f8bff, x: 0.5, w: 0.9, s: 1.3, ph: 2.3 },
+    ]: Rectangle {
+        property <length> w: root.width * blob.w * (1 + 0.45 * root.lv);
+        property <float> rise: 0.32 + 3 * root.lv * blob.s;
+        width: w;
+        height: w;
+        x: root.width * (blob.x + 0.06 * Math.sin((root.t * 0.35 + blob.ph) * 1rad)) - w / 2;
+        y: root.height - w / 2;
+        transform-origin: { x: w / 2, y: w / 2 };
+        transform-scale-y: rise * 0.62;
+        opacity: (0.42 + 0.58 * Math.min(1, root.lv * 2.2)) * 0.9;
+        background: @radial-gradient(circle, blob.c.with-alpha(0.85) 0%, blob.c.with-alpha(0.35) 35%, blob.c.with-alpha(0) 70%);
+        animate opacity { duration: 240ms; }
+    }
+}
+
+// The thinking orb: a little dotted globe that turns while Claude works (or waits on hold).
+export component Orb {
+    in property <float> t;
+    in property <color> c: #e7a084;
+    width: 20px;
+    height: 20px;
+    for i in 25: Rectangle {
+        property <int> dy: Math.floor(i / 5) - 2;
+        property <int> dx: Math.mod(i, 5) - 2;
+        property <float> r: Math.sqrt(dy * dy + dx * dx) / 2.6;
+        property <float> spin: 0.5 + 0.5 * Math.sin((root.t * 2.4 + dx * 0.9 - dy * 0.4) * 1rad);
+        visible: r <= 1;
+        width: 2.2px;
+        height: 2.2px;
+        border-radius: 1.1px;
+        x: 10px + dx * 3.6px - 1.1px;
+        y: 10px + dy * 3.6px - 1.1px;
+        background: root.c;
+        opacity: (1 - r * 0.55) * (0.35 + 0.65 * spin);
+    }
+}
+
+// A round control: icon over a label; pressed = light fill.
+export component Round {
+    in property <string> icon;
+    in property <string> label;
+    in property <bool> pressed;
+    in property <bool> enabled: true;
+    in property <bool> faded;
+    callback clicked;
+    VerticalLayout {
+        spacing: 6px;
+        alignment: start;
+        HorizontalLayout {
+            alignment: center;
+            circle := Rectangle {
+                width: 64px;
+                height: 64px;
+                border-radius: 32px;
+                background: root.pressed ? T.btn-on : T.btn;
+                opacity: root.faded ? 0 : root.enabled ? 1 : 0.4;
+                transform-origin: { x: 32px, y: 32px };
+                transform-scale: touch.pressed && root.enabled ? 0.93 : 1;
+                animate background { duration: 200ms; easing: T.out; }
+                animate transform-scale { duration: 160ms; easing: T.out; }
+                animate opacity { duration: 120ms; }
+                Icon {
+                    d: root.icon;
+                    stroke: root.pressed ? #111 : T.fg;
+                    animate stroke { duration: 200ms; }
+                }
+                touch := TouchArea {
+                    enabled: root.enabled && !root.faded;
+                    clicked => { root.clicked(); }
+                }
+            }
+        }
+        HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                height: 18px;
+                border-radius: 9px;
+                background: #111214a0;
+                opacity: root.faded ? 0 : 1;
+                animate opacity { duration: 160ms; }
+                HorizontalLayout {
+                    padding-left: 7px;
+                    padding-right: 7px;
+                    Text { text: root.label; font-size: 13px; color: #e8e9ec; vertical-alignment: center; }
+                }
+            }
+        }
+    }
+}
+
+// A surface that grows out of the button that opened it and goes back into it: it starts as exactly the button,
+// springs open, and closes back without a bounce. The button's face fades as the contents fade in.
+export component Morph {
+    in property <bool> open;
+    in property <length> fx; // the button, in the morph's parent's coordinates
+    in property <length> fy;
+    in property <length> fsize: 64px;
+    in property <length> tx;
+    in property <length> ty;
+    in property <length> tw;
+    in property <length> th;
+    in property <length> radius: 24px;
+    in property <string> face;
+    in property <color> panel: T.btn;
+    property <bool> shown: open || closing.running;
+    x: open ? tx : fx;
+    y: open ? ty : fy;
+    width: open ? tw : fsize;
+    height: open ? th : fsize;
+    animate x, y, width, height { duration: open ? 500ms : 300ms; easing: open ? T.spring : T.close; }
+    closing := Timer { interval: 320ms; running: false; triggered => { self.running = false; } }
+    changed open => { closing.running = !open; }
+    visible: shown;
+    Rectangle {
+        border-radius: root.open ? root.radius : root.fsize / 2;
+        animate border-radius { duration: root.open ? 500ms : 300ms; easing: root.open ? T.spring : T.close; }
+        background: root.panel;
+        clip: true;
+        Icon {
+            d: root.face;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            opacity: root.open ? 0 : 1;
+            animate opacity { duration: 140ms; delay: root.open ? 0ms : 160ms; }
+        }
+        body := Rectangle {
+            x: 0;
+            y: 0;
+            width: root.tw;
+            height: root.th;
+            opacity: root.open ? 1 : 0;
+            animate opacity { duration: root.open ? 220ms : 90ms; delay: root.open ? 120ms : 0ms; easing: T.out; }
+            @children
+        }
+    }
+}
+

@@ -1,0 +1,477 @@
+// The Claude Call screen (design D: "Your mix"), drawn natively. Rust drives the call state; this file only lays it
+// out and animates it. Nothing here runs a per-frame loop: when nothing changes, nothing is redrawn.
+
+import { T, Icon, Icons, SwapText, Spoken, Glow, Orb, Round, Morph, Px, Cap, Msg } from "parts.slint";
+export { Px, Cap, Msg }
+
+export component CallScreen inherits Window {
+    // ---- From Rust ----
+    in property <length> sat: 36px; // status bar and gesture bar
+    in property <length> sab: 24px;
+    in property <string> phase: "incoming"; // incoming connecting talking listening hearing thinking hold ended
+    in property <string> time-text: "Calling you";
+    in property <string> status;
+    in property <Cap> cap: { key: 0, label: "Calling now", text: "Claude would like to talk.", lit: "Claude would like to talk.", size: 0, tone: "", orb: false };
+    in property <string> bubble-text; // Claude's line in the thread
+    in property <string> bubble-lit;
+    in property <bool> has-bubble;
+    in property <string> me-text; // your words (live, then heard); empty = dots
+    in property <bool> me-live;
+    in property <bool> show-me;
+    in property <bool> show-pending;
+    in property <[Px]> pixels;
+    in property <length> perch-x: 24px; // where the mascot's box sits in the stage
+    in property <length> perch-y: 20px;
+    in property <length> mascot-h: 80px;
+    in property <float> level; // whoever is talking, 0..1
+    in property <float> me-level;
+    in property <float> t; // seconds, advanced by Rust only while something moves
+    in property <float> glow-t; // the glow drifts only while someone talks
+    in property <bool> muted;
+    in property <bool> speaker;
+    in property <bool> speaker-available: true;
+    in property <bool> can-finish;
+    in property <bool> closed;
+    in property <[Msg]> msgs;
+    in-out property <bool> caps-open;
+    in-out property <bool> typing;
+    in-out property <string> draft;
+    // ---- To Rust ----
+    callback answer();
+    callback done-talking();
+    callback toggle-mute();
+    callback toggle-speaker();
+    callback send(string);
+    callback poke();
+    callback typing-changed(bool);
+
+    property <bool> incoming: phase == "incoming";
+    property <bool> ended: phase == "ended";
+    property <bool> in-call: !incoming;
+    property <bool> thread: phase == "hearing" || phase == "thinking";
+    property <length> stage-top: sat + 60px;
+    property <length> stage-bottom: self.height - sab - 302px;
+    property <length> controls-y: self.height - sab - 28px - 224px;
+    property <length> col-w: (self.width - 32px) / 4;
+
+    background: T.bg;
+    title: "Claude Call";
+
+    Glow {
+        width: parent.width;
+        height: parent.height;
+        level: root.level;
+        t: root.glow-t;
+        on: !root.ended;
+    }
+
+    screen := Rectangle {
+        opacity: root.closed ? 0 : 1;
+        animate opacity { duration: 500ms; easing: T.close; }
+
+        // ---- Header ----
+        Rectangle {
+            x: 24px;
+            y: root.sat + 4px;
+            width: parent.width - 48px;
+            height: 52px;
+            Text { x: 0; y: 2px; text: "Claude"; font-size: 18px; font-weight: 700; color: T.fg; }
+            SwapText { y: 28px; width: parent.width; height: 20px; text: root.time-text; font-size: 14px; color: T.muted; }
+        }
+
+        // ---- The stage: Clawd, the big caption, and the thread while you talk and Claude thinks ----
+        stage := Rectangle {
+            x: 0;
+            y: root.stage-top;
+            width: parent.width;
+            height: root.stage-bottom - root.stage-top;
+
+            // The caption flies into Claude's bubble when the thread opens, and grows back out of it.
+            caps := Rectangle {
+                x: 24px;
+                y: 140px;
+                width: parent.width - 48px;
+                height: parent.height - 140px;
+                clip: true;
+                capSlots := Rectangle {
+                    in-out property <Cap> a;
+                    in-out property <Cap> b;
+                    in-out property <int> pa: 1;
+                    in-out property <int> pb: 0;
+                    init => { self.a = root.cap; }
+                    for slot in [0, 1]: VerticalLayout {
+                        property <Cap> c: slot == 0 ? capSlots.a : capSlots.b;
+                        property <int> p: slot == 0 ? capSlots.pa : capSlots.pb;
+                        alignment: start;
+                        spacing: 14px;
+                        opacity: (p == 1 ? 1 : 0) * (root.thread ? 0 : 1);
+                        y: (p == 0 ? 6px : p == 1 ? 0 : -6px) + (root.thread ? -68px : 0);
+                        animate opacity { duration: p == 0 ? 0ms : root.thread ? 140ms : p == 1 ? 280ms : 140ms; delay: p == 1 && !root.thread ? 112ms : 0ms; easing: T.out; }
+                        animate y { duration: p == 0 ? 0ms : root.thread ? 480ms : p == 1 ? 280ms : 140ms; delay: p == 1 && !root.thread ? 112ms : 0ms; easing: T.out; }
+                        HorizontalLayout {
+                            height: 20px;
+                            spacing: 8px;
+                            alignment: start;
+                            visible: c.tone != "pre";
+                            if c.orb: Orb { t: root.t; y: 0; c: #c9b6ff; }
+                            Text {
+                                text: c.label;
+                                font-size: 14px;
+                                font-weight: 650;
+                                letter-spacing: 0.28px;
+                                vertical-alignment: center;
+                                color: c.tone == "rest" || c.tone == "dim" ? T.muted : c.tone == "hold" ? #c9b6ff : #e7a084;
+                            }
+                        }
+                        Spoken {
+                            text: c.text;
+                            lit: c.lit;
+                            font-size: c.size == 2 ? 20px : c.size == 1 ? 24px : 30px;
+                            weight: 500;
+                            tracking: -0.012;
+                            lit-color: c.tone == "dim" ? T.fg2 : T.fg;
+                            opacity: c.tone == "rest" ? 0.62 : 1;
+                        }
+                    }
+                }
+            }
+
+            thread := VerticalLayout {
+                x: 16px;
+                y: 72px;
+                width: parent.width - 32px;
+                height: parent.height - 72px;
+                alignment: start;
+                spacing: 12px;
+                if root.has-bubble: HorizontalLayout {
+                    alignment: start;
+                    bubble := Rectangle {
+                        max-width: (root.width - 32px) * 0.82;
+                        background: #202227;
+                        border-top-left-radius: 6px;
+                        border-top-right-radius: 20px;
+                        border-bottom-left-radius: 20px;
+                        border-bottom-right-radius: 20px;
+                        opacity: root.thread ? 1 : 0;
+                        transform-origin: { x: 0, y: 0 };
+                        transform-scale: root.thread ? 1 : 1.25;
+                        y: root.thread ? 0 : 68px;
+                        animate opacity { duration: root.thread ? 260ms : 170ms; delay: root.thread ? 90ms : 0ms; easing: T.out; }
+                        animate transform-scale, y { duration: 480ms; easing: T.out; }
+                        clip: true;
+                        VerticalLayout {
+                            padding-left: 14px;
+                            padding-right: 14px;
+                            padding-top: 10px;
+                            padding-bottom: 10px;
+                            max-height: 190px;
+                            Spoken { text: root.bubble-text; lit: root.bubble-lit; hide-unsaid: true; }
+                        }
+                    }
+                }
+                if root.show-me: HorizontalLayout {
+                    alignment: end;
+                    Rectangle {
+                        background: T.me;
+                        border-top-left-radius: 20px;
+                        border-top-right-radius: 20px;
+                        border-bottom-left-radius: 20px;
+                        border-bottom-right-radius: 6px;
+                        max-width: (root.width - 32px) * 0.82;
+                        opacity: root.thread ? 1 : 0;
+                        animate opacity { duration: root.thread ? 340ms : 140ms; delay: root.thread ? 220ms : 0ms; easing: T.out; }
+                        if root.me-text != "": VerticalLayout {
+                            padding-left: 14px;
+                            padding-right: 14px;
+                            padding-top: 10px;
+                            padding-bottom: 10px;
+                            Text { text: root.me-text; wrap: word-wrap; font-size: 16.5px; color: white; }
+                        }
+                        if root.me-text == "": HorizontalLayout {
+                            padding-left: 18px;
+                            padding-right: 18px;
+                            padding-top: 13px;
+                            padding-bottom: 13px;
+                            spacing: 6px;
+                            for i in 3: Rectangle {
+                                width: 8px;
+                                height: 20px;
+                                Rectangle {
+                                    y: 6px - root.me-level * 7px * (0.6 + 0.4 * Math.sin((root.t * 8.3 + i * 1.7) * 1rad));
+                                    width: 8px;
+                                    height: 8px;
+                                    border-radius: 4px;
+                                    background: #ffffffe0;
+                                    opacity: root.me-live ? 1 : 0.35 + 0.65 * (0.5 + 0.5 * Math.cos((root.t * 5.7 - i * 0.86) * 1rad));
+                                }
+                            }
+                        }
+                    }
+                }
+                if root.show-pending: HorizontalLayout {
+                    spacing: 10px;
+                    padding-left: 4px;
+                    height: 24px;
+                    alignment: start;
+                    opacity: root.thread ? 1 : 0;
+                    animate opacity { duration: 340ms; delay: 220ms; easing: T.out; }
+                    Orb { t: root.t; y: 2px; }
+                    Text { text: "Claude is thinking…"; font-size: 15px; color: T.fg2; vertical-alignment: center; }
+                }
+            }
+
+            // Clawd, on its own pixel grid. Nothing shows below the line it stands on (it can duck behind it).
+            mascot := Rectangle {
+                x: root.perch-x - 200px;
+                y: root.perch-y + root.mascot-h + 6px - 600px;
+                width: 600px;
+                height: 600px;
+                clip: true;
+                for p in root.pixels: Rectangle {
+                    x: 200px + p.x;
+                    y: 600px - 6px - root.mascot-h + p.y;
+                    width: p.w;
+                    height: p.h;
+                    background: p.c;
+                    opacity: p.o;
+                }
+                TouchArea {
+                    x: 200px;
+                    y: 600px - 6px - root.mascot-h;
+                    width: 144px;
+                    height: root.mascot-h;
+                    clicked => { root.poke(); }
+                }
+            }
+        }
+
+        // ---- One status line, about the mic ----
+        SwapText {
+            x: 16px;
+            y: root.height - root.sab - 270px - 22px;
+            width: parent.width - 32px;
+            height: 22px;
+            text: root.status;
+            font-size: 15px;
+            color: #e8e9ec;
+            align: center;
+            visible: !root.typing;
+        }
+
+        // ---- Controls ----
+        controls := Rectangle {
+            x: 16px;
+            y: root.controls-y;
+            width: parent.width - 32px;
+            height: 224px;
+            for i in 4: Rectangle {
+                x: root.col-w * i + (root.in-call ? 0 : (1.5 - i) * 95px);
+                y: root.in-call ? 0 : 124px;
+                width: root.col-w;
+                height: 90px;
+                opacity: root.in-call ? 1 : 0;
+                transform-origin: { x: root.col-w / 2, y: 32px };
+                transform-scale: root.in-call ? 1 : 0.35;
+                animate x, y, transform-scale { duration: root.in-call ? 500ms : 300ms; delay: root.in-call ? i * 30ms : 0ms; easing: root.in-call ? T.spring : T.close; }
+                animate opacity { duration: 200ms; delay: root.in-call ? i * 30ms : 0ms; easing: T.out; }
+                Round {
+                    icon: i == 0 ? (root.muted ? Icons.mic-off : Icons.mic) : i == 1 ? Icons.speaker : i == 2 ? Icons.captions : Icons.keyboard;
+                    label: i == 0 ? (root.muted ? "Unmute" : "Mute") : i == 1 ? "Speaker" : i == 2 ? "Captions" : "Type";
+                    pressed: i == 0 ? root.muted : i == 1 ? root.speaker : i == 2 ? root.caps-open : root.typing;
+                    enabled: root.in-call && !root.ended && (i != 1 || root.speaker-available);
+                    faded: root.typing;
+                    clicked => {
+                        if (i == 0) { root.toggle-mute(); }
+                        else if (i == 1) { root.toggle-speaker(); }
+                        else if (i == 2) { root.caps-open = !root.caps-open; }
+                        else { root.typing = !root.typing; root.typing-changed(root.typing); }
+                    }
+                }
+            }
+            // The big button: Answer while ringing, then Done talking.
+            Rectangle {
+                y: 118px;
+                width: parent.width;
+                height: 104px;
+                big := Rectangle {
+                    property <bool> live: root.incoming || root.can-finish;
+                    x: (parent.width - 76px) / 2;
+                    y: 0;
+                    width: 76px;
+                    height: 76px;
+                    // The ring pulses outward while it is ringing.
+                    if root.incoming: Rectangle {
+                        property <float> k: Math.mod(root.t, 1.8) / 1.8;
+                        x: -26px * self.k;
+                        y: -26px * self.k;
+                        width: 76px + 52px * self.k;
+                        height: self.width;
+                        border-radius: self.width / 2;
+                        background: #2fa84f;
+                        opacity: 0.55 * (1 - self.k);
+                    }
+                    Rectangle {
+                        border-radius: 38px;
+                        background: big.live ? T.ok : #2a2c31;
+                        transform-origin: { x: 38px, y: 38px };
+                        transform-scale: bigTouch.pressed && big.live ? 0.94 : 1;
+                        animate background { duration: 260ms; easing: T.out; }
+                        animate transform-scale { duration: 160ms; easing: T.out; }
+                        for g in [{ d: Icons.phone, show: root.incoming }, { d: Icons.check, show: !root.incoming }]: Icon {
+                            d: g.d;
+                            width: 30px;
+                            height: 30px;
+                            x: 23px;
+                            y: 23px;
+                            stroke: big.live ? white : #7d8088;
+                            opacity: g.show ? 1 : 0;
+                            transform-origin: { x: 15px, y: 15px };
+                            transform-scale: g.show ? 1 : 0.6;
+                            transform-rotation: g.show ? 0deg : -40deg;
+                            animate opacity { duration: 180ms; }
+                            animate transform-scale, transform-rotation { duration: 500ms; easing: T.spring; }
+                        }
+                        bigTouch := TouchArea {
+                            enabled: big.live;
+                            clicked => { if (root.incoming) { root.answer(); } else { root.done-talking(); } }
+                        }
+                    }
+                }
+                Rectangle {
+                    y: 84px;
+                    width: parent.width;
+                    height: 20px;
+                    HorizontalLayout {
+                        alignment: center;
+                        // Sized to the label it is changing to (measured by a hidden copy).
+                        measure := Text { text: root.incoming ? "Answer" : "Done talking"; font-size: 14px; visible: false; width: 0; }
+                        Rectangle {
+                            width: measure.preferred-width + 14px;
+                            border-radius: 9px;
+                            background: #111214a0;
+                            SwapText { width: measure.preferred-width + 14px; height: 20px; text: root.incoming ? "Answer" : "Done talking"; font-size: 14px; color: #e8e9ec; align: center; }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---- Transcript: grows out of the Captions button ----
+        Morph {
+            open: root.caps-open && root.in-call;
+            fx: 16px + root.col-w * 2.5 - 32px;
+            fy: root.controls-y;
+            tx: 12px;
+            ty: root.sat + 8px;
+            tw: root.width - 24px;
+            th: root.height - root.sat - 8px - root.sab - 162px - 106px;
+            face: Icons.captions;
+            panel: #1c1d21;
+            VerticalLayout {
+                Rectangle {
+                    height: 60px;
+                    Text { x: 20px; text: "Transcript"; font-size: 17px; font-weight: 700; color: T.fg; vertical-alignment: center; height: parent.height; }
+                    Rectangle {
+                        x: parent.width - 54px;
+                        y: 6px;
+                        width: 48px;
+                        height: 48px;
+                        Icon { d: Icons.close; x: 12px; y: 12px; }
+                        TouchArea { clicked => { root.caps-open = false; } }
+                    }
+                    Rectangle { y: parent.height - 1px; height: 1px; background: #2a2c31; }
+                }
+                log := Flickable {
+                    content-height: rows.preferred-height;
+                    content-y: Math.min(0px, self.height - rows.preferred-height);
+                    rows := VerticalLayout {
+                        width: root.width - 24px;
+                        padding: 16px;
+                        spacing: 12px;
+                        for m in root.msgs: HorizontalLayout {
+                            alignment: m.me ? end : start;
+                            Rectangle {
+                                max-width: (root.width - 56px) * 0.8;
+                                background: m.me ? T.me : #202227;
+                                border-top-left-radius: 20px;
+                                border-top-right-radius: 20px;
+                                border-bottom-left-radius: m.me ? 20px : 6px;
+                                border-bottom-right-radius: m.me ? 6px : 20px;
+                                VerticalLayout {
+                                    padding-left: 14px;
+                                    padding-right: 14px;
+                                    padding-top: 10px;
+                                    padding-bottom: 10px;
+                                    Spoken { text: m.text; lit: m.lit; lit-color: m.me ? white : T.fg; }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---- Type a reply: grows out of the Type button ----
+        typeSheet := Morph {
+            open: root.typing && root.in-call && !root.ended;
+            fx: 16px + root.col-w * 3.5 - 32px;
+            fy: root.controls-y;
+            tx: 16px;
+            ty: root.height - root.sab - 162px - 90px;
+            tw: root.width - 32px;
+            th: 64px;
+            radius: 32px;
+            face: Icons.keyboard;
+            HorizontalLayout {
+                padding-left: 20px;
+                padding-right: 8px;
+                spacing: 4px;
+                alignment: stretch;
+                input := TextInput {
+                    text <=> root.draft;
+                    font-size: 17px;
+                    color: T.fg;
+                    vertical-alignment: center;
+                    single-line: true;
+                    accepted => { if (root.draft != "") { root.send(root.draft); root.draft = ""; root.typing = false; root.typing-changed(false); } }
+                    Text {
+                        visible: root.draft == "";
+                        text: "Type a reply";
+                        font-size: 17px;
+                        color: #8c8f97;
+                        vertical-alignment: center;
+                        height: parent.height;
+                    }
+                }
+                Rectangle {
+                    width: 48px;
+                    height: 48px;
+                    y: 8px;
+                    border-radius: 24px;
+                    background: root.draft != "" ? T.accent : transparent;
+                    animate background { duration: 200ms; easing: T.out; }
+                    Icon { d: Icons.send; x: 12px; y: 12px; stroke: root.draft != "" ? white : T.muted; }
+                    TouchArea {
+                        enabled: root.draft != "";
+                        clicked => { root.send(root.draft); root.draft = ""; root.typing = false; root.typing-changed(false); }
+                    }
+                }
+                Rectangle {
+                    width: 48px;
+                    height: 48px;
+                    y: 8px;
+                    Icon { d: Icons.close; x: 12px; y: 12px; }
+                    TouchArea { clicked => { root.typing = false; root.typing-changed(false); } }
+                }
+            }
+        }
+    }
+
+    changed typing => { if (self.typing) { input.focus(); } else { input.clear-focus(); } }
+    // A new caption crossfades in over the old one; the same caption (more words said) updates in place.
+    changed cap => {
+        if (capSlots.pa == 1 && capSlots.a.key != self.cap.key) { capSlots.b = self.cap; capSlots.pb = 0; capSlots.pb = 1; capSlots.pa = 2; }
+        else if (capSlots.pb == 1 && capSlots.b.key != self.cap.key) { capSlots.a = self.cap; capSlots.pa = 0; capSlots.pa = 1; capSlots.pb = 2; }
+        else if (capSlots.pa == 1) { capSlots.a = self.cap; } else { capSlots.b = self.cap; }
+    }
+}

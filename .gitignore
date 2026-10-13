@@ -28,3 +28,4 @@ gateway.log
 
 # Rust build
 target/
+android/app/src/main/jniLibs/

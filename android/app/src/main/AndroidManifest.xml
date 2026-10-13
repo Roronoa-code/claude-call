@@ -35,7 +35,9 @@
             android:taskAffinity="fyi.mani.callme.call"
             android:showWhenLocked="true"
             android:turnScreenOn="true"
-            android:configChanges="orientation|screenSize|keyboardHidden" />
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|density|uiMode">
+            <meta-data android:name="android.app.lib_name" android:value="callme_phone" />
+        </activity>
 
         <service
             android:name=".ListenService"
