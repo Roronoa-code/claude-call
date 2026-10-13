@@ -13,10 +13,7 @@ android {
         targetSdk = 37
         versionCode = 1
         versionName = "1.0.0"
-        testInstrumentationRunner = "fyi.mani.callme.PhoneCheckInstrumentation"
     }
-
-    testBuildType = "release"
 
     buildTypes {
         release {
