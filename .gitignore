@@ -24,3 +24,4 @@ android/build/
 android/app/build/
 android/local.properties
 design-preview/node_modules/
+gateway.log

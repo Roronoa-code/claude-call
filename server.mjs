@@ -265,52 +265,43 @@ const server = http.createServer(async (req, res) => {
 await new Promise(r => server.listen(0, '127.0.0.1', r));
 const port = server.address().port;
 
-// Opened when the server starts (not at call time) and kept for this session. A new trycloudflare address
-// takes ~30s to resolve on the phone, and a too-early lookup gets cached as "not found", so calls only ring
-// once the address is at least TUNNEL_SETTLE_MS old.
-const TUNNEL_SETTLE_MS = 45_000;
-let tunnelPromise = null, tunnel = null, tunnelBornAt = 0;
-const ensureTunnel = () => {
-  if (process.env.CALLME_LOCAL) return Promise.resolve(`http://127.0.0.1:${port}`); // tests: no tunnel, no phone
-  if (!tunnelPromise || tunnel?.exitCode !== null) tunnelPromise = openTunnelWithRetry().catch(e => { tunnelPromise = null; throw e; });
-  return tunnelPromise.then(async url => {
-    const wait = tunnelBornAt + TUNNEL_SETTLE_MS - Date.now();
-    if (wait > 0) await new Promise(r => setTimeout(r, wait));
-    return url;
-  });
-};
-// trycloudflare rate-limits new tunnels (HTTP 429) after many in a short time; back off and retry.
-async function openTunnelWithRetry() {
-  for (const wait of [0, 10_000, 20_000, 30_000]) {
-    if (wait) { log(`tunnel retry in ${wait / 1000}s`); await new Promise(r => setTimeout(r, wait)); }
-    try { return await openTunnel(); } catch (e) { log('tunnel failed', e.message); }
-  }
-  throw new Error('could not open a tunnel (trycloudflare busy or offline); try again in a few minutes');
+// The phone reaches this server through the shared tunnel gateway (gateway.mjs): one Cloudflare quick tunnel for all
+// CallMe servers on this PC, since trycloudflare refuses new tunnels (429) when every session opens its own.
+// A new trycloudflare address takes ~30s to resolve on the phone, and a too-early lookup gets cached as "not found",
+// so calls only ring once the gateway's tunnel is at least TUNNEL_SETTLE_MS old.
+const TUNNEL_SETTLE_MS = 45_000, GATEWAY = 'http://127.0.0.1:47810', TUNNEL_WAIT_MS = 2 * 60_000;
+const gatewayInfo = () => fetch(`${GATEWAY}/health`, { signal: AbortSignal.timeout(2000) }).then(r => r.ok ? r.json() : null, () => null);
+let gatewayStarting = null;
+async function ensureGateway() {
+  if (await gatewayInfo()) return true;
+  gatewayStarting ??= (async () => {
+    // Detached and hidden: no console window, and it outlives this session for the others.
+    spawn(process.execPath, [path.join(dir, 'gateway.mjs')], { cwd: dir, detached: true, windowsHide: true, stdio: 'ignore' }).unref();
+    for (let i = 0; i < 20 && !await gatewayInfo(); i++) await new Promise(r => setTimeout(r, 250));
+  })().finally(() => { gatewayStarting = null; });
+  await gatewayStarting;
+  return !!await gatewayInfo();
 }
-async function openTunnel() {
-  tunnel = spawn(path.join(dir, 'bin', 'cloudflared.exe'),
-    ['tunnel', '--no-autoupdate', '--url', `http://127.0.0.1:${port}`], { windowsHide: true });
-  const tunnelUrl = await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('tunnel did not start in 30s')), 30_000);
-    const onData = d => {
-      const m = String(d).match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
-      if (m) { clearTimeout(timer); resolve(m[0]); }
-    };
-    tunnel.stderr.on('data', onData); tunnel.stdout.on('data', onData);
-    tunnel.on('exit', c => { clearTimeout(timer); reject(new Error('cloudflared exited ' + c)); });
-  });
-  // Quick tunnels need a moment before the hostname resolves publicly.
-  for (let i = 0; i < 20; i++) {
-    try { if ((await fetch(`${tunnelUrl}/?t=${token}`)).ok) break; } catch {}
-    await new Promise(r => setTimeout(r, 1500));
+const register = () => fetch(`${GATEWAY}/register`, { method: 'POST', body: JSON.stringify({ token, port }), signal: AbortSignal.timeout(2000) }).catch(() => {});
+async function ensureTunnel() {
+  if (process.env.CALLME_LOCAL) return `http://127.0.0.1:${port}`; // tests: no tunnel, no phone
+  const until = Date.now() + TUNNEL_WAIT_MS;
+  while (Date.now() < until) {
+    if (await ensureGateway()) {
+      await register();
+      const g = await gatewayInfo();
+      if (g?.url) {
+        const wait = g.bornAt + TUNNEL_SETTLE_MS - Date.now();
+        if (wait > 0) await new Promise(r => setTimeout(r, wait));
+        if ((await gatewayInfo())?.url === g.url) return g.url; // still the same tunnel after settling
+        continue;
+      }
+    }
+    await new Promise(r => setTimeout(r, 2000)); // the gateway is (re)opening its tunnel; it retries by itself
   }
-  tunnelBornAt = Date.now();
-  log('tunnel', tunnelUrl);
-  return tunnelUrl;
+  throw new Error('could not open a tunnel (trycloudflare busy or offline; see gateway.log); try again in a few minutes');
 }
-const killTunnel = () => tunnel?.kill();
-process.on('exit', killTunnel);
-process.stdin.on('close', () => { killTunnel(); process.exit(0); });
+process.stdin.on('close', () => process.exit(0));
 
 // Which agent is calling (Codex sets CALLME_AGENT=Codex). The alert title stays "Claude is calling": the app rings on it.
 const AGENT = process.env.CALLME_AGENT?.trim() || 'Claude';
@@ -490,5 +481,9 @@ mcp.registerTool('end_call', {
 }, async ({ message }) => { await say(message, true); return text('Call ended.'); });
 
 await mcp.connect(new StdioServerTransport());
-ensureTunnel().catch(e => log('tunnel failed', e.message)); // open early so it has settled before any call
+// Make sure the shared gateway (and its tunnel) is up early, so it has settled before any call; check in every minute.
+if (!process.env.CALLME_LOCAL) {
+  ensureGateway().then(register);
+  setInterval(() => ensureGateway().then(register), 60_000).unref();
+}
 log('ready on port', port, 'topic', topic);
