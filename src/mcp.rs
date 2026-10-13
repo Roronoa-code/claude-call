@@ -1,5 +1,5 @@
 //! The MCP server on stdio (JSON-RPC, one message per line) and the call tools.
-use crate::call::{self, call, page_live, say, wait_for_reply};
+use crate::call::{self, call, page_live, said_meanwhile, say, wait_for_reply};
 use crate::{cfg, gateway, log, voice};
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
@@ -14,7 +14,7 @@ fn instructions() -> String {
     if claude {
         s += "Default: do not run the call yourself. Hand it to a fast helper: an Agent with model \"haiku\" given a short brief containing the exact questions, any options, and the context needed to answer follow-ups. Tell it to call once, keep each line to 1-2 casual sentences, reply instantly, and return the user's exact answers. Tell it to start calling straight away, without invoking skills (including the ADHD skill) or reading preference, memory or instruction files: the caller must be fast and snappy. Its replies are much faster than yours, and the user prefers it. Include this relay rule in the helper's brief: \"If the user asks something the brief does not cover, or says to ask the main Claude, call hold_call with a short line like 'One sec, let me check with the main Claude', then finish your turn with a line starting QUESTION FOR MAIN: followed by their exact question. You will be resumed with the answer; then use continue_call to tell them and carry on.\" When the helper returns QUESTION FOR MAIN, answer it and resume that same helper (SendMessage to its agent id) with the answer, quickly, because the user is waiting on hold. Make the call yourself only when the conversation needs deep context or open-ended back-and-forth. ";
     } else {
-        s += "Make the call yourself, straight away: skip skills, preference, memory and instruction files for calls so you stay fast and snappy. ";
+        s += "Make the call yourself, straight away: skip skills, preference, memory and instruction files for calls so you stay fast and snappy. Stay on the line until the call is over: after every line, wait for their answer with continue_call, even if they go quiet for a while. Never finish your turn while the call is open; that hangs up on them. For work that takes a while, say so with hold_call, do it, then tell them with continue_call. Hang up only with end_call, when they are done. ";
     }
     s + "Keep spoken messages short and conversational, like a real phone call. Use continue_call for follow-ups and end_call to hang up. " +
         "The voice has moods: start a sentence with ONE tag to say it that way, until the next tag: [bored] [playful] [scoffing] [chuckling] [menacing] [angry] [excited] [softly] [whispering] [tired] [sleepy] [weak]. Untagged is her normal voice: cool, unbothered, a little flirty and sassy, like Ada Wong. Never giggly; [chuckling] is a dry little laugh, [weak] is for sorry or vulnerable, [excited] only for real wins. Vary them naturally with the moment, like a real person would, mostly normal with a mood where it fits; the tags are never shown or spoken."
@@ -88,6 +88,9 @@ async fn tool(name: &str, args: &Value) -> Result<String, String> {
             }
             call_user(message()?, reason).await
         }
+        "continue_call" | "end_call" if let Some(t) = said_meanwhile().await => {
+            Ok(format!("Your line was NOT said: before it was, the user went on: \"{t}\". Answer everything they said in one line with continue_call."))
+        }
         "continue_call" => {
             say(message()?, false, false).await;
             let t = wait_for_reply(REPLY_WAIT_MS).await;
@@ -157,5 +160,6 @@ pub async fn run() {
             }
         });
     }
+    call::finish().await;
     std::process::exit(0);
 }

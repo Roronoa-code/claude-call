@@ -57,6 +57,8 @@ pub struct Call {
     watchers: u32,
     waiter: Option<oneshot::Sender<Option<String>>>,
     pub pending: Vec<String>,
+    heard_at: Option<Instant>, // the user's audio last arrived (they are mid-sentence while it keeps coming)
+    turns_in_flight: u32,      // turns still being transcribed
 }
 
 static CALL: LazyLock<Mutex<Call>> = LazyLock::new(Default::default);
@@ -209,6 +211,22 @@ pub fn deliver(t: String) {
     }
 }
 
+/// Just before Claude's line is said: waits while the user is still talking or their words are still being
+/// transcribed, then takes anything they said after Claude got their turn (e.g. a correction). Saying the stale answer
+/// and then the next one, talking over itself, is what made corrections a mess.
+pub async fn said_meanwhile() -> Option<String> {
+    let talking = || {
+        let c = call();
+        c.turns_in_flight > 0 || c.heard_at.is_some_and(|t| t.elapsed() < Duration::from_millis(1200))
+    };
+    let since = Instant::now();
+    while talking() && since.elapsed() < Duration::from_secs(30) {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let mut c = call();
+    (!c.pending.is_empty()).then(|| c.pending.drain(..).collect::<Vec<_>>().join(" / "))
+}
+
 /// Registers for the user's next reply now (so nothing said meanwhile is lost) and waits up to `ms`.
 pub fn wait_for_reply(ms: u64) -> impl Future<Output = Option<String>> {
     let ready = {
@@ -239,6 +257,32 @@ pub fn wait_for_reply(ms: u64) -> impl Future<Output = Option<String>> {
 pub fn cancel_reply() {
     if let Some(w) = call().waiter.take() {
         let _ = w.send(None);
+    }
+}
+
+/// The agent's session closed during a call (a headless run that ended its turn): let the last line reach the phone,
+/// say goodbye if it never hung up, and stay up until the phone has hung up, instead of cutting the line off and
+/// leaving the phone waiting until it gives up on the PC.
+pub async fn finish() {
+    if !call().answered || call().declined {
+        return;
+    }
+    wait_line().await;
+    if !call().end {
+        say("[playful] Okay, I've got to run. Call me back if you need me.".into(), true, false).await;
+        wait_line().await;
+    }
+    let since = Instant::now();
+    while page_live() && since.elapsed() < Duration::from_secs(60) {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+}
+
+/// Waits until the line being made is all made (the phone fetches it as it goes).
+async fn wait_line() {
+    let stream = call().stream.clone();
+    if let Some(st) = stream {
+        let _ = timeout(Duration::from_secs(60), st.progress.subscribe().wait_for(|&(_, done)| done)).await;
     }
 }
 
@@ -391,6 +435,7 @@ async fn handle(req: Request) -> Result<Response, String> {
             // A piece of what the user is saying; with partial=1, also returns the transcript so far (live captions).
             let (u, off, live) = (q("u").unwrap_or("").to_string(), num("off").unwrap_or(0) as usize, q("partial").is_some());
             let cell = take_audio(&u, off, &body(16_000 * 2 * 30).await?);
+            call().heard_at = Some(Instant::now());
             if live {
                 json_res(partial(&cell).await.map_or(json!({ "text": null }), |p| json!(p)))
             } else {
@@ -401,15 +446,19 @@ async fn handle(req: Request) -> Result<Response, String> {
             mark(&format!("turn sent (you stopped talking {}ms before)", q("quiet").unwrap_or("?")), true);
             let (u, off, end) = (q("u").unwrap_or("").to_string(), num("off").unwrap_or(0) as usize, num("end").map(|e| e as usize));
             let interrupted = q("interrupted").is_some();
-            let cell = take_audio(&u, off, &body(16_000 * 2 * 120).await?);
-            let result = final_transcript(&cell, end).await;
+            call().turns_in_flight += 1;
+            let result = match body(16_000 * 2 * 120).await {
+                Ok(b) => final_transcript(&take_audio(&u, off, &b), end).await,
+                Err(e) => Err(e),
+            };
             UTTS.lock().unwrap().0.remove(&u);
-            let (secs, heard, reuse) = result?;
+            let (secs, heard, reuse) = result.inspect_err(|_| call().turns_in_flight -= 1)?;
             mark(&format!("transcribed ({secs:.1}s of audio{}) -> handed to Claude", if reuse { ", reused live transcript" } else { "" }), false);
             let ok = !voice::is_noise(&heard);
             if ok {
                 deliver(if interrupted { format!("(interrupting you) {heard}") } else { heard.clone() });
             }
+            call().turns_in_flight -= 1;
             json_res(json!({ "text": if ok { heard } else { String::new() } }))
         }
         "/reply" if post => {
