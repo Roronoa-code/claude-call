@@ -241,29 +241,30 @@
       emit('playing', { id: line.id, text: line.text, ms: Math.round(ms), dur: line.dur, shown });
     }
     async function webStream(url) {
-      // Browser (not the app): play the PCM stream with Web Audio as it arrives.
+      // Browser (not the app): play the voice with Web Audio as its pieces arrive (see /stream in server.mjs).
       const c = audioCtx(), ac = new AbortController(), srcs = [];
       let at = 0, t0 = 0, bytes = 0, carry = null, cut = false, wake = null;
       stopLine = () => { cut = true; ac.abort(); srcs.forEach(s => { try { s.stop(); } catch {} }); wake?.(); };
       try {
-        const r = await fetch(url, { signal: ac.signal });
-        if (!r.ok) return false;
-        const sr = Number(r.headers.get('x-sample-rate')) || 24000, reader = r.body.getReader();
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          let b = value;
+        for (let from = 0; ;) {
+          const r = await fetch(`${url}&from=${from}`, { signal: ac.signal });
+          if (!r.ok) { if (from) break; return false; } // 404 later on = the line was replaced
+          const sr = Number(r.headers.get('x-sample-rate')) || 24000, last = r.headers.get('x-done') === '1';
+          let b = new Uint8Array(await r.arrayBuffer());
+          from += b.length;
           if (carry) { const m = new Uint8Array(b.length + 1); m[0] = carry; m.set(b, 1); b = m; carry = null; }
           if (b.length & 1) { carry = b[b.length - 1]; b = b.subarray(0, b.length - 1); }
-          const n = b.length >> 1; if (!n) continue;
+          const n = b.length >> 1;
+          if (!n) { if (last) break; continue; }
           const dv = new DataView(b.buffer, b.byteOffset, b.length), f = new Float32Array(n);
           for (let i = 0; i < n; i++) f[i] = dv.getInt16(2 * i, true) / 32768;
           const buf = c.createBuffer(1, n, sr); buf.copyToChannel(f, 0);
           const src = c.createBufferSource(); src.buffer = buf; src.connect(c.destination);
           if (!at) { at = t0 = c.currentTime + 0.05; line.posFn = () => Math.max(0, (c.currentTime - t0) * 1000); started(); }
           at = Math.max(at, c.currentTime); src.start(at); at += buf.duration; srcs.push(src); bytes += b.length;
+          line.dur = last ? bytes / 2 / sr * 1000 : 0;
+          if (last) break;
         }
-        line.dur = bytes / 2 / sr * 1000;
         await new Promise(r => { wake = r; setTimeout(r, Math.max(0, (at - c.currentTime) * 1000) + 50); });
         return bytes > 0 || cut;
       } catch { return cut; }

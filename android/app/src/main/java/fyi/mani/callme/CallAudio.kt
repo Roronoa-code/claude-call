@@ -88,7 +88,8 @@ class CallAudio(context: Context, private val web: WebView, private val origin: 
     }
 
     /**
-     * Plays one of Claude's lines while it is still being made: 16-bit mono PCM read from the stream as it arrives.
+     * Plays one of Claude's lines while it is still being made: 16-bit mono PCM fetched in rolling pieces
+     * (`&from=<bytes so far>`, the last one marked x-done: 1) and played as each arrives.
      * Tells the page when the sound starts (__audioStart), how long it is once fully received (__audioDur),
      * and when it has finished playing (__played).
      */
@@ -130,45 +131,53 @@ class CallAudio(context: Context, private val web: WebView, private val origin: 
         override fun run() {
             var ok = false
             try {
-                val c = (URL(url).openConnection() as HttpURLConnection).apply { connectTimeout = 10_000; readTimeout = 30_000 }
-                conn = c
-                if (c.responseCode != 200) return
-                rate = c.getHeaderField("x-sample-rate")?.toIntOrNull() ?: 24_000
-                val min = AudioTrack.getMinBufferSize(rate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
-                val t = AudioTrack.Builder()
-                    .setAudioAttributes(attrs)
-                    .setAudioFormat(AudioFormat.Builder().setSampleRate(rate)
-                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
-                    .setTransferMode(AudioTrack.MODE_STREAM)
-                    .setBufferSizeInBytes(maxOf(min, rate / 5 * 2)) // ~200 ms: small, so stopping is instant
-                    .build()
-                track = t
-                if (cancelled) return
                 val buf = ByteArray(8192)
                 var have = 0 // a leftover odd byte from the previous read
                 var bytes = 0L
-                c.inputStream.use { input ->
-                    while (!cancelled) {
-                        val n = input.read(buf, have, buf.size - have)
-                        if (n < 0) break
-                        val total = have + n
-                        val even = total and 1.inv()
-                        if (even > 0) {
-                            if (bytes == 0L) { t.play(); js("window.__audioStart && window.__audioStart($id)"); main.post(tick) }
-                            t.write(buf, 0, even)
-                            bytes += even
-                        }
-                        have = total - even
-                        if (have == 1) buf[0] = buf[total - 1]
+                var from = 0L
+                var t: AudioTrack? = null
+                while (!cancelled) {
+                    val c = (URL("$url&from=$from").openConnection() as HttpURLConnection).apply { connectTimeout = 10_000; readTimeout = 30_000 }
+                    conn = c
+                    if (c.responseCode != 200) { if (from == 0L) return else break } // later 404 = line replaced
+                    val last = c.getHeaderField("x-done") == "1"
+                    val tr = t ?: run {
+                        rate = c.getHeaderField("x-sample-rate")?.toIntOrNull() ?: 24_000
+                        val min = AudioTrack.getMinBufferSize(rate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
+                        AudioTrack.Builder()
+                            .setAudioAttributes(attrs)
+                            .setAudioFormat(AudioFormat.Builder().setSampleRate(rate)
+                                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
+                            .setTransferMode(AudioTrack.MODE_STREAM)
+                            .setBufferSizeInBytes(maxOf(min, rate / 5 * 2)) // ~200 ms: small, so stopping is instant
+                            .build().also { t = it; track = it }
                     }
+                    c.inputStream.use { input ->
+                        while (!cancelled) {
+                            val n = input.read(buf, have, buf.size - have)
+                            if (n < 0) break
+                            from += n
+                            val total = have + n
+                            val even = total and 1.inv()
+                            if (even > 0) {
+                                if (bytes == 0L) { tr.play(); js("window.__audioStart && window.__audioStart($id)"); main.post(tick) }
+                                tr.write(buf, 0, even)
+                                bytes += even
+                            }
+                            have = total - even
+                            if (have == 1) buf[0] = buf[total - 1]
+                        }
+                    }
+                    if (last) break
                 }
-                if (cancelled) return
+                val tr = t
+                if (cancelled || tr == null) return
                 val frames = bytes / 2
                 js("window.__audioDur && window.__audioDur($id, ${frames * 1000 / rate})")
                 // Let the end play out, then report.
-                t.stop()
+                tr.stop()
                 val until = System.currentTimeMillis() + 500 + frames * 1000 / rate
-                while (!cancelled && t.playbackHeadPosition < frames && System.currentTimeMillis() < until) sleep(20)
+                while (!cancelled && tr.playbackHeadPosition < frames && System.currentTimeMillis() < until) sleep(20)
                 ok = bytes > 0
             } catch (_: Exception) {
             } finally {

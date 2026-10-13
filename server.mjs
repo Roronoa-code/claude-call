@@ -190,19 +190,19 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (url.pathname === '/stream') {
-      // Claude's line as 16-bit PCM while it is being made. Waits for the line to start; 409 = play the parts instead.
-      const seq = Number(q('seq'));
+      // Claude's line as 16-bit PCM while it is being made, in rolling pieces: each request returns the audio made
+      // since byte `from` (waiting until there is some), with x-done: 1 on the last. Whole responses, because the
+      // quick tunnel holds back a streamed response until ~128 KB have built up. 409 = play the parts instead.
+      const seq = Number(q('seq')), from = Number(q('from') ?? 0);
       while (call.seq === seq && !call.mode) await nextChange(30_000);
       if (call.seq !== seq) { res.writeHead(404).end(); return; }
       if (call.mode !== 'stream') { res.writeHead(409).end(); return; }
       const st = call.stream;
-      res.writeHead(200, { 'content-type': 'application/octet-stream', 'x-sample-rate': String(st.rate), 'cache-control': 'no-store' });
-      const send = b => { if (!st.sentFirst) { st.sentFirst = true; mark('first audio byte sent to phone'); } res.write(b); };
-      st.chunks.forEach(send);
-      if (st.done) { res.end(); return; }
-      st.subs.add(send);
-      st.ends.add(() => res.end());
-      res.on('close', () => st.subs.delete(send));
+      while (st.bytes <= from && !st.done) await new Promise(r => { st.subs.add(r); setTimeout(r, 15_000); });
+      const piece = Buffer.concat(st.chunks).subarray(from);
+      if (!from && piece.length) mark('first audio byte sent to phone');
+      res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': piece.length, 'x-sample-rate': String(st.rate),
+        'x-done': st.done && from + piece.length >= st.bytes ? '1' : '0', 'cache-control': 'no-store' }).end(piece);
       return;
     }
     const part = call.audio[Number(q('part') ?? 0)];
@@ -344,19 +344,20 @@ async function streamLine(seq, text, firstReady) {
   call.ttsAbort = ac;
   const r = await gpu('/tts_stream', { body: text, signal: ac.signal });
   if (!r || call.seq !== seq) { ac.abort(); return !!r; }
-  const st = call.stream = { rate: Number(r.headers.get('x-sample-rate')) || 24000, chunks: [], done: false, subs: new Set(), ends: new Set() };
+  const st = call.stream = { rate: Number(r.headers.get('x-sample-rate')) || 24000, chunks: [], bytes: 0, done: false, subs: new Set() };
+  const wake = () => { for (const w of st.subs) w(); st.subs.clear(); };
   call.mode = 'stream'; changed();
   mark('first voice chunk ready');
   firstReady();
   try {
     for await (const c of r.body) {
       const b = Buffer.from(c);
-      st.chunks.push(b);
-      for (const send of st.subs) send(b);
+      st.chunks.push(b); st.bytes += b.length;
+      wake();
     }
   } catch (e) { if (!ac.signal.aborted) log('voice stream broke', e.message); }
   st.done = true;
-  for (const end of st.ends) end();
+  wake();
   return true;
 }
 // Fallback: whole files, sentence by sentence (ElevenLabs / Kokoro, or the phone's own voice).
