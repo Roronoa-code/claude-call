@@ -14,6 +14,7 @@ Prints "ready" once both models are loaded and warmed up (first run captures CUD
 """
 import io
 import json
+import random
 import select
 import sys
 import threading
@@ -42,8 +43,15 @@ def clone(ref: dict):
     return p, ref["text"]
 
 
-# "" is the normal voice; the rest are moods.
-voices = {"": clone(voice), **{mood: clone(ref) for mood, ref in voice.get("moods", {}).items()}}
+# Several takes per mood (make_moods.py); "" is the normal voice. Each sentence is said from a take picked at random,
+# so the voice keeps varying instead of repeating one delivery.
+moods = voice.get("moods", {})
+voices = {"": [clone(voice)] + [clone(t) for t in moods.get("normal", [])],
+          **{mood: [clone(t) for t in takes] for mood, takes in moods.items() if mood != "normal"}}
+
+
+def take(mood: str):
+    return random.choice(voices[mood])
 
 # One voice at a time (the CUDA graphs hold a single generation's state), and one GPU job at a time.
 # Streaming takes the GPU per chunk, so hearing (live captions, interrupts) slips in between voice chunks.
@@ -57,7 +65,7 @@ def speak(text: str) -> bytes:
     parts, sr = [], 24000
     with tts_lock, gpu_lock:
         for mood, words in pieces(text, voices) or [("", text)]:
-            prompt, ref_text = voices[mood]
+            prompt, ref_text = take(mood)
             torch.manual_seed(1234)  # same sampling every time, so pieces of one reply sound like the same person
             wavs, sr = model.generate_voice_clone(text=words, language="English", voice_clone_prompt=prompt, ref_text=ref_text)
             parts.append(np.asarray(wavs[0], dtype=np.float32))
@@ -71,7 +79,7 @@ def speak_stream(text: str):
     """Yields (sample_rate, int16 PCM bytes) pieces of one line as they are made, mood by mood."""
     with tts_lock:
         for mood, words in pieces(text, voices) or [("", text)]:
-            prompt, ref_text = voices[mood]
+            prompt, ref_text = take(mood)
             torch.manual_seed(1234)
             gen = model.generate_voice_clone_streaming(text=words, language="English", voice_clone_prompt=prompt,
                                                        ref_text=ref_text, chunk_size=STREAM_CHUNK)
@@ -184,8 +192,7 @@ def watchdog(server):
 
 
 if __name__ == "__main__":
-    for mood in voices:  # captures CUDA graphs for every voice, so the first real line is fast in any mood
-        speak(f"[{mood}] Warming up." if mood else "Warming up.")
+    speak("Warming up.")  # captures CUDA graphs so the first real line is fast (in any mood: the graphs are shared)
     for _ in speak_stream("Warming up."):
         pass
     hear(np.zeros(16000, dtype=np.float32), "")
