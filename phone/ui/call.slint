@@ -240,7 +240,7 @@ export component CallScreen inherits Window {
                     opacity: p.o;
                 }
                 // Null, for calls from Codex: on the same footing as Clawd, about as tall. Its frames are made at the
-                // exact size they are shown (ui/null_atlas.py), so they are drawn pixel for pixel: big, and small when
+                // exact size they are shown (examples/null_atlas.rs), so they are drawn pixel for pixel: big, and small when
                 // perched (the one step between is the big frames at 3/4).
                 if root.agent == "Codex": Image {
                     property <float> u: root.mascot-h / 20px;
