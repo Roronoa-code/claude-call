@@ -35,6 +35,7 @@ const writeStatus = (mode, by) => writeFileSync(STATUS_PATH, JSON.stringify({ mo
 // The phone app publishes its setting on the ntfy topic (title "Contact mode"); take it if it's newer than the file.
 async function contactMode() {
   const file = readStatusFile();
+  if (process.env.CALLME_STATUS) return file.mode; // tests: their own file only, never the phone's setting
   try {
     const r = await fetch(`https://ntfy.sh/${topic}/json?poll=1&since=12h`, { signal: AbortSignal.timeout(4000) });
     const latest = (await r.text()).split('\n').filter(Boolean).map(l => JSON.parse(l))
@@ -205,11 +206,13 @@ const killTunnel = () => tunnel?.kill();
 process.on('exit', killTunnel);
 process.stdin.on('close', () => { killTunnel(); process.exit(0); });
 
+// Which agent is calling (Codex sets CALLME_AGENT=Codex). The alert title stays "Claude is calling": the app rings on it.
+const AGENT = process.env.CALLME_AGENT?.trim() || 'Claude';
 async function ring(link, reason) {
   await fetch(`https://ntfy.sh/${topic}`, {
     method: 'POST',
     // ponytail: message text is not sent through ntfy (public server); only a generic alert + private link.
-    body: reason ? `Claude needs you: ${reason}` : 'Claude needs to talk to you',
+    body: reason ? `${AGENT} needs you: ${reason}` : `${AGENT} needs to talk to you`,
     headers: { Title: 'Claude is calling', Priority: '5', Tags: 'telephone_receiver', Click: link, Actions: `view, Answer, ${link}` },
   }).catch(e => log('ntfy failed', e.message));
 }
@@ -278,9 +281,10 @@ const pageLive = () => Date.now() - call.lastSeen < 10_000;
 const mcp = new McpServer({ name: 'callme', version: '1.0.0' }, {
   instructions: 'The user sets a contact mode (get_contact_mode): call / text / both / none. Respect it: call only if "call" or "both"; Discord (ask_discord) only if "text" or "both"; with "none", do not contact them at all. call_user enforces this. ' +
     'Use call_user to phone the user when you are blocked on a decision only they can make, need input to continue, or finished a long task they are away from. ' +
-    'Default: do not run the call yourself. Hand it to a fast helper: an Agent with model "haiku" given a short brief containing the exact questions, any options, and the context needed to answer follow-ups. Tell it to call once, keep each line to 1-2 casual sentences, reply instantly, and return the user\'s exact answers. Its replies are much faster than yours, and the user prefers it. ' +
+    (AGENT !== 'Claude' ? 'Make the call yourself. ' : '') +
+    (AGENT !== 'Claude' ? '' : 'Default: do not run the call yourself. Hand it to a fast helper: an Agent with model "haiku" given a short brief containing the exact questions, any options, and the context needed to answer follow-ups. Tell it to call once, keep each line to 1-2 casual sentences, reply instantly, and return the user\'s exact answers. Its replies are much faster than yours, and the user prefers it. ' +
     'Include this relay rule in the helper\'s brief: "If the user asks something the brief does not cover, or says to ask the main Claude, call hold_call with a short line like \'One sec, let me check with the main Claude\', then finish your turn with a line starting QUESTION FOR MAIN: followed by their exact question. You will be resumed with the answer; then use continue_call to tell them and carry on." When the helper returns QUESTION FOR MAIN, answer it and resume that same helper (SendMessage to its agent id) with the answer, quickly, because the user is waiting on hold. ' +
-    'Make the call yourself only when the conversation needs deep context or open-ended back-and-forth. ' +
+    'Make the call yourself only when the conversation needs deep context or open-ended back-and-forth. ') +
     'Keep spoken messages short and conversational, like a real phone call. Use continue_call for follow-ups and end_call to hang up.',
 });
 
@@ -335,8 +339,8 @@ mcp.registerTool('set_contact_mode', {
   inputSchema: { mode: z.enum(MODES) },
 }, async ({ mode }) => {
   writeStatus(mode, 'claude');
-  // Publish too, so the phone app shows the new mode.
-  await fetch(`https://ntfy.sh/${topic}`, { method: 'POST', body: mode, headers: { Title: 'Contact mode', Priority: '1' } }).catch(() => {});
+  // Publish too, so the phone app shows the new mode. Not from tests (CALLME_STATUS set): they must never change the real phone.
+  if (!process.env.CALLME_STATUS) await fetch(`https://ntfy.sh/${topic}`, { method: 'POST', body: mode, headers: { Title: 'Contact mode', Priority: '1' } }).catch(() => {});
   return text(`Contact mode set to ${mode}.`);
 });
 
