@@ -13,7 +13,9 @@ const [PREV, SOT, NO_TS] = tokenizer.model.convert_tokens_to_ids(['<|startofprev
 export async function transcribe(pcm, context = '') {
   const { input_features } = await processor(pcm);
   // Whisper allows up to 224 prompt tokens; keep the most recent context.
-  const prompt = context ? tokenizer.encode(' ' + context.trim(), { add_special_tokens: false }).slice(-200) : [];
+  // Words it keeps mishearing ("call screen" -> "cold screen") always lead the prompt (same list as voice_server.py).
+  const VOCAB = 'Claude, Clawd, Codex, call screen, Discord, ntfy, Whisper, widget.';
+  const prompt = tokenizer.encode(' ' + (VOCAB + ' ' + context.trim()).trim(), { add_special_tokens: false }).slice(-200);
   const init = prompt.length ? [PREV, ...prompt, SOT, NO_TS] : [SOT, NO_TS];
   const out = await model.generate({ inputs: input_features, decoder_input_ids: [init], max_new_tokens: 220 });
   const ids = Array.from(out.tolist()[0], Number).slice(init.length);

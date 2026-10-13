@@ -77,7 +77,7 @@ All came from the first real call on the S25. Items 1 to 4 are call-screen (`cal
 7. **Route flipped earpiece to speaker by itself once.** Look at the route watcher in `CallAudio.kt`; probably a device-change callback that should re-assert the earpiece unless the user chose Speaker.
 8. **Mishearing: "call screen" heard as "cold screen".** Add a fixed vocabulary hint (Claude, Clawd, Codex, call screen, ntfy, Discord, ...) to Whisper's prompt in `voice/voice_server.py`. Check with `node asr-check.mjs` and add the failing phrase there.
 
-## 5. Uncommitted work to leave alone or finish deliberately
+## 5. Icon work (UPDATE: Codex has since committed it, as `0cf86b4`; this section is history)
 
 Codex (an earlier Codex session) was changing the app icon and left these uncommitted:
 - `android/app/src/main/AndroidManifest.xml`: `android:icon` / `roundIcon` now `@drawable/ic_call_logo`
