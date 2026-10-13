@@ -27,6 +27,8 @@ import torch
 from faster_qwen3_tts import FasterQwen3TTS
 from transformers import AutoProcessor, WhisperForConditionalGeneration
 
+from stretch import Stretch  # a little slower than the model speaks, same pitch
+
 HERE = Path(__file__).parent
 MODEL = r"B:\Projects\ThePipeline\models\qwen3-tts-base"
 voice = json.loads((HERE / "voice.json").read_text(encoding="utf-8"))
@@ -48,7 +50,7 @@ def speak(text: str) -> bytes:
         torch.manual_seed(1234)  # same sampling every time, so pieces of one reply sound like the same person
         wavs, sr = model.generate_voice_clone(text=text, language="English",
                                               voice_clone_prompt=prompt, ref_text=voice["text"])
-    audio = np.asarray(wavs[0], dtype=np.float32)
+    audio = Stretch().feed(np.asarray(wavs[0], dtype=np.float32), last=True)
     buf = io.BytesIO()
     sf.write(buf, audio / (float(np.abs(audio).max()) or 1.0) * 0.89, sr, format="WAV", subtype="PCM_16")
     return buf.getvalue()
@@ -60,15 +62,19 @@ def speak_stream(text: str, chunk: int = STREAM_CHUNK):
         torch.manual_seed(1234)
         gen = model.generate_voice_clone_streaming(text=text, language="English", voice_clone_prompt=prompt,
                                                    ref_text=voice["text"], chunk_size=chunk)
+        slow, sr = Stretch(), 24000
         try:
             while True:
                 with gpu_lock:
                     item = next(gen, None)
+                if item is not None:
+                    audio, sr, _ = item
+                pcm = slow.feed(audio if item is not None else [], last=item is None)
+                if len(pcm):
+                    pcm = np.clip(pcm * STREAM_GAIN, -1.0, 1.0)
+                    yield sr, (pcm * 32767).astype("<i2").tobytes()
                 if item is None:
                     return
-                audio, sr, _ = item
-                pcm = np.clip(np.asarray(audio, dtype=np.float32) * STREAM_GAIN, -1.0, 1.0)
-                yield sr, (pcm * 32767).astype("<i2").tobytes()
         finally:
             gen.close()
 

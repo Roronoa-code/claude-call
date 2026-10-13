@@ -32,7 +32,7 @@ const BARGE_MIN: f32 = 0.006;
 const BARGE_ECHO: f32 = 3.0;
 const LOUD_MIN: f32 = 0.03;
 const LOUD_ECHO: f32 = 8.0;
-const MS_PER_CHAR: f64 = 65.0; // the cloned voice's pace, for captions until a line's length is known
+const MS_PER_CHAR: f64 = 72.0; // the cloned voice's pace (10% slowed), for captions until a line's length is known
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Mode {
@@ -253,8 +253,21 @@ impl Engine {
 
     fn note_state(&self, st: &Value) {
         let mut s = self.lock();
+        if let Some(a) = st["agent"].as_str().filter(|a| !a.is_empty()) {
+            s.view.agent = a.to_string();
+        }
         s.debug = st["debug"] == true;
         s.last_hold = (st["hold"] == true, st["holdLabel"].as_str().unwrap_or("").to_string());
+    }
+
+    /// Who is calling, before answering (the incoming screen shows their name and mascot).
+    pub fn peek(self: &Arc<Self>) {
+        let me = self.clone();
+        RT.spawn(async move {
+            if let Some(st) = me.get_state(-1).await {
+                me.note_state(&st);
+            }
+        });
     }
 
     /// The screen was closed: stop at once (the app tells the server).

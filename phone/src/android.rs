@@ -193,3 +193,37 @@ pub fn keyboard() -> f32 {
     })
     .unwrap_or(0.0)
 }
+
+/// The activity's class: which screen this is (the call screen or the home screen).
+pub fn activity_name() -> String {
+    with(|env, act| {
+        let class = env.call_method(act, "getClass", "()Ljava/lang/Class;", &[])?.l()?;
+        let name = env.call_method(&class, "getName", "()Ljava/lang/String;", &[])?.l()?;
+        Ok(env.get_string(&name.into())?.into())
+    })
+    .unwrap_or_default()
+}
+
+// The home screen's Android calls (MainActivity.kt).
+pub fn call(method: &str) {
+    with(|env, act| env.call_method(act, method, "()V", &[]).map(drop));
+}
+pub fn call_str(method: &str) -> String {
+    with(|env, act| {
+        let s = env.call_method(act, method, "()Ljava/lang/String;", &[])?.l()?;
+        Ok(if s.is_null() { String::new() } else { env.get_string(&s.into())?.into() })
+    })
+    .unwrap_or_default()
+}
+pub fn call_with_str(method: &str, arg: &str) {
+    with(|env, act| {
+        let a = env.new_string(arg)?;
+        env.call_method(act, method, "(Ljava/lang/String;)V", &[JValue::Object(&a)]).map(drop)
+    });
+}
+pub fn call_bool(method: &str) -> bool {
+    with(|env, act| env.call_method(act, method, "()Z", &[])?.z()).unwrap_or(false)
+}
+pub fn call_with_bool(method: &str, arg: bool) {
+    with(|env, act| env.call_method(act, method, "(Z)V", &[JValue::Bool(arg as u8)]).map(drop));
+}

@@ -38,6 +38,8 @@ pub struct View {
     hold_after: bool,
     pub voice: Voice,
     pub mic_level: f32,
+    /// Who is calling: "Claude" or "Codex" (from the call server).
+    pub agent: String,
 }
 
 pub fn words(t: &str) -> Vec<&str> {
@@ -99,6 +101,7 @@ impl View {
             hold_after: false,
             voice: Voice::None,
             mic_level: 0.0,
+            agent: "Claude".into(),
         }
     }
 
@@ -205,20 +208,21 @@ impl View {
         self.notice.clear();
     }
 
-    pub fn status_text(&self) -> &'static str {
+    pub fn status_text(&self) -> String {
+        let a = &self.agent;
         match self.phase {
-            Phase::Incoming => "Incoming call",
-            Phase::Connecting => "Connecting…",
-            Phase::Talking => "Claude is talking…",
+            Phase::Incoming => "Incoming call".into(),
+            Phase::Connecting => "Connecting…".into(),
+            Phase::Talking => format!("{a} is talking…"),
             Phase::Listening => {
-                if self.muted { "Mic muted, type a reply" } else { "Listening… take your time" }
+                (if self.muted { "Mic muted, type a reply" } else { "Listening… take your time" }).into()
             }
-            Phase::Hearing => "Hearing you…",
+            Phase::Hearing => "Hearing you…".into(),
             Phase::Thinking => {
-                if self.transcribing { "Got it, transcribing…" } else { "Claude is thinking…" }
+                if self.transcribing { "Got it, transcribing…".into() } else { format!("{a} is thinking…") }
             }
-            Phase::Hold => "On hold",
-            Phase::Ended => "Call ended",
+            Phase::Hold => "On hold".into(),
+            Phase::Ended => "Call ended".into(),
         }
     }
 }

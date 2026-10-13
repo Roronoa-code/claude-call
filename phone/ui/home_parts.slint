@@ -1,0 +1,76 @@
+// The home screen's state (set from Rust), the contact modes, Clawd's pixels, and the setup card.
+import { T, Icons, Px } from "parts.slint";
+
+export struct Mode { id: string, label: string, icon: string, title: string, desc: string }
+
+export global Home {
+    in property <bool> ready: true;
+    in property <string> missing; // what still needs the user's OK
+    in property <string> mode: "both";
+    in property <string> topic;
+    in property <bool> can-pin: true;
+    in property <[Px]> clawd; // in grid cells: 1px = one cell
+    in property <length> sat: 36px;
+    in property <length> sab: 24px;
+    in property <length> kb; // the keyboard's height while the channel is being edited
+    callback set-mode(string);
+    callback set-up();
+    callback test-ring();
+    callback pin(bool);
+    callback save-topic(string);
+    callback editing(bool);
+    out property <[Mode]> modes: [
+        { id: "call", label: "Calls", icon: Icons.phone, title: "Ready when they call", desc: "Calls only. No Discord messages." },
+        { id: "text", label: "Texts", icon: Icons.chat, title: "Messages only", desc: "They message you on Discord. No calls." },
+        { id: "both", label: "Both", icon: Icons.both, title: "Ready when they call", desc: "Calls and Discord messages." },
+        { id: "none", label: "Quiet", icon: Icons.moon, title: "Quiet for now", desc: "They keep working and save their questions." },
+    ];
+    out property <int> index: mode == "call" ? 0 : mode == "text" ? 1 : mode == "both" ? 2 : 3;
+}
+
+// Clawd at a whole number of px per cell (pixel art never at fractions).
+export component Clawd {
+    in property <float> u: 4;
+    width: 36px * u;
+    height: 20px * u;
+    for p in Home.clawd: Rectangle {
+        x: p.x * root.u;
+        y: p.y * 2 * root.u;
+        width: p.w * root.u;
+        height: p.h * 2 * root.u;
+        background: p.c;
+        opacity: p.o;
+    }
+}
+
+// The finish-setup card, only while something is missing.
+export component SetupCard {
+    height: 92px;
+    Rectangle {
+        border-radius: 20px;
+        background: #e8a33d14;
+        border-width: 1px;
+        border-color: #e8a33d55;
+    }
+    HorizontalLayout {
+        padding: 16px;
+        spacing: 14px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 4px;
+            Text { text: "Finish setting up"; font-size: 16px; font-weight: 600; color: T.fg; }
+            Text { text: Home.missing; font-size: 13px; color: T.muted; wrap: word-wrap; }
+        }
+        Rectangle {
+            width: 84px;
+            Rectangle {
+                y: (parent.height - 40px) / 2;
+                height: 40px;
+                border-radius: 20px;
+                background: touch.pressed ? #c4664a : T.accent;
+                Text { text: "Set up"; font-size: 15px; font-weight: 600; color: white; }
+                touch := TouchArea { clicked => { Home.set-up(); } }
+            }
+        }
+    }
+}

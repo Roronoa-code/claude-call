@@ -312,7 +312,7 @@ async fn handle(req: Request) -> Result<Response, String> {
             let c = call();
             json_res(json!({ "v": c.v, "seq": c.seq, "say": c.say, "end": c.end, "hold": c.hold,
                 "holdLabel": if c.hold { c.say.as_str() } else { "" }, "mode": c.mode, "parts": c.parts,
-                "ready": c.audio.len(), "debug": debug_on() }))
+                "ready": c.audio.len(), "debug": debug_on(), "agent": cfg().agent }))
         }
         "/stream" => {
             // Claude's line as 16-bit PCM while it is being made, in rolling pieces: each request returns the audio made

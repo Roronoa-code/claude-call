@@ -10,6 +10,7 @@ export component CallScreen inherits Window {
     in property <length> sab: 24px;
     in property <length> kb; // how far the keyboard reaches up from the bottom edge (0 when hidden)
     in property <string> phase: "incoming"; // incoming connecting talking listening hearing thinking hold ended
+    in property <string> agent: "Claude"; // who is calling: Claude or Codex
     in property <string> time-text: "Calling you";
     in property <string> status;
     in property <Cap> cap: { key: 0, label: "Calling now", text: "Claude would like to talk.", lit: "Claude would like to talk.", size: 0, tone: "", orb: false };
@@ -77,7 +78,7 @@ export component CallScreen inherits Window {
             y: root.sat + 4px;
             width: parent.width - 48px;
             height: 52px;
-            Text { x: 0; y: 2px; text: "Claude"; font-size: 18px; font-weight: 700; color: T.fg; }
+            Text { x: 0; y: 2px; text: root.agent; font-size: 18px; font-weight: 700; color: T.fg; }
             SwapText { y: 28px; width: parent.width; height: 20px; text: root.time-text; font-size: 14px; color: T.muted; }
         }
 
@@ -218,7 +219,7 @@ export component CallScreen inherits Window {
                     opacity: root.thread ? 1 : 0;
                     animate opacity { duration: 340ms; delay: 220ms; easing: T.out; }
                     Orb { t: root.t; y: 2px; }
-                    Text { text: "Claude is thinking…"; font-size: 15px; color: T.fg2; vertical-alignment: center; }
+                    Text { text: root.agent + " is thinking…"; font-size: 15px; color: T.fg2; vertical-alignment: center; }
                 }
             }
 

@@ -48,6 +48,15 @@ export global Icons {
     out property <string> phone: "M5 4h3.2l1.6 4l-2 1.3a10 10 0 0 0 4.9 4.9l1.3 -2l4 1.6V17a2 2 0 0 1 -2 2A15 15 0 0 1 3 6a2 2 0 0 1 2 -2z";
     out property <string> send: "M5 12h13 M13 6l6 6l-6 6";
     out property <string> close: "M6 6l12 12 M18 6L6 18";
+    out property <string> chat: "M5 5h14a2 2 0 0 1 2 2v8a2 2 0 0 1 -2 2h-8l-4 3.5v-3.5h-2a2 2 0 0 1 -2 -2v-8a2 2 0 0 1 2 -2z";
+    out property <string> both: "M3.5 6.5h9a1.5 1.5 0 0 1 1.5 1.5v5a1.5 1.5 0 0 1 -1.5 1.5h-5l-3 2.5v-2.5h-1a1.5 1.5 0 0 1 -1.5 -1.5v-5a1.5 1.5 0 0 1 1.5 -1.5z M14 10.5h5.5a1.5 1.5 0 0 1 1.5 1.5v5a1.5 1.5 0 0 1 -1.5 1.5h-1v2.5l-3 -2.5h-4a1.5 1.5 0 0 1 -1.5 -1.5";
+    out property <string> moon: "M20 14.5a8 8 0 1 1 -10.5 -10.5a6.5 6.5 0 0 0 10.5 10.5z";
+    out property <string> bell: "M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15z M10 20.5a2 2 0 0 0 4 0";
+    out property <string> wide: "M4 8h16a2 2 0 0 1 2 2v4a2 2 0 0 1 -2 2h-16a2 2 0 0 1 -2 -2v-4a2 2 0 0 1 2 -2z M8 8v8 M12 8v8 M16 8v8";
+    out property <string> grid: "M5 4h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1v-4a1 1 0 0 1 1 -1z M15 4h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1v-4a1 1 0 0 1 1 -1z M5 14h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1v-4a1 1 0 0 1 1 -1z M15 14h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1v-4a1 1 0 0 1 1 -1z";
+    out property <string> hash: "M5 9h14 M5 15h14 M10.5 4l-2 16 M15.5 4l-2 16";
+    out property <string> chevron: "M9.5 6l6 6l-6 6";
+    out property <string> shield: "M12 3l7 3v5.5c0 4.5 -3 7.8 -7 9.5c-4 -1.7 -7 -5 -7 -9.5v-5.5z M9 12l2 2l4 -4";
 }
 
 // Text that changes crossfades in place: the old line rises out as the new one rises in.
@@ -271,6 +280,7 @@ export component Morph {
             width: root.tw;
             height: root.th;
             opacity: Math.max(0, Math.min(1, (root.k - 0.25) * 2.5));
+            TouchArea { } // a tap on the surface stays on it (never reaches what is behind)
             @children
         }
     }
