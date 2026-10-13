@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { VoiceBeam } from 'voice-glow';
-import { Mascot } from './mascot.jsx';
+import { Mascot } from '../../call-ui/src/mascot.jsx';
 import { ThinkingOrb } from 'thinking-orbs';
 import { clock, statusText } from './sim.js';
 import { Icon, Spoken, StatusBar, Swap, callTime, useNow, useSim } from './ui.jsx';
@@ -44,7 +44,7 @@ export default function CallC({ sim }) {
 
       <div className="c-thread" ref={thread}>
         <div className={`c-ring ${incoming ? 'show' : ''}`} aria-hidden={!incoming}>
-          <Mascot sim={sim} u={5} spark={110} />
+          <Mascot sim={sim} u={5} spark={110} room={60} />
           <p>Claude is calling</p>
         </div>
         {v.msgs.map(m => m.who === 'claude' ? (
@@ -62,7 +62,7 @@ export default function CallC({ sim }) {
         )}
       </div>
 
-      <div className={`c-perch ${incoming ? '' : 'show'}`}>{!incoming && <Mascot sim={sim} u={3} spark={48} />}</div>
+      <div className={`c-perch ${incoming ? '' : 'show'}`}>{!incoming && <Mascot sim={sim} u={3} spark={48} room={6} />}</div>
       <div className="c-dockwrap">
         <VoiceBeam level={sim.meLevel} paused={ended}>
           <div className={`c-dock ${incoming ? 'incoming' : ''}`}>

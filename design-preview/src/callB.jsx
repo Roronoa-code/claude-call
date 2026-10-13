@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { VoiceBeam } from 'voice-glow';
-import { Mascot } from './mascot.jsx';
+import { Mascot } from '../../call-ui/src/mascot.jsx';
 import { ThinkingOrb } from 'thinking-orbs';
 import { clock, statusText } from './sim.js';
 import { Icon, Morph, Spoken, StatusBar, Swap, callTime, useNow, useSim } from './ui.jsx';
@@ -37,7 +37,7 @@ export default function CallB({ sim }) {
         </header>
 
         <main className="b-stage" aria-live="off">
-          <Mascot sim={sim} u={4} spark={88} className="b-mascot" />
+          <Mascot sim={sim} u={4} spark={88} room={48} className="b-mascot" />
           <Swap k={cap.key} className="b-cap">
             <span className={`b-label ${cap.tone || ''}`}>
               {cap.orb && <ThinkingOrb state={cap.orb} size={20} theme="dark" aria-hidden="true" />}

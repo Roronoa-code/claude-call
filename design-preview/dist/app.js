@@ -29,9 +29,9 @@
     mod
   ));
 
-  // B:/Projects/CallMe/design-preview/node_modules/react/cjs/react.development.js
+  // node_modules/react/cjs/react.development.js
   var require_react_development = __commonJS({
-    "B:/Projects/CallMe/design-preview/node_modules/react/cjs/react.development.js"(exports, module) {
+    "node_modules/react/cjs/react.development.js"(exports, module) {
       "use strict";
       (function() {
         function defineDeprecationWarning(methodName, info) {
@@ -1026,9 +1026,9 @@
     }
   });
 
-  // B:/Projects/CallMe/design-preview/node_modules/react/index.js
+  // node_modules/react/index.js
   var require_react = __commonJS({
-    "B:/Projects/CallMe/design-preview/node_modules/react/index.js"(exports, module) {
+    "node_modules/react/index.js"(exports, module) {
       "use strict";
       if (false) {
         module.exports = null;
@@ -1038,9 +1038,9 @@
     }
   });
 
-  // B:/Projects/CallMe/design-preview/node_modules/scheduler/cjs/scheduler.development.js
+  // node_modules/scheduler/cjs/scheduler.development.js
   var require_scheduler_development = __commonJS({
-    "B:/Projects/CallMe/design-preview/node_modules/scheduler/cjs/scheduler.development.js"(exports) {
+    "node_modules/scheduler/cjs/scheduler.development.js"(exports) {
       "use strict";
       (function() {
         function performWorkUntilDeadline() {
@@ -1297,9 +1297,9 @@
     }
   });
 
-  // B:/Projects/CallMe/design-preview/node_modules/scheduler/index.js
+  // node_modules/scheduler/index.js
   var require_scheduler = __commonJS({
-    "B:/Projects/CallMe/design-preview/node_modules/scheduler/index.js"(exports, module) {
+    "node_modules/scheduler/index.js"(exports, module) {
       "use strict";
       if (false) {
         module.exports = null;
@@ -1309,9 +1309,9 @@
     }
   });
 
-  // B:/Projects/CallMe/design-preview/node_modules/react-dom/cjs/react-dom.development.js
+  // node_modules/react-dom/cjs/react-dom.development.js
   var require_react_dom_development = __commonJS({
-    "B:/Projects/CallMe/design-preview/node_modules/react-dom/cjs/react-dom.development.js"(exports) {
+    "node_modules/react-dom/cjs/react-dom.development.js"(exports) {
       "use strict";
       (function() {
         function noop() {
@@ -1564,9 +1564,9 @@
     }
   });
 
-  // B:/Projects/CallMe/design-preview/node_modules/react-dom/index.js
+  // node_modules/react-dom/index.js
   var require_react_dom = __commonJS({
-    "B:/Projects/CallMe/design-preview/node_modules/react-dom/index.js"(exports, module) {
+    "node_modules/react-dom/index.js"(exports, module) {
       "use strict";
       if (false) {
         checkDCE();
@@ -1577,9 +1577,9 @@
     }
   });
 
-  // B:/Projects/CallMe/design-preview/node_modules/react-dom/cjs/react-dom-client.development.js
+  // node_modules/react-dom/cjs/react-dom-client.development.js
   var require_react_dom_client_development = __commonJS({
-    "B:/Projects/CallMe/design-preview/node_modules/react-dom/cjs/react-dom-client.development.js"(exports) {
+    "node_modules/react-dom/cjs/react-dom-client.development.js"(exports) {
       "use strict";
       (function() {
         function findHook(fiber, id) {
@@ -23538,9 +23538,9 @@
     }
   });
 
-  // B:/Projects/CallMe/design-preview/node_modules/react-dom/client.js
+  // node_modules/react-dom/client.js
   var require_client = __commonJS({
-    "B:/Projects/CallMe/design-preview/node_modules/react-dom/client.js"(exports, module) {
+    "node_modules/react-dom/client.js"(exports, module) {
       "use strict";
       if (false) {
         checkDCE();
@@ -23551,9 +23551,9 @@
     }
   });
 
-  // B:/Projects/CallMe/design-preview/node_modules/react/cjs/react-jsx-runtime.development.js
+  // node_modules/react/cjs/react-jsx-runtime.development.js
   var require_react_jsx_runtime_development = __commonJS({
-    "B:/Projects/CallMe/design-preview/node_modules/react/cjs/react-jsx-runtime.development.js"(exports) {
+    "node_modules/react/cjs/react-jsx-runtime.development.js"(exports) {
       "use strict";
       (function() {
         function getComponentNameFromType(type) {
@@ -23822,9 +23822,9 @@
     }
   });
 
-  // B:/Projects/CallMe/design-preview/node_modules/react/jsx-runtime.js
+  // node_modules/react/jsx-runtime.js
   var require_jsx_runtime = __commonJS({
-    "B:/Projects/CallMe/design-preview/node_modules/react/jsx-runtime.js"(exports, module) {
+    "node_modules/react/jsx-runtime.js"(exports, module) {
       "use strict";
       if (false) {
         module.exports = null;
@@ -23834,11 +23834,39 @@
     }
   });
 
-  // B:/Projects/CallMe/design-preview/src/main.jsx
+  // src/main.jsx
   var import_react10 = __toESM(require_react());
   var import_client = __toESM(require_client());
 
-  // B:/Projects/CallMe/design-preview/src/sim.js
+  // ../call-ui/src/text.js
+  var words = (t) => t.split(/\s+/).filter(Boolean);
+  function statusText(v) {
+    switch (v.phase) {
+      case "incoming":
+        return "Incoming call";
+      case "connecting":
+        return "Connecting\u2026";
+      case "talking":
+        return "Claude is talking\u2026";
+      case "listening":
+        return v.muted ? "Mic muted, type a reply" : "Listening\u2026 take your time";
+      case "hearing":
+        return "Hearing you\u2026";
+      case "thinking":
+        return v.sub === "transcribing" ? "Got it, transcribing\u2026" : "Claude is thinking\u2026";
+      case "hold":
+        return "On hold";
+      case "ended":
+        return "Call ended";
+    }
+    return "";
+  }
+  var clock = (ms2) => {
+    const s = Math.max(0, Math.floor(ms2 / 1e3));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  };
+
+  // src/sim.js
   var WORD_MS = 340;
   var SENTENCE_GAP_MS = 420;
   var TRANSCRIBE_MS = 900;
@@ -23860,7 +23888,6 @@
   ];
   var STATE_STEPS = { incoming: 0, talking: 6, listening: 3, hearing: 4, thinking: 5, hold: 7, ended: 12 };
   var STATE_LABELS = { incoming: "Incoming", talking: "Claude talking", listening: "Listening", hearing: "Hearing you", thinking: "Thinking", hold: "On hold", ended: "Ended" };
-  var words = (t) => t.split(/\s+/).filter(Boolean);
   function stepMs(st2) {
     if (st2.s !== "talking") return st2.ms || 0;
     const parts = st2.cut ? st2.parts.slice(0, st2.cut.part + 1) : st2.parts;
@@ -24108,33 +24135,8 @@
       this.next();
     }
   };
-  function statusText(v) {
-    switch (v.phase) {
-      case "incoming":
-        return "Incoming call";
-      case "connecting":
-        return "Connecting\u2026";
-      case "talking":
-        return "Claude is talking\u2026";
-      case "listening":
-        return v.muted ? "Mic muted, type a reply" : "Listening\u2026 take your time";
-      case "hearing":
-        return "Hearing you\u2026";
-      case "thinking":
-        return v.sub === "transcribing" ? "Got it, transcribing\u2026" : "Claude is thinking\u2026";
-      case "hold":
-        return "On hold";
-      case "ended":
-        return "Call ended";
-    }
-    return "";
-  }
-  var clock = (ms2) => {
-    const s = Math.max(0, Math.floor(ms2 / 1e3));
-    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-  };
 
-  // B:/Projects/CallMe/design-preview/src/ui.jsx
+  // ../call-ui/src/ui.jsx
   var import_react = __toESM(require_react());
   var import_jsx_runtime = __toESM(require_jsx_runtime());
   var useSim = (sim) => (0, import_react.useSyncExternalStore)(sim.subscribe, sim.getSnapshot);
@@ -24265,45 +24267,210 @@
       }
     );
   }
+
+  // src/ui.jsx
+  var import_jsx_runtime2 = __toESM(require_jsx_runtime());
   function StatusBar() {
-    return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "statusbar", "aria-hidden": "true", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "9:41" }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "sb-icons", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("svg", { width: "16", height: "12", viewBox: "0 0 16 12", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("path", { d: "M1 11h2V8H1zM5 11h2V6H5zM9 11h2V3.5H9zM13 11h2V1h-2z", fill: "currentColor" }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("svg", { width: "16", height: "12", viewBox: "0 0 16 12", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("path", { d: "M8 11.2 1 4.4a10 10 0 0 1 14 0z", fill: "currentColor" }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("svg", { width: "24", height: "12", viewBox: "0 0 24 12", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("rect", { x: ".5", y: ".5", width: "20", height: "11", rx: "3", fill: "none", stroke: "currentColor", opacity: ".5" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("rect", { x: "2", y: "2", width: "14", height: "8", rx: "1.6", fill: "currentColor" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("path", { d: "M22 4v4", stroke: "currentColor", strokeLinecap: "round", opacity: ".5" })
+    return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "statusbar", "aria-hidden": "true", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { children: "9:41" }),
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("span", { className: "sb-icons", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("svg", { width: "16", height: "12", viewBox: "0 0 16 12", children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("path", { d: "M1 11h2V8H1zM5 11h2V6H5zM9 11h2V3.5H9zM13 11h2V1h-2z", fill: "currentColor" }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("svg", { width: "16", height: "12", viewBox: "0 0 16 12", children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("path", { d: "M8 11.2 1 4.4a10 10 0 0 1 14 0z", fill: "currentColor" }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("svg", { width: "24", height: "12", viewBox: "0 0 24 12", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("rect", { x: ".5", y: ".5", width: "20", height: "11", rx: "3", fill: "none", stroke: "currentColor", opacity: ".5" }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("rect", { x: "2", y: "2", width: "14", height: "8", rx: "1.6", fill: "currentColor" }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("path", { d: "M22 4v4", stroke: "currentColor", strokeLinecap: "round", opacity: ".5" })
         ] })
       ] })
     ] });
   }
 
-  // B:/Projects/CallMe/design-preview/src/mascot.jsx
+  // ../call-ui/src/mascot.jsx
   var import_react2 = __toESM(require_react());
-  var import_jsx_runtime2 = __toESM(require_jsx_runtime());
+
+  // ../call-ui/src/antics.js
+  var sm = (t) => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
+  var lerp = (a, b, t) => a + (b - a) * t;
+  var seg = (k, a, b) => sm((k - a) / (b - a));
+  function hop(k, H2, S, a = 0.16, l = 0.76) {
+    if (k < a) return { hop: 0, squash: S * sm(k / a) };
+    if (k < l) {
+      const t = (k - a) / (l - a), air = 4 * t * (1 - t);
+      const blend = sm(Math.min(1, t / 0.18));
+      return { hop: air * H2, squash: lerp(S, -0.9 * S * (1 - air), blend) };
+    }
+    const u = (k - l) / (1 - l);
+    return { hop: 0, squash: u < 0.35 ? lerp(-0.9 * S, S, sm(u / 0.35)) : S * (1 - sm((u - 0.35) / 0.65)) };
+  }
+  var add = (...ds) => Object.assign({}, ...ds);
+  var ANTICS = {
+    // Answered (playful): a happy jump with a full turn.
+    joy: { dur: 1.15, f: (k) => add(hop(k, 6, 2), { turn: seg(k, 0.2, 0.74), arms: k > 0.16 && k < 0.82 ? 2 : 0, happy: k > 0.1 && k < 0.9 }) },
+    // Answered / tapped (wild): a cartwheel, two turns and a flip at the top.
+    cartwheel: { dur: 1.35, f: (k) => add(hop(k, 6, 2, 0.14, 0.8), { turn: 2 * seg(k, 0.18, 0.78), flip: seg(k, 0.3, 0.62), arms: k > 0.14 && k < 0.84 ? 2 : 0 }) },
+    // Tapped (playful): three quick giggling bounces.
+    giggle: { dur: 0.95, f: (k) => {
+      const n = k * 3 % 1;
+      return add(hop(n, 1.6, 1), { happy: true, dx: Math.round(Math.sin(k * Math.PI * 6)) });
+    } },
+    // Idle: looks one way, then the other.
+    look: { dur: 1.7, f: (k) => ({ eyeDx: k < 0.45 ? -1.4 * seg(k, 0, 0.12) : k < 0.85 ? lerp(-1.4, 1.4, seg(k, 0.45, 0.55)) : 1.4 * (1 - seg(k, 0.85, 1)) }) },
+    // Idle: wiggles its legs (Clawd) or rays (spark).
+    wiggle: { dur: 1.1, f: (k) => ({ wig: Math.sin(Math.PI * k), legs: k > 0.08 && k < 0.92 ? Math.floor(k * 14) % 2 ? [1, 0, 1, 0] : [0, 1, 0, 1] : null }) },
+    // Idle: peeks down at the captions.
+    peek: { dur: 1.8, f: (k) => {
+      const w = seg(k, 0, 0.2) * (1 - seg(k, 0.8, 1));
+      return { eyeDx: 1.3 * w, eyeDy: 1.3 * w, lean: w, hop: -0.6 * w };
+    } },
+    // Idle: a tiny shuffle dance, side to side.
+    shuffle: { dur: 1.7, f: (k) => {
+      const w = seg(k, 0, 0.1) * (1 - seg(k, 0.9, 1));
+      const b = Math.floor(k * 8);
+      return { dx: w * (b % 4 < 2 ? 1 : -1) * 1.4, hop: w * (b % 2 ? 0.8 : 0), legs: w > 0.3 ? b % 2 ? [1, 0, 0, 1] : [0, 1, 1, 0] : null, arms: w > 0.3 ? b % 2 ? 1 : 0 : 0 };
+    } },
+    // Wild idle: ducks down behind the edge it stands on, then pops back up surprised.
+    hide: { dur: 2.3, f: (k) => {
+      const sink = k < 0.28 ? sm(k / 0.28) : k < 0.62 ? 1 : 1 - sm((k - 0.62) / 0.14);
+      const pop = k > 0.62 ? hop(Math.min(1, (k - 0.62) / 0.38), 3, 2) : { hop: 0, squash: 0 };
+      return add(pop, { sink, pop: k > 0.66 && k < 0.92 ? 1 : 0, eyeDx: k > 0.7 ? 0 : -1 });
+    } },
+    // You cut in: eyes pop wide with a startled little jump.
+    surprise: { dur: 0.85, f: (k) => add(hop(k, 2.2, 1.5, 0.08, 0.6), { pop: k < 0.8 ? 1 : 0 }) },
+    // Ended (playful): a big wave, a hop, then a goodbye wave.
+    wave: { dur: 1.45, f: (k) => add(k > 0.38 && k < 0.7 ? hop((k - 0.38) / 0.32, 3, 1.5) : {}, { armWave: k < 0.38 || k > 0.7 ? Math.floor(k * 16) % 2 ? 2 : 1 : 2, happy: true }) },
+    // Ended (mixed): the playful goodbye wave, with the wild confetti burst.
+    farewell: { dur: 1.45, burst: true, f: (k) => ANTICS.wave.f(k) },
+    // Ended (wild): a burst of confetti and a flip.
+    confetti: { dur: 1.3, burst: true, f: (k) => add(hop(k, 6, 2, 0.1, 0.78), { flip: seg(k, 0.25, 0.6), turn: seg(k, 0.2, 0.75), arms: 2, happy: true }) }
+  };
+  var IDLE = { playful: ["look", "wiggle", "peek", "shuffle"], wild: ["hide", "shuffle", "look", "wiggle", "peek"] };
+  function anticDeltas(list, now) {
+    const d = { hop: 0, squash: 0, dx: 0, eyeDx: 0, eyeDy: 0, lean: 0, sink: 0, pop: 0, wig: 0, turn: 0, flip: 0, arms: 0, armWave: 0, legs: null, happy: false };
+    let lead = 0;
+    for (const a of list) {
+      const k = (now - a.start) / (a.dur * 1e3);
+      if (k >= 1) continue;
+      const w = Math.min(1, (now - a.start) / 80) * (a.cutAt ? Math.max(0, 1 - (now - a.cutAt) / 200) : 1);
+      const f = ANTICS[a.name].f(Math.max(0, k));
+      for (const key of ["hop", "squash", "dx", "eyeDx", "eyeDy", "lean", "sink", "wig"]) if (f[key]) d[key] += f[key] * w * (key === "hop" || key === "squash" ? a.scale : 1);
+      if (w > lead) {
+        lead = w;
+        d.turn = (f.turn || 0) * (w > 0.5 ? 1 : 0);
+        d.flip = f.flip || 0;
+        d.arms = f.arms || 0;
+        d.armWave = f.armWave || 0;
+        d.legs = f.legs || null;
+        d.happy = !!f.happy && w > 0.5;
+        d.pop = f.pop ? w : 0;
+      }
+    }
+    return d;
+  }
+  var WARM = ["#D97757", "#F2C7AE", "#FFB38A", "#EADFD2", "#E99A73"];
+  function makeConfetti(clawd, now) {
+    return Array.from({ length: 24 }, (_, i) => {
+      const a = -Math.PI * (0.06 + (clawd ? 0.36 : 0.55) * (i / 23)) + (Math.random() - 0.5) * 0.2;
+      const v = clawd ? 5 + Math.random() * 4 : 42 + Math.random() * 34;
+      return { born: now, x: clawd ? 28 : 0, y: clawd ? -1 : -20, vx: Math.cos(a) * v * (clawd ? 1.3 : 1), vy: Math.sin(a) * v, c: WARM[i % WARM.length], big: i % 3 === 0, spin: (Math.random() - 0.5) * 720 };
+    });
+  }
+  function clawdParticles(state, t, now, confetti) {
+    const out = [];
+    if (state.thought) {
+      const c = t % 1.8 / 1.8;
+      [[33, -1, 2, 1], [36, -3, 2, 1], [39, -6, 4, 2]].forEach(([x, y, w, h], i) => {
+        if (c > 0.12 + i * 0.22) out.push({ x, y, w, h, c: "#F2C7AE" });
+      });
+    }
+    if (state.sleepy) {
+      for (let i = 0; i < 2; i++) {
+        const k = (t + i * 1.3) % 2.6 / 2.6;
+        const x = Math.round(31 + k * 4), y = Math.round(-1 - k * 3), o = (k < 0.12 ? k / 0.12 : 1) * (1 - Math.max(0, (k - 0.4) / 0.2));
+        if (o <= 0) continue;
+        const Z = ["#####", "...#.", "..#..", ".#...", "#####"];
+        Z.forEach((row, j) => [...row].forEach((ch, i2) => ch === "#" && out.push({ x: x + i2, y: y + j * 0.5, w: 1, h: 0.5, c: "#F2C7AE", o })));
+      }
+    }
+    for (const p of confetti) {
+      const age = (now - p.born) / 1e3;
+      if (age > 1.7) continue;
+      out.push({ x: Math.round(p.x + p.vx * age), y: Math.round(p.y + p.vy * age + 0.5 * 9 * age * age), w: p.big ? 2 : 1, h: 1, c: p.c, o: 1 - Math.max(0, (age - 1.2) / 0.5) });
+    }
+    return out;
+  }
+  function sparkParticles(state, t, now, confetti) {
+    let s = "";
+    if (state.thought) {
+      const c = t % 1.8 / 1.8;
+      [[42, -30, 3.2], [52, -42, 4.4], [64, -58, 6]].forEach(([x, y, r], i) => {
+        if (c > 0.12 + i * 0.22) s += `<circle cx="${x}" cy="${y}" r="${r}" fill="#F2C7AE"/>`;
+      });
+    }
+    if (state.sleepy) {
+      for (let i = 0; i < 2; i++) {
+        const k = (t + i * 1.3) % 2.6 / 2.6, x = 34 + k * 12, y = -26 - k * 14, z = 6 + k * 2;
+        const o = (k < 0.12 ? k / 0.12 : 1) * (1 - Math.max(0, (k - 0.4) / 0.2));
+        if (o <= 0) continue;
+        s += `<path d="M${x} ${y}h${z}l-${z} ${z}h${z}" fill="none" stroke="#F2C7AE" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" opacity="${o.toFixed(2)}"/>`;
+      }
+    }
+    for (const p of confetti) {
+      const age = (now - p.born) / 1e3;
+      if (age > 1.7) continue;
+      const x = p.x + p.vx * age, y = p.y + p.vy * age + 0.5 * 70 * age * age, o = 1 - Math.max(0, (age - 1.2) / 0.5);
+      s += p.big ? `<rect x="-6" y="-2" width="12" height="4" rx="2" fill="${p.c}" opacity="${o.toFixed(2)}" transform="translate(${x.toFixed(1)} ${y.toFixed(1)}) rotate(${(p.spin * age).toFixed(0)})"/>` : `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.4" fill="${p.c}" opacity="${o.toFixed(2)}"/>`;
+    }
+    return s;
+  }
+
+  // ../call-ui/src/mascot.jsx
+  var import_jsx_runtime3 = __toESM(require_jsx_runtime());
   var MascotKind = (0, import_react2.createContext)("clawd");
+  var Personality = (0, import_react2.createContext)("mixed");
+  var BIG = /* @__PURE__ */ new Set(["cartwheel", "confetti"]);
   var REDUCE2 = matchMedia("(prefers-reduced-motion: reduce)");
   var ORANGE = "#D97757";
   var INK = "#141416";
-  function targets(v, t, te, lvC, lvM) {
-    const p = { hop: 0, squash: 0, lean: 0, eyeDx: 0, eyeDy: 0, eyeOpen: 1, armL: 0, armR: 0, mouth: 0, reach: 0, tilt: 0, spin: 0, fade: 1, breath: 0.5 + 0.5 * Math.sin(t * Math.PI * 2 / 3.4) };
+  var clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  var live = /* @__PURE__ */ new Set();
+  window.__mascotAntic = (name) => live.forEach((m) => m(name));
+  function targets(v, t, te, lvC, lvM, pers) {
+    const wild = pers === "wild", dance = pers !== "playful";
+    const W = wild ? 1.5 : 1;
+    const p = { hop: 0, squash: 0, lean: 0, eyeDx: 0, eyeDy: 0, eyeOpen: 1, armL: 0, armR: 0, mouth: 0, reach: 0, tilt: 0, spin: 0, fade: 1, breath: 0.5 + 0.5 * Math.sin(t * Math.PI * 2 / 3.4), legs: null, thought: false, sleepy: false };
     const blink = t % 3.9 < 0.13;
     switch (v.phase) {
       case "incoming": {
-        const k = te % 1.5;
-        if (k < 0.42) p.hop = Math.sin(Math.PI * k / 0.42) * 2.6;
-        else if (k < 0.58) p.squash = 1 - (k - 0.42) / 0.16;
-        p.armR = k < 0.42 ? 1 : 0;
+        const k = te % 1.5 / 0.8;
+        if (k < 1) {
+          const c = 0.16, l = 0.76;
+          if (k < c) p.squash = 1.5 * (k / c);
+          else if (k < l) {
+            const u = (k - c) / (l - c), air = 4 * u * (1 - u);
+            p.hop = air * 2.6 * W;
+            p.squash = -1.2 * (1 - air);
+          } else p.squash = 1.5 * Math.sin(Math.PI * (k - l) / (1 - l));
+        }
+        p.armR = k < 0.8 ? 1 : 0;
         break;
       }
       case "talking":
-        p.squash = Math.min(1, lvC * 1.6);
-        p.hop = lvC * 1.2;
+        if (dance) {
+          const beat = Math.floor(t * 5) % 2;
+          p.hop = lvC * 3 * (beat ? 1 : 0.35);
+          p.squash = beat ? clamp(2.4 * lvC, 0, 2) : -lvC * 1.2;
+          p.legs = lvC > 0.18 ? beat ? [1, 0, 1, 0] : [0, 1, 0, 1] : null;
+          p.armL = lvC > 0.3 && beat ? 2 : lvC > 0.2 ? 1 : 0;
+          p.armR = lvC > 0.3 && !beat ? 2 : lvC > 0.2 ? 1 : 0;
+          p.spin = 50 + lvC * 1e3;
+        } else {
+          p.squash = clamp(2.4 * (lvC - 0.22), -0.8, 2);
+          p.hop = lvC * 1.8;
+          p.armL = lvC > 0.42 ? 1 : 0;
+          p.armR = lvC > 0.55 ? 1 : 0;
+          p.spin = 6;
+        }
         p.mouth = lvC;
-        p.armL = lvC > 0.42 ? 1 : 0;
-        p.armR = lvC > 0.55 ? 1 : 0;
         p.eyeOpen = Math.max(0.3, 1 - 2 * Math.max(0, lvC - 0.22));
         break;
       case "listening":
@@ -24314,119 +24481,187 @@
         p.hop = -0.6;
         break;
       case "hearing": {
-        const nod = Math.sin(t * Math.PI * 2 * 1.5);
-        p.eyeDy = 0.4 + nod * 0.6 * Math.min(1, lvM * 2);
-        p.eyeOpen = 1.35;
-        p.reach = 0.6;
-        p.hop = -0.6 - lvM * 0.8 * (nod > 0 ? 1 : 0.3);
+        const nod = Math.sin(t * Math.PI * 2 * 1.6) > 0 ? 1 : 0;
+        p.eyeDy = 1 - Math.min(1, lvM * 2.5) * 2;
+        p.eyeOpen = 1.4;
+        p.reach = 1;
+        p.lean = 1;
+        p.squash = nod * Math.min(1, lvM * 3) * W;
+        p.hop = -0.6;
+        p.tilt = 6 * W * nod * Math.min(1, lvM * 3);
         break;
       }
       case "thinking":
         p.eyeDx = 1;
         p.eyeDy = -1;
-        p.lean = 1;
+        p.lean = 0.55 + 0.5 * Math.sin(t * 0.9);
         p.tilt = -7 + 3 * Math.sin(t * 0.9);
-        p.spin = 10;
+        p.spin = wild ? 40 : 10;
+        p.thought = true;
+        p.legs = [0, 0, 0, Math.floor(t * (wild ? 6 : 4)) % 2];
         break;
-      case "hold":
-        p.eyeDx = Math.sin(t * 0.7) * 1.2;
-        p.eyeOpen = 0.85;
-        p.spin = 18;
-        p.breath = 0.5 + 0.5 * Math.sin(t * Math.PI * 2 / 5);
+      case "hold": {
+        const peek = t % 5 < 0.5;
+        p.eyeOpen = peek ? 0.9 : 0.2;
+        p.eyeDy = 0.5;
+        p.spin = 6;
+        p.sleepy = true;
+        p.breath = 0.5 + 0.5 * Math.sin(t * Math.PI * 2 / 4);
+        p.squash = p.breath * W;
         break;
+      }
       case "ended":
-        p.armR = te < 1.1 ? Math.floor(te * 6) % 2 ? 2 : 1 : 0;
         p.eyeOpen = 0.2;
-        p.fade = te < 0.9 ? 1 : Math.max(0, 1 - (te - 0.9) / 0.6);
+        p.fade = te < 1 ? 1 : Math.max(0, 1 - (te - 1) / 0.5);
         break;
     }
     if (blink && p.eyeOpen > 0.5 && v.phase !== "ended") p.eyeOpen = 0.1;
     return p;
   }
-  var RATE = { hop: 22, squash: 26, mouth: 30, armL: 30, armR: 30, eyeOpen: 30, eyeDx: 8, eyeDy: 10, lean: 6, reach: 7, tilt: 5, spin: 3, fade: 12, breath: 8 };
-  function clawdSvg(p) {
-    const s = p.squash > 0.5 ? 1 : 0;
-    const lean = Math.round(p.lean);
-    const r = (x, y, w, h2, c = ORANGE) => `<rect x="${x}" y="${y}" width="${w}" height="${h2}" fill="${c}"/>`;
+  var RATE = { hop: 24, squash: 28, mouth: 30, armL: 30, armR: 30, eyeOpen: 30, eyeDx: 8, eyeDy: 12, lean: 6, reach: 7, tilt: 6, spin: 6, fade: 12, breath: 8 };
+  var SMOOTH = Object.keys(RATE);
+  function clawdSvg(p, d, parts) {
+    const flipped = d.flip > 0.3 && d.flip < 0.7;
+    const s = flipped ? 0 : clamp(Math.round(p.squash + d.squash), -2, 2);
+    const turn = d.turn % 1, f0 = Math.abs(Math.cos(2 * Math.PI * turn)), side = Math.sin(2 * Math.PI * turn);
+    const f = f0 > 0.85 ? 1 : f0 > 0.5 ? 0.66 : 0.36;
+    const dx = Math.round(d.dx), lean = f < 1 ? 0 : Math.round(clamp(p.lean + d.lean, 0, 1));
+    const half = Math.max(2, Math.round((12 + s) * f)), X = 18 - half + dx, Wd = 2 * half;
+    const rects = [];
+    const r = (x, y, w, h2, c = ORANGE, o) => rects.push({ x, y, w, h: h2, c, o });
+    r(X + lean, s, Wd, 4 - s);
+    r(X, 4, Wd, 4);
+    const lvl = (a) => a >= 2 ? s - 1 : a >= 1 ? Math.max(2, s) : 4;
+    const aL = flipped ? 0 : Math.max(Math.round(p.armL), d.arms), aR = flipped ? 0 : Math.max(Math.round(p.armR), d.arms, d.armWave);
+    if (f > 0.5) {
+      r(X - 4, lvl(aL), 4, 2);
+      r(X + Wd, lvl(aR), 4, 2);
+    }
+    const legs = d.legs || p.legs || [0, 0, 0, 0], tuck = p.hop + d.hop > 1.4;
+    const legX = f > 0.5 ? [-10, -6, 4, 8].map((o) => 18 + dx + Math.round(o * f)) : [16 + dx, 18 + dx];
+    legX.forEach((x, i) => r(x, 8, 2, tuck || legs[i] ? 1 : 2));
+    const ew = d.pop > 0.5 ? 3 : 2;
+    const h = d.happy ? 1 : d.pop > 0.5 ? 3 : p.eyeOpen < 0.35 ? 1 : p.eyeOpen > 1.25 ? 3 : 2;
+    const look = clamp(Math.round(p.eyeDx + d.eyeDx), -1, 1) + lean, ey = clamp(Math.round(p.eyeDy + d.eyeDy), -1, 1);
+    const top = Math.max(s + 1, (d.happy ? 2 : h === 1 ? 3 : h === 3 ? 1 : 2) + (d.happy ? 0 : ey));
+    const eyes = f > 0.5 ? [18 + dx - Math.round(7 * f) - 1, 18 + dx + Math.round(7 * f) - 1] : f > 0.2 ? [18 + dx + (side > 0 ? 2 : -4)] : [];
+    eyes.forEach((x) => r(x + look - (ew - 2), top, ew, h, INK));
     let out = "";
-    out += r(6 - s + lean, s, 24 + 2 * s, 4 - s);
-    out += r(6 - s, 4, 24 + 2 * s, 4);
-    const arm = (x, a) => r(x, a >= 2 ? 0 : a >= 1 ? 2 : 4, 4, 2);
-    out += arm(2 - s, Math.round(p.armL));
-    out += arm(30 + s, Math.round(p.armR));
-    const tuck = p.hop > 1.2;
-    for (const x of [8, 12, 22, 26]) out += r(x, 8, 2, tuck ? 1 : 2);
-    const h = p.eyeOpen < 0.35 ? 1 : p.eyeOpen > 1.25 ? 3 : 2;
-    const dx = Math.max(-1, Math.min(1, Math.round(p.eyeDx))) + lean;
-    const dy = Math.max(-1, Math.min(1, Math.round(p.eyeDy)));
-    const top = Math.max(s, (h === 1 ? 3 : h === 3 ? 1 : 2) + dy);
-    out += r(10 + dx, top, 2, h, INK) + r(24 + dx, top, 2, h, INK);
+    for (const q of parts) out += `<rect x="${q.x}" y="${q.y}" width="${q.w}" height="${q.h}" fill="${q.c}"${q.o !== void 0 && q.o < 1 ? ` fill-opacity="${Math.max(0, q.o).toFixed(2)}"` : ""}/>`;
+    for (const q of rects) out += `<rect x="${q.x}" y="${flipped ? 10 - q.y - q.h : q.y}" width="${q.w}" height="${q.h}" fill="${q.c}"/>`;
     return out;
   }
   var RAYS = [1, 0.8, 0.94, 0.72, 0.98, 0.84, 0.76, 0.97, 0.8, 0.9, 0.74, 0.88];
+  var LEG_RAYS = [4, 3, 2, 1];
   function sparkInit(svg) {
-    svg.innerHTML = `<g class="sp-all"><g class="sp-rays">${RAYS.map(() => `<rect x="8" y="-4.25" height="8.5" rx="4.25" fill="${ORANGE}"/>`).join("")}</g>
+    svg.innerHTML = `<g class="sp-parts"></g><g class="sp-all"><g class="sp-rays">${RAYS.map(() => `<rect x="8" y="-4.25" height="8.5" rx="4.25" fill="${ORANGE}"/>`).join("")}</g>
     <circle r="15.5" fill="${ORANGE}"/><g class="sp-face"><ellipse cx="-5.8" rx="2.6"/><ellipse cx="5.8" rx="2.6"/><ellipse class="sp-mouth" cy="7" rx="2.6"/></g></g>`;
     svg.querySelectorAll("ellipse").forEach((e) => e.setAttribute("fill", "#3a160b"));
   }
-  function sparkDraw(svg, p, spinAngle) {
-    const all = svg.firstChild, rays = all.firstChild.children, face = svg.querySelector(".sp-face");
-    const sq = p.squash * 0.07;
-    all.setAttribute("transform", `translate(0 ${(-p.hop * 4 + p.reach * 2).toFixed(2)}) rotate(${p.tilt.toFixed(2)}) scale(${(1 + sq * 0.6).toFixed(3)} ${(1 - sq).toFixed(3)})`);
+  function sparkDraw(svg, p, d, spinAngle, parts, t) {
+    const all = svg.lastChild, rays = all.firstChild.children, face = svg.querySelector(".sp-face");
+    const sq = (p.squash + d.squash) * 0.09;
+    const turn = Math.cos(2 * Math.PI * (d.turn % 1)), sx = Math.abs(turn) < 0.3 ? 0.3 * Math.sign(turn || 1) : turn;
+    all.setAttribute("transform", `translate(${(d.dx * 6).toFixed(2)} ${(p.reach * 2).toFixed(2)}) rotate(${(p.tilt + d.flip * 360).toFixed(2)}) scale(${(sx * (1 + sq * 0.6)).toFixed(3)} ${(1 - sq).toFixed(3)})`);
+    const legs = d.legs || p.legs || [0, 0, 0, 0];
     for (let i = 0; i < RAYS.length; i++) {
-      const a = (i * 30 + spinAngle) * Math.PI / 180;
-      const down = Math.max(0, Math.sin(a));
-      const wave = 0.5 + 0.5 * Math.sin(i * 2.1 + performance.now() / 90);
-      const len = 44 * RAYS[i] * (0.94 + 0.06 * p.breath + 0.22 * p.squash * wave + 0.1 * p.reach * down) * (0.75 + 0.25 * p.fade);
+      let deg = i * 30 + spinAngle + (d.wig ? d.wig * 14 * Math.sin(t * 28 + i * 1.9) : 0);
+      if (i === 10 && d.armWave) deg += d.armWave === 2 ? -28 : 14;
+      if (i === 10 && d.arms) deg -= 18;
+      const a = deg * Math.PI / 180, down = Math.max(0, Math.sin(a));
+      const wave = 0.5 + 0.5 * Math.sin(i * 2.1 + t * 11);
+      const li = LEG_RAYS.indexOf(i), tap = li >= 0 && legs[li] ? 0.78 : 1;
+      const len = 44 * RAYS[i] * tap * (0.94 + 0.06 * p.breath + 0.12 * Math.abs(p.squash + d.squash) * wave + 0.1 * p.reach * down) * (0.75 + 0.25 * p.fade);
       rays[i].setAttribute("width", (len - 8 + 4.25).toFixed(2));
-      rays[i].setAttribute("transform", `rotate(${(a * 180 / Math.PI).toFixed(2)})`);
+      rays[i].setAttribute("transform", `rotate(${deg.toFixed(2)})`);
     }
     const [l, rr, m] = face.children;
-    const ry = Math.max(0.6, 4 * Math.min(1.25, p.eyeOpen));
+    const pop = 1 + 0.45 * d.pop;
+    const ry = d.happy ? 0.9 : Math.max(0.6, 4 * Math.min(1.25, p.eyeOpen)) * pop;
+    const cy = d.happy ? -2.5 : -1.5 + clamp(p.eyeDy + d.eyeDy, -1.4, 1.4) * 2.2;
     for (const e of [l, rr]) {
       e.setAttribute("ry", ry.toFixed(2));
-      e.setAttribute("cy", (-1.5 + p.eyeDy * 2.2).toFixed(2));
+      e.setAttribute("rx", (2.6 * pop).toFixed(2));
+      e.setAttribute("cy", cy.toFixed(2));
     }
-    l.setAttribute("cx", (-5.8 + p.eyeDx * 1.8).toFixed(2));
-    rr.setAttribute("cx", (5.8 + p.eyeDx * 1.8).toFixed(2));
-    m.setAttribute("ry", (p.mouth * 2.8).toFixed(2));
-    m.setAttribute("opacity", p.mouth > 0.06 ? 1 : 0);
+    const ex = clamp(p.eyeDx + d.eyeDx, -1.5, 1.5) * 1.8;
+    l.setAttribute("cx", (-5.8 + ex).toFixed(2));
+    rr.setAttribute("cx", (5.8 + ex).toFixed(2));
+    m.setAttribute("ry", (Math.max(p.mouth, d.pop * 0.7) * 2.8).toFixed(2));
+    m.setAttribute("opacity", p.mouth > 0.06 || d.pop > 0.3 ? 1 : 0);
+    svg.firstChild.innerHTML = parts;
     svg.style.opacity = p.fade.toFixed(3);
   }
-  function Mascot({ sim, u, spark, className = "" }) {
+  function Mascot({ sim, u, spark, room = 60, className = "" }) {
     const kind = (0, import_react2.useContext)(MascotKind);
-    const host = (0, import_react2.useRef)(null), svgRef = (0, import_react2.useRef)(null);
+    const pers = (0, import_react2.useContext)(Personality);
+    const host = (0, import_react2.useRef)(null), svgRef = (0, import_react2.useRef)(null), poke = (0, import_react2.useRef)(null);
     (0, import_react2.useEffect)(() => {
-      const svg = svgRef.current;
-      if (kind === "spark") sparkInit(svg);
-      const P = targets(sim.getSnapshot(), 0, 0, 0, 0);
-      let last2 = "", raf2 = 0, prev = performance.now(), phase = null, entered = prev, spinAngle = 0, lvC = 0, lvM = 0;
+      const svg = svgRef.current, clawd2 = kind === "clawd", wild = pers === "wild", big = pers !== "playful";
+      if (!clawd2) sparkInit(svg);
+      const P = targets(sim.getSnapshot(), 0, 0, 0, 0, pers);
+      let last2 = "", raf2 = 0, prev = performance.now(), phase = sim.getSnapshot().phase, entered = prev, spinAngle = 0, lvC = 0, lvM = 0;
+      let antics = [], confetti = [], nextIdle = prev + 2500, lastIdle = "";
+      const start = (name) => {
+        if (REDUCE2.matches) return;
+        const now = performance.now();
+        antics.forEach((a) => {
+          a.cutAt ??= now;
+        });
+        antics.push({ name, start: now, dur: ANTICS[name].dur, scale: wild || big && BIG.has(name) ? 1.5 : 1 });
+        if (ANTICS[name].burst) confetti = makeConfetti(clawd2, now);
+      };
+      poke.current = () => start(wild ? "cartwheel" : "giggle");
+      live.add(start);
       const draw = () => {
         const now = performance.now();
-        const v = sim.getSnapshot();
+        const v = sim.getSnapshot(), still = REDUCE2.matches;
         if (v.phase !== phase) {
+          const was = phase;
           phase = v.phase;
           entered = now;
+          antics.forEach((a) => {
+            a.cutAt ??= now;
+          });
+          if (was === "incoming" && phase !== "ended") start(big ? "cartwheel" : "joy");
+          else if (phase === "hearing" && was === "talking") start("surprise");
+          else if (phase === "ended") start(wild ? "confetti" : big ? "farewell" : "wave");
+          nextIdle = now + 2500;
         }
+        if (!still && phase === "listening" && !antics.some((a) => now - a.start < a.dur * 1e3) && now > nextIdle) {
+          const pool = IDLE[wild ? "wild" : "playful"].filter((n) => n !== lastIdle);
+          lastIdle = pool[Math.floor(Math.random() * pool.length)];
+          start(lastIdle);
+          nextIdle = now + (wild ? 3e3 : 4e3) + Math.random() * 2e3;
+        }
+        antics = antics.filter((a) => now - a.start < a.dur * 1e3 && !(a.cutAt && now - a.cutAt > 200));
         const dt = Math.max(0, Math.min(0.05, (now - prev) / 1e3));
         prev = now;
-        const still = REDUCE2.matches;
         lvC += ((sim.voice === "claude" ? sim.level() : 0) - lvC) * (1 - Math.exp(-dt * 18));
         lvM += (sim.meLevel() - lvM) * (1 - Math.exp(-dt * 18));
-        const T = still ? targets(v, 0, 9, 0, 0) : targets(v, now / 1e3, (now - entered) / 1e3, lvC, lvM);
+        const t = now / 1e3;
+        const T = still ? targets(v, 0, 9, 0, 0, pers) : targets(v, t, (now - entered) / 1e3, lvC, lvM, pers);
         if (still && v.phase === "ended") T.fade = 1;
-        for (const k in T) P[k] = still ? T[k] : P[k] + (T[k] - P[k]) * (1 - Math.exp(-dt * (RATE[k] || 10)));
+        for (const k of SMOOTH) P[k] = still ? T[k] : P[k] + (T[k] - P[k]) * (1 - Math.exp(-dt * RATE[k]));
+        P.legs = T.legs;
+        P.thought = T.thought && !still;
+        P.sleepy = T.sleepy && !still;
+        const d = anticDeltas(antics, now);
         spinAngle = still ? 0 : (spinAngle + P.spin * dt) % 360;
-        const lift = Math.round(Math.max(-2, P.hop) * (kind === "clawd" ? u : 4));
-        host.current.style.transform = `translateY(${-lift}px)`;
-        if (kind === "clawd") {
-          const s = clawdSvg(P);
+        const boxH = clawd2 ? 20 * u : spark;
+        const fit = Math.min(1, room / (9 * (clawd2 ? u : 4)));
+        const lift = 2 * Math.round(Math.max(-2, P.hop + d.hop) * (clawd2 ? u : 4) * fit / 2);
+        const sink = 2 * Math.round(d.sink * (boxH + 14) / 2);
+        host.current.style.transform = `translateY(${sink - lift}px)`;
+        confetti = confetti.filter((c) => now - c.born < 1700);
+        if (clawd2) {
+          const s = clawdSvg(P, d, still ? [] : clawdParticles(P, t, now, confetti));
           if (s !== last2) {
             svg.innerHTML = s;
             last2 = s;
           }
           svg.style.opacity = P.fade.toFixed(3);
-        } else sparkDraw(svg, P, spinAngle);
+        } else sparkDraw(svg, P, d, spinAngle, still ? "" : sparkParticles(P, t, now, confetti), t);
         if (!still) raf2 = requestAnimationFrame(draw);
       };
       draw();
@@ -24434,18 +24669,19 @@
       return () => {
         cancelAnimationFrame(raf2);
         unsub();
+        live.delete(start);
       };
-    }, [kind, sim, u]);
+    }, [kind, pers, sim, u, room]);
     const clawd = kind === "clawd";
     const w = clawd ? 36 * u : spark, h = clawd ? 20 * u : spark;
-    return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: `mascot ${kind} ${className}`, style: { width: Math.max(36 * u, spark), height: Math.max(20 * u, spark) }, "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { ref: host, className: "mascot-host", style: { width: w, height: h }, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("svg", { ref: svgRef, width: w, height: h, viewBox: clawd ? "0 0 36 10" : "-50 -50 100 100", preserveAspectRatio: clawd ? "none" : void 0, shapeRendering: clawd ? "crispEdges" : "geometricPrecision" }) }) });
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { className: `mascot ${kind} ${className}`, style: { width: Math.max(36 * u, spark), height: Math.max(20 * u, spark) }, "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { ref: host, className: "mascot-host", style: { width: w, height: h }, onPointerDown: () => poke.current?.(), children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("svg", { ref: svgRef, width: w, height: h, viewBox: clawd ? "0 0 36 10" : "-50 -50 100 100", preserveAspectRatio: clawd ? "none" : void 0, shapeRendering: clawd ? "crispEdges" : "geometricPrecision" }) }) });
   }
 
-  // B:/Projects/CallMe/design-preview/src/callA.jsx
+  // src/callA.jsx
   var import_react5 = __toESM(require_react());
 
-  // B:/Projects/CallMe/design-preview/node_modules/voice-glow/dist/index.es.js
-  var import_jsx_runtime3 = __toESM(require_jsx_runtime(), 1);
+  // node_modules/voice-glow/dist/index.es.js
+  var import_jsx_runtime4 = __toESM(require_jsx_runtime(), 1);
   var import_react3 = __toESM(require_react(), 1);
   function wa(o) {
     const e = o.trim(), a = e.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
@@ -25868,10 +26104,10 @@ ${_ ? `[data-voice-beam="${e}"][data-voice-halfres][data-active]::before,
         ...Ca ?? {},
         "--voice-strength": Math.max(0, Math.min(1, ja))
       };
-      return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("style", { children: Rt ? `${ia}
+      return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("style", { children: Rt ? `${ia}
 ${Rt.split("{id}").join(he)}` : ia }),
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
           "div",
           {
             ...Ia,
@@ -25890,20 +26126,20 @@ ${Rt.split("{id}").join(he)}` : ia }),
             children: [
               e,
               Ka,
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { "data-voice-beam-bloom": true }),
-              pe > 0 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
-                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { "data-voice-beam-warp": "inner" }),
-                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { "data-voice-beam-warp": "bloom" })
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { "data-voice-beam-bloom": true }),
+              pe > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { "data-voice-beam-warp": "inner" }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { "data-voice-beam-warp": "bloom" })
               ] }),
-              !Yo && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("canvas", { "data-voice-beam-band-halo": true, "aria-hidden": "true" }),
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("canvas", { "data-voice-beam-band": true, "aria-hidden": "true" }),
-              Me > 0 && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { "data-voice-beam-core": true, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", {}) }),
+              !Yo && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("canvas", { "data-voice-beam-band-halo": true, "aria-hidden": "true" }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("canvas", { "data-voice-beam-band": true, "aria-hidden": "true" }),
+              Me > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { "data-voice-beam-core": true, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", {}) }),
               pe > 0 && /* The distortion filter: drifting fractal noise, its green
               channel pinned to 0.5 so only x displaces, driven per frame by
               the driver (scale and offset), which also narrows the region
               to the strip under the band line once it runs — the full box
               here is only the first frame. Zero-sized, so it takes no room. */
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("svg", { "aria-hidden": "true", width: "0", height: "0", style: { position: "absolute", pointerEvents: "none" }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("svg", { "aria-hidden": "true", width: "0", height: "0", style: { position: "absolute", pointerEvents: "none" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
                 "filter",
                 {
                   id: `vb-distort-${he}`,
@@ -25913,7 +26149,7 @@ ${Rt.split("{id}").join(he)}` : ia }),
                   height: "140%",
                   colorInterpolationFilters: "sRGB",
                   children: [
-                    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
                       "feTurbulence",
                       {
                         type: "fractalNoise",
@@ -25923,8 +26159,8 @@ ${Rt.split("{id}").join(he)}` : ia }),
                         result: "noise"
                       }
                     ),
-                    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("feOffset", { in: "noise", dx: "0", dy: "0", result: "moved" }),
-                    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("feOffset", { in: "noise", dx: "0", dy: "0", result: "moved" }),
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
                       "feColorMatrix",
                       {
                         in: "moved",
@@ -25933,7 +26169,7 @@ ${Rt.split("{id}").join(he)}` : ia }),
                         result: "map"
                       }
                     ),
-                    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("feDisplacementMap", { in: "SourceGraphic", in2: "map", scale: 0, xChannelSelector: "R", yChannelSelector: "G" })
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("feDisplacementMap", { in: "SourceGraphic", in2: "map", scale: 0, xChannelSelector: "R", yChannelSelector: "G" })
                   ]
                 }
               ) })
@@ -25944,12 +26180,12 @@ ${Rt.split("{id}").join(he)}` : ia }),
     }
   );
 
-  // B:/Projects/CallMe/design-preview/node_modules/thinking-orbs/dist/index.es.js
-  var import_jsx_runtime4 = __toESM(require_jsx_runtime(), 1);
+  // node_modules/thinking-orbs/dist/index.es.js
+  var import_jsx_runtime5 = __toESM(require_jsx_runtime(), 1);
   var import_react4 = __toESM(require_react(), 1);
 
-  // B:/Projects/CallMe/design-preview/node_modules/thinking-orbs/dist/index-B8WsUNf5.js
-  function lerp(a, b, f) {
+  // node_modules/thinking-orbs/dist/index-B8WsUNf5.js
+  function lerp2(a, b, f) {
     return a + (b - a) * f;
   }
   function frac(x) {
@@ -26466,17 +26702,17 @@ ${Rt.split("{id}").join(he)}` : ia }),
     const pulse = 1 + 0.02 * Math.sin(local * 3.1);
     const dots = [];
     const c2 = size / 2;
-    let seg = 0;
+    let seg2 = 0;
     let acc = 0;
     for (let k2 = 0; k2 < n; k2++) {
       const target = k2 / n * total;
-      while (acc + L[seg] < target && seg < M - 1) {
-        acc += L[seg];
-        seg++;
+      while (acc + L[seg2] < target && seg2 < M - 1) {
+        acc += L[seg2];
+        seg2++;
       }
-      const a = pts[seg];
-      const b = pts[(seg + 1) % M];
-      const f = L[seg] ? Math.min(1, (target - acc) / L[seg]) : 0;
+      const a = pts[seg2];
+      const b = pts[(seg2 + 1) % M];
+      const f = L[seg2] ? Math.min(1, (target - acc) / L[seg2]) : 0;
       const x = (a[0] + (b[0] - a[0]) * f) * pulse;
       const y = (a[1] + (b[1] - a[1]) * f) * pulse;
       dots.push({
@@ -26670,14 +26906,14 @@ ${Rt.split("{id}").join(he)}` : ia }),
     }
     const signals = o.signals ?? 5;
     for (let s = 0; s < signals; s++) {
-      const seg = Math.floor(t * 0.55 + s * 7.31);
-      const a = Math.floor(hashD(seg, s * 3.1 + 1.7) * nodeN);
-      const b = Math.floor(hashD(seg, s * 5.7 + 4.2) * nodeN);
+      const seg2 = Math.floor(t * 0.55 + s * 7.31);
+      const a = Math.floor(hashD(seg2, s * 3.1 + 1.7) * nodeN);
+      const b = Math.floor(hashD(seg2, s * 5.7 + 4.2) * nodeN);
       if (a === b) continue;
       const f = frac(t * 0.55 + s * 7.31);
-      const x = lerp(nodes[a][0], nodes[b][0], f);
-      const y = lerp(nodes[a][1], nodes[b][1], f);
-      const z = lerp(nodes[a][2], nodes[b][2], f);
+      const x = lerp2(nodes[a][0], nodes[b][0], f);
+      const y = lerp2(nodes[a][1], nodes[b][1], f);
+      const z = lerp2(nodes[a][2], nodes[b][2], f);
       const l = Math.max(1e-6, Math.sqrt(x * x + y * y + z * z));
       const [px2, py2, zr] = pt(x / l, y / l, z / l);
       const depth = (zr + 1) / 2;
@@ -26784,7 +27020,7 @@ ${Rt.split("{id}").join(he)}` : ia }),
     return resolved;
   }
 
-  // B:/Projects/CallMe/design-preview/node_modules/thinking-orbs/dist/index.es.js
+  // node_modules/thinking-orbs/dist/index.es.js
   function ancestorTheme(el) {
     let node = el;
     while (node) {
@@ -27503,7 +27739,7 @@ ${Rt.split("{id}").join(he)}` : ia }),
         document.removeEventListener("visibilitychange", onVis);
       };
     }, [state, size, dark, speed, paused, reduced, color, dots, dotSize, optsKey, customFrame]);
-    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+    return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
       "canvas",
       {
         ref,
@@ -27515,8 +27751,8 @@ ${Rt.split("{id}").join(he)}` : ia }),
     );
   }
 
-  // B:/Projects/CallMe/design-preview/src/callA.jsx
-  var import_jsx_runtime5 = __toESM(require_jsx_runtime());
+  // src/callA.jsx
+  var import_jsx_runtime6 = __toESM(require_jsx_runtime());
   function CallA({ sim }) {
     const v = useSim(sim);
     const now = useNow(v.phase !== "ended");
@@ -27536,18 +27772,18 @@ ${Rt.split("{id}").join(he)}` : ia }),
       setTyping(false);
     };
     const recent = v.msgs.slice(-6);
-    return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(rn, { type: "mobile", level: sim.level, motion: sim.motion, paused: ended, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: `screen a ${v.closed ? "closed" : ""}`, ref: root, "data-phase": v.phase, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(StatusBar, {}),
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("header", { className: "a-head", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "a-avatar", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Mascot, { sim, u: 5, spark: 110 }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("h2", { className: "a-name", children: "Claude" }),
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "a-status", role: "status", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Swap, { k: statusText(v), children: [
-          orb && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "a-orb", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(ThinkingOrb, { state: orb, size: 20, theme: "dark", "aria-hidden": "true" }) }),
+    return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(rn, { type: "mobile", level: sim.level, motion: sim.motion, paused: ended, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: `screen a ${v.closed ? "closed" : ""}`, ref: root, "data-phase": v.phase, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(StatusBar, {}),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("header", { className: "a-head", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "a-avatar", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Mascot, { sim, u: 5, spark: 110, room: 40 }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h2", { className: "a-name", children: "Claude" }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "a-status", role: "status", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Swap, { k: statusText(v), children: [
+          orb && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "a-orb", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ThinkingOrb, { state: orb, size: 20, theme: "dark", "aria-hidden": "true" }) }),
           statusText(v)
         ] }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "a-sub", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Swap, { k: v.phase === "hold" ? "hold" : inCall ? "time" : "none", children: sub }) })
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "a-sub", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Swap, { k: v.phase === "hold" ? "hold" : inCall ? "time" : "none", children: sub }) })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
         Morph,
         {
           open: caps && inCall,
@@ -27557,18 +27793,18 @@ ${Rt.split("{id}").join(he)}` : ia }),
           label: "Captions",
           radius: 24,
           to: { top: 0, right: 16, bottom: 106, left: 16 },
-          face: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Icon.captions, {}),
+          face: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Icon.captions, {}),
           onClose: () => setCaps(false),
-          children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "a-caps-list", children: [
-            recent.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "a-caps-empty", children: "Captions will appear here as you talk." }),
-            recent.map((m) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("p", { className: `a-line ${m.who}`, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "who", children: m.who === "claude" ? "Claude" : "You" }),
-              m.who === "claude" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Spoken, { msg: m }) : m.text
+          children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "a-caps-list", children: [
+            recent.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "a-caps-empty", children: "Captions will appear here as you talk." }),
+            recent.map((m) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("p", { className: `a-line ${m.who}`, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "who", children: m.who === "claude" ? "Claude" : "You" }),
+              m.who === "claude" ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Spoken, { msg: m }) : m.text
             ] }, m.id))
           ] })
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
         Morph,
         {
           open: typing2 && inCall && !ended,
@@ -27578,27 +27814,27 @@ ${Rt.split("{id}").join(he)}` : ia }),
           label: "Type a reply",
           radius: 32,
           to: { top: 0, right: 16, bottom: 26, left: 16 },
-          face: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Icon.keyboard, {}),
+          face: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Icon.keyboard, {}),
           onClose: () => setTyping(false),
-          children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("form", { className: "a-form", onSubmit: send, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("input", { ref: input, value: draft, onChange: (e) => setDraft(e.target.value), placeholder: "Type a reply", "aria-label": "Type a reply", autoComplete: "off" }),
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { className: "a-send", disabled: !draft.trim(), "aria-label": "Send", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Icon.send, {}) }),
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { type: "button", className: "a-x", onClick: () => setTyping(false), "aria-label": "Close", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Icon.close, {}) })
+          children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("form", { className: "a-form", onSubmit: send, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("input", { ref: input, value: draft, onChange: (e) => setDraft(e.target.value), placeholder: "Type a reply", "aria-label": "Type a reply", autoComplete: "off" }),
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "a-send", disabled: !draft.trim(), "aria-label": "Send", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Icon.send, {}) }),
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { type: "button", className: "a-x", onClick: () => setTyping(false), "aria-label": "Close", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Icon.close, {}) })
           ] })
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: `a-controls ${inCall ? "on" : ""} ${typing2 && inCall ? "typing" : ""}`, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "a-grid", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Round, { i: 0, label: v.muted ? "Unmute" : "Mute", pressed: v.muted, onClick: () => sim.toggleMute(), icon: v.muted ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Icon.micOff, {}) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Icon.mic, {}), hidden: !inCall, disabled: ended }),
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Round, { i: 1, label: "Speaker", pressed: v.speaker, onClick: () => sim.toggleSpeaker(), icon: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Icon.speaker, {}), hidden: !inCall, disabled: ended }),
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Round, { i: 2, label: "Captions", pressed: caps, expanded: caps, onClick: () => setCaps((c) => !c), icon: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Icon.captions, {}), hidden: !inCall, btnRef: capBtn, disabled: ended }),
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Round, { i: 3, label: "Type", pressed: typing2, expanded: typing2, onClick: () => {
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: `a-controls ${inCall ? "on" : ""} ${typing2 && inCall ? "typing" : ""}`, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "a-grid", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Round, { i: 0, label: v.muted ? "Unmute" : "Mute", pressed: v.muted, onClick: () => sim.toggleMute(), icon: v.muted ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Icon.micOff, {}) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Icon.mic, {}), hidden: !inCall, disabled: ended }),
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Round, { i: 1, label: "Speaker", pressed: v.speaker, onClick: () => sim.toggleSpeaker(), icon: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Icon.speaker, {}), hidden: !inCall, disabled: ended }),
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Round, { i: 2, label: "Captions", pressed: caps, expanded: caps, onClick: () => setCaps((c) => !c), icon: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Icon.captions, {}), hidden: !inCall, btnRef: capBtn, disabled: ended }),
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Round, { i: 3, label: "Type", pressed: typing2, expanded: typing2, onClick: () => {
             setTyping((t) => !t);
             setTimeout(() => input.current?.focus({ preventScroll: true }), 200);
-          }, icon: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Icon.keyboard, {}), hidden: !inCall, btnRef: typeBtn, disabled: ended })
+          }, icon: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Icon.keyboard, {}), hidden: !inCall, btnRef: typeBtn, disabled: ended })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "a-main", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "a-main", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
             "button",
             {
               className: `a-big ${incoming ? "answer" : "done"}`,
@@ -27606,19 +27842,19 @@ ${Rt.split("{id}").join(he)}` : ia }),
               onClick: () => incoming ? sim.answer() : sim.doneTalking(),
               "aria-label": incoming ? "Answer call" : "Done talking",
               children: [
-                /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: `a-glyph ${incoming ? "show" : ""}`, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Icon.phone, { size: 30 }) }),
-                /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: `a-glyph ${incoming ? "" : "show"}`, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Icon.check, { size: 30 }) })
+                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: `a-glyph ${incoming ? "show" : ""}`, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Icon.phone, { size: 30 }) }),
+                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: `a-glyph ${incoming ? "" : "show"}`, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Icon.check, { size: 30 }) })
               ]
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "a-biglabel", "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Swap, { k: incoming ? "a" : "d", children: incoming ? "Answer" : "Done talking" }) })
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "a-biglabel", "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Swap, { k: incoming ? "a" : "d", children: incoming ? "Answer" : "Done talking" }) })
         ] })
       ] })
     ] }) });
   }
   function Round({ i, label, pressed, expanded, onClick, icon, hidden, btnRef, disabled: disabled2 }) {
-    return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "a-cell", style: { "--i": i }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+    return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "a-cell", style: { "--i": i }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
         "button",
         {
           ref: btnRef,
@@ -27632,13 +27868,13 @@ ${Rt.split("{id}").join(he)}` : ia }),
           children: icon
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "a-label", "aria-hidden": "true", children: label })
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "a-label", "aria-hidden": "true", children: label })
     ] });
   }
 
-  // B:/Projects/CallMe/design-preview/src/callB.jsx
+  // src/callB.jsx
   var import_react6 = __toESM(require_react());
-  var import_jsx_runtime6 = __toESM(require_jsx_runtime());
+  var import_jsx_runtime7 = __toESM(require_jsx_runtime());
   function CallB({ sim }) {
     const v = useSim(sim);
     const now = useNow(v.phase !== "ended");
@@ -27654,29 +27890,29 @@ ${Rt.split("{id}").join(he)}` : ia }),
       sim.sendTyped(draft);
       setDraft("");
     };
-    return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(rn, { type: "mobile", level: sim.level, motion: sim.motion, paused: ended, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: `screen b ${v.closed ? "closed" : ""}`, ref: root, "data-phase": v.phase, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(StatusBar, {}),
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("header", { className: "b-top", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "b-who", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("strong", { children: "Claude" }),
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "b-time", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Swap, { k: incoming ? "i" : v.phase === "connecting" ? "c" : "t", children: incoming ? "Calling you" : v.phase === "connecting" ? "Connecting" : callTime(v, now) }) })
+    return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(rn, { type: "mobile", level: sim.level, motion: sim.motion, paused: ended, children: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: `screen b ${v.closed ? "closed" : ""}`, ref: root, "data-phase": v.phase, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(StatusBar, {}),
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("header", { className: "b-top", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "b-who", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("strong", { children: "Claude" }),
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "b-time", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Swap, { k: incoming ? "i" : v.phase === "connecting" ? "c" : "t", children: incoming ? "Calling you" : v.phase === "connecting" ? "Connecting" : callTime(v, now) }) })
         ] }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("button", { ref: tBtn, className: "b-chip", "aria-expanded": open, onClick: () => setOpen((o) => !o), disabled: incoming, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Icon.transcript, { size: 20 }),
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("button", { ref: tBtn, className: "b-chip", "aria-expanded": open, onClick: () => setOpen((o) => !o), disabled: incoming, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Icon.transcript, { size: 20 }),
           " Transcript"
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("main", { className: "b-stage", "aria-live": "off", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Mascot, { sim, u: 4, spark: 88, className: "b-mascot" }),
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Swap, { k: cap.key, className: "b-cap", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { className: `b-label ${cap.tone || ""}`, children: [
-            cap.orb && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ThinkingOrb, { state: cap.orb, size: 20, theme: "dark", "aria-hidden": "true" }),
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("main", { className: "b-stage", "aria-live": "off", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Mascot, { sim, u: 4, spark: 88, room: 48, className: "b-mascot" }),
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(Swap, { k: cap.key, className: "b-cap", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: `b-label ${cap.tone || ""}`, children: [
+            cap.orb && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(ThinkingOrb, { state: cap.orb, size: 20, theme: "dark", "aria-hidden": "true" }),
             cap.label
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: `b-text ${cap.tone || ""}`, children: cap.text })
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: `b-text ${cap.tone || ""}`, children: cap.text })
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
         Morph,
         {
           open: open && !incoming,
@@ -27687,39 +27923,39 @@ ${Rt.split("{id}").join(he)}` : ia }),
           radius: 24,
           fromRadius: 24,
           to: { top: 60, right: 12, bottom: 0, left: 12 },
-          face: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { className: "b-chip-face", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Icon.transcript, { size: 20 }),
+          face: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "b-chip-face", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Icon.transcript, { size: 20 }),
             " Transcript"
           ] }),
           onClose: () => setOpen(false),
           children: [
-            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "b-sheet-head", children: [
-              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("strong", { children: "Transcript" }),
-              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "b-x", onClick: () => setOpen(false), "aria-label": "Close transcript", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Icon.close, {}) })
+            /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "b-sheet-head", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("strong", { children: "Transcript" }),
+              /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("button", { className: "b-x", onClick: () => setOpen(false), "aria-label": "Close transcript", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Icon.close, {}) })
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "b-log", children: v.msgs.map((m) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("p", { className: `b-line ${m.who}`, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "who", children: m.who === "claude" ? "Claude" : "You" }),
-              m.who === "claude" ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Spoken, { msg: m }) : m.text
+            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "b-log", children: v.msgs.map((m) => /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("p", { className: `b-line ${m.who}`, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "who", children: m.who === "claude" ? "Claude" : "You" }),
+              m.who === "claude" ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Spoken, { msg: m }) : m.text
             ] }, m.id)) })
           ]
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("footer", { className: `b-controls ${incoming ? "incoming" : ""}`, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "b-status", role: "status", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Swap, { k: bottom, children: bottom }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "b-row", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "b-round side l", "aria-pressed": v.muted, onClick: () => sim.toggleMute(), "aria-label": v.muted ? "Unmute mic" : "Mute mic", disabled: incoming || ended, tabIndex: incoming ? -1 : 0, children: v.muted ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Icon.micOff, {}) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Icon.mic, {}) }),
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: `b-main ${incoming ? "answer" : "done"}`, disabled: !incoming && v.phase !== "hearing", onClick: () => incoming ? sim.answer() : sim.doneTalking(), children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Swap, { k: incoming ? "a" : "d", children: incoming ? /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_jsx_runtime6.Fragment, { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Icon.phone, {}),
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("footer", { className: `b-controls ${incoming ? "incoming" : ""}`, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("p", { className: "b-status", role: "status", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Swap, { k: bottom, children: bottom }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "b-row", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("button", { className: "b-round side l", "aria-pressed": v.muted, onClick: () => sim.toggleMute(), "aria-label": v.muted ? "Unmute mic" : "Mute mic", disabled: incoming || ended, tabIndex: incoming ? -1 : 0, children: v.muted ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Icon.micOff, {}) : /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Icon.mic, {}) }),
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("button", { className: `b-main ${incoming ? "answer" : "done"}`, disabled: !incoming && v.phase !== "hearing", onClick: () => incoming ? sim.answer() : sim.doneTalking(), children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Swap, { k: incoming ? "a" : "d", children: incoming ? /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(import_jsx_runtime7.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Icon.phone, {}),
             " Answer"
-          ] }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_jsx_runtime6.Fragment, { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Icon.check, {}),
+          ] }) : /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(import_jsx_runtime7.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Icon.check, {}),
             " Done talking"
           ] }) }) }),
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "b-round side r", "aria-pressed": v.speaker, onClick: () => sim.toggleSpeaker(), "aria-label": "Speaker", disabled: incoming || ended, tabIndex: incoming ? -1 : 0, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Icon.speaker, {}) })
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("button", { className: "b-round side r", "aria-pressed": v.speaker, onClick: () => sim.toggleSpeaker(), "aria-label": "Speaker", disabled: incoming || ended, tabIndex: incoming ? -1 : 0, children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Icon.speaker, {}) })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("form", { className: "b-form", onSubmit: send, inert: incoming || ended, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("input", { value: draft, onChange: (e) => setDraft(e.target.value), placeholder: "Type a reply", "aria-label": "Type a reply", autoComplete: "off" }),
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "b-send", disabled: !draft.trim(), "aria-label": "Send", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Icon.send, {}) })
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("form", { className: "b-form", onSubmit: send, inert: incoming || ended, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("input", { value: draft, onChange: (e) => setDraft(e.target.value), placeholder: "Type a reply", "aria-label": "Type a reply", autoComplete: "off" }),
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("button", { className: "b-send", disabled: !draft.trim(), "aria-label": "Send", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Icon.send, {}) })
         ] })
       ] })
     ] }) });
@@ -27729,7 +27965,7 @@ ${Rt.split("{id}").join(he)}` : ia }),
     const lastMe = [...v.msgs].reverse().find((m) => m.who === "me");
     const said = (m) => {
       const p = Math.min(m.spoken[0], m.parts.length - 1);
-      return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Spoken, { msg: m, part: p });
+      return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Spoken, { msg: m, part: p });
     };
     switch (v.phase) {
       case "incoming":
@@ -27754,9 +27990,9 @@ ${Rt.split("{id}").join(he)}` : ia }),
     return { key: "x", label: "", text: "" };
   }
 
-  // B:/Projects/CallMe/design-preview/src/callC.jsx
+  // src/callC.jsx
   var import_react7 = __toESM(require_react());
-  var import_jsx_runtime7 = __toESM(require_jsx_runtime());
+  var import_jsx_runtime8 = __toESM(require_jsx_runtime());
   function CallC({ sim }) {
     const v = useSim(sim);
     const now = useNow(v.phase !== "ended");
@@ -27775,59 +28011,59 @@ ${Rt.split("{id}").join(he)}` : ia }),
       const el = thread.current;
       el.scrollTo({ top: el.scrollHeight, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
     }, [v.msgs.length, pending, v.phase === "talking" && v.msgs.at(-1)?.spoken[0]]);
-    return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: `screen c ${v.closed ? "closed" : ""}`, "data-phase": v.phase, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(StatusBar, {}),
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("header", { className: "c-head", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "c-title", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("strong", { children: "Claude" }),
-          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "c-sub", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Swap, { k: incoming ? "i" : v.phase === "connecting" ? "c" : ended ? "e" : "t", children: incoming ? "Incoming call" : v.phase === "connecting" ? "Connecting\u2026" : ended ? `Call ended \xB7 ${time}` : `On call \xB7 ${time}` }) })
+    return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: `screen c ${v.closed ? "closed" : ""}`, "data-phase": v.phase, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(StatusBar, {}),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("header", { className: "c-head", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "c-title", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("strong", { children: "Claude" }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "c-sub", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Swap, { k: incoming ? "i" : v.phase === "connecting" ? "c" : ended ? "e" : "t", children: incoming ? "Incoming call" : v.phase === "connecting" ? "Connecting\u2026" : ended ? `Call ended \xB7 ${time}` : `On call \xB7 ${time}` }) })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("button", { className: "c-icon", "aria-pressed": v.muted, onClick: () => sim.toggleMute(), "aria-label": v.muted ? "Unmute mic" : "Mute mic", disabled: incoming || ended, children: v.muted ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Icon.micOff, {}) : /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Icon.mic, {}) }),
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("button", { className: "c-icon", "aria-pressed": v.speaker, onClick: () => sim.toggleSpeaker(), "aria-label": "Speaker", disabled: incoming || ended, children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Icon.speaker, {}) })
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { className: "c-icon", "aria-pressed": v.muted, onClick: () => sim.toggleMute(), "aria-label": v.muted ? "Unmute mic" : "Mute mic", disabled: incoming || ended, children: v.muted ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Icon.micOff, {}) : /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Icon.mic, {}) }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { className: "c-icon", "aria-pressed": v.speaker, onClick: () => sim.toggleSpeaker(), "aria-label": "Speaker", disabled: incoming || ended, children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Icon.speaker, {}) })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "c-thread", ref: thread, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: `c-ring ${incoming ? "show" : ""}`, "aria-hidden": !incoming, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Mascot, { sim, u: 5, spark: 110 }),
-          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("p", { children: "Claude is calling" })
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "c-thread", ref: thread, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: `c-ring ${incoming ? "show" : ""}`, "aria-hidden": !incoming, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Mascot, { sim, u: 5, spark: 110, room: 60 }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { children: "Claude is calling" })
         ] }),
-        v.msgs.map((m) => m.who === "claude" ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "c-row claude", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("p", { className: "c-bubble", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Spoken, { msg: m }) }) }, m.id) : /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "c-row me", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("p", { className: "c-bubble", children: m.text }) }, m.id)),
-        pending && /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "c-row claude pending", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "c-orb", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(ThinkingOrb, { state: v.phase === "hold" ? "searching" : "breathing", size: 20, theme: "dark", "aria-hidden": "true" }) }),
-          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("p", { className: "c-note", children: v.phase === "hold" ? /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(import_jsx_runtime7.Fragment, { children: [
+        v.msgs.map((m) => m.who === "claude" ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { className: "c-row claude", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { className: "c-bubble", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Spoken, { msg: m }) }) }, m.id) : /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { className: "c-row me", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { className: "c-bubble", children: m.text }) }, m.id)),
+        pending && /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "c-row claude pending", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "c-orb", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(ThinkingOrb, { state: v.phase === "hold" ? "searching" : "breathing", size: 20, theme: "dark", "aria-hidden": "true" }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { className: "c-note", children: v.phase === "hold" ? /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(import_jsx_runtime8.Fragment, { children: [
             v.holdLabel,
-            /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "c-dim", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("span", { className: "c-dim", children: [
               " \xB7 ",
               clock(now - v.holdStart)
             ] })
           ] }) : "Claude is thinking\u2026" })
         ] }, `p${v.idx}`)
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: `c-perch ${incoming ? "" : "show"}`, children: !incoming && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Mascot, { sim, u: 3, spark: 48 }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "c-dockwrap", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(rn, { level: sim.meLevel, paused: ended, children: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: `c-dock ${incoming ? "incoming" : ""}`, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "c-statusrow", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "c-status", role: "status", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: `c-dot ${v.phase} ${v.muted ? "muted" : ""}`, "aria-hidden": "true" }),
-            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Swap, { k: dockStatus, children: dockStatus })
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { className: `c-perch ${incoming ? "" : "show"}`, children: !incoming && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Mascot, { sim, u: 3, spark: 48, room: 6 }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { className: "c-dockwrap", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(rn, { level: sim.meLevel, paused: ended, children: /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: `c-dock ${incoming ? "incoming" : ""}`, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "c-statusrow", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("span", { className: "c-status", role: "status", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: `c-dot ${v.phase} ${v.muted ? "muted" : ""}`, "aria-hidden": "true" }),
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Swap, { k: dockStatus, children: dockStatus })
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("button", { className: `c-main ${incoming ? "answer" : "done"}`, disabled: !incoming && v.phase !== "hearing", onClick: () => incoming ? sim.answer() : sim.doneTalking(), children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Swap, { k: incoming ? "a" : "d", children: incoming ? /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(import_jsx_runtime7.Fragment, { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Icon.phone, { size: 20 }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { className: `c-main ${incoming ? "answer" : "done"}`, disabled: !incoming && v.phase !== "hearing", onClick: () => incoming ? sim.answer() : sim.doneTalking(), children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Swap, { k: incoming ? "a" : "d", children: incoming ? /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(import_jsx_runtime8.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Icon.phone, { size: 20 }),
             " Answer"
-          ] }) : /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(import_jsx_runtime7.Fragment, { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Icon.check, { size: 20 }),
+          ] }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(import_jsx_runtime8.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Icon.check, { size: 20 }),
             " Done talking"
           ] }) }) })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("form", { className: "c-form", onSubmit: send, inert: incoming || ended, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("input", { value: draft, onChange: (e) => setDraft(e.target.value), placeholder: "Type a reply", "aria-label": "Type a reply", autoComplete: "off", disabled: incoming || ended }),
-          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("button", { className: "c-send", disabled: !draft.trim(), "aria-label": "Send", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Icon.send, { size: 20 }) })
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("form", { className: "c-form", onSubmit: send, inert: incoming || ended, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("input", { value: draft, onChange: (e) => setDraft(e.target.value), placeholder: "Type a reply", "aria-label": "Type a reply", autoComplete: "off", disabled: incoming || ended }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { className: "c-send", disabled: !draft.trim(), "aria-label": "Send", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Icon.send, { size: 20 }) })
         ] })
       ] }) }) })
     ] });
   }
 
-  // B:/Projects/CallMe/design-preview/src/callD.jsx
+  // ../call-ui/src/callD.jsx
   var import_react8 = __toESM(require_react());
-  var import_jsx_runtime8 = __toESM(require_jsx_runtime());
+  var import_jsx_runtime9 = __toESM(require_jsx_runtime());
   var REDUCE3 = matchMedia("(prefers-reduced-motion: reduce)");
   var LIQUID = "cubic-bezier(0.16, 1, 0.3, 1)";
   var ms = () => REDUCE3.matches ? 0 : document.documentElement.dataset.motion === "gentle" ? 420 : 480;
@@ -27839,7 +28075,7 @@ ${Rt.split("{id}").join(he)}` : ia }),
     }
     return { x, y, w: el.offsetWidth, h: el.offsetHeight };
   }
-  function CallD({ sim }) {
+  function CallD({ sim, statusBar = null }) {
     const v = useSim(sim);
     const kind = (0, import_react8.useContext)(MascotKind);
     const now = useNow(v.phase !== "ended");
@@ -27856,12 +28092,12 @@ ${Rt.split("{id}").join(he)}` : ia }),
     const held = (0, import_react8.useRef)({ meText: null, live: false, pending: false, claude: null });
     if (thread || !held.current.claude) held.current = { meText: pending ? lastMe?.text : null, live: v.phase === "hearing", pending, claude: lastClaude };
     const bubbleMsg = thread ? lastClaude : held.current.claude;
-    const { meText, live } = held.current;
+    const { meText, live: live2 } = held.current;
     const showPending = held.current.pending;
     const capHold = (0, import_react8.useRef)(null);
     if (!thread || !capHold.current) capHold.current = caption2(v, now);
     const cap = capHold.current;
-    const status = ["connecting", "talking", "listening", "hearing"].includes(v.phase) || v.phase === "thinking" && !pending ? statusText(v) : "";
+    const status = v.notice || (["connecting", "talking", "listening", "hearing"].includes(v.phase) || v.phase === "thinking" && !pending ? statusText(v) : "");
     const rects = (0, import_react8.useRef)({});
     const [perch, setPerch] = (0, import_react8.useState)(null);
     (0, import_react8.useLayoutEffect)(() => {
@@ -27878,9 +28114,9 @@ ${Rt.split("{id}").join(he)}` : ia }),
       const d = ms(), fly = (el, kf) => el && d && el.animate(kf, { duration: d, easing: LIQUID, fill: "both" });
       if (thread) {
         const b = offsetIn2(bubble.current, stage.current);
-        setPerch({ x: b.x + 14, y: b.y + 1 });
+        setPerch({ x: b.x + 14, y: b.y - 12 });
         const src2 = rects.current.cap, srcEl = capLayer.current.querySelector(".swap-item.in .d-text");
-        if (src2 && !first.current) {
+        if (src2 && !first.current && d) {
           const k = b.w / src2.w;
           srcEl?.setAttribute("data-flown", "");
           fly(srcEl, [{ transform: "none", opacity: 1 }, { opacity: 0, offset: 0.3 }, { transform: `translate(${b.x - src2.x}px, ${b.y - src2.y}px) scale(${k})`, opacity: 0 }]);
@@ -27909,32 +28145,32 @@ ${Rt.split("{id}").join(he)}` : ia }),
       setTyping(false);
     };
     const mascotAt = perch ? `translate(${perch.x}px, ${perch.y - 88}px)` : "translate(24px, 20px)";
-    return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(rn, { type: "mobile", level: sim.level, paused: ended, children: /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: `screen d ${v.closed ? "closed" : ""} ${thread ? "threaded" : ""}`, ref: root, "data-phase": v.phase, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(StatusBar, {}),
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("header", { className: "d-head", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("strong", { children: "Claude" }),
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "d-time", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Swap, { k: incoming ? "i" : v.phase === "connecting" ? "c" : ended ? "e" : "t", children: incoming ? "Calling you" : v.phase === "connecting" ? "Connecting\u2026" : ended ? `Call ended \xB7 ${callTime(v, now)}` : `On call \xB7 ${callTime(v, now)}` }) })
+    return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(rn, { type: "mobile", level: sim.level, paused: ended, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: `screen d ${v.closed ? "closed" : ""} ${thread ? "threaded" : ""}`, ref: root, "data-phase": v.phase, children: [
+      statusBar,
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("header", { className: "d-head", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("strong", { children: "Claude" }),
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "d-time", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Swap, { k: incoming ? "i" : v.phase === "connecting" ? "c" : ended ? "e" : "t", children: incoming ? "Calling you" : v.phase === "connecting" ? "Connecting\u2026" : ended ? `Call ended \xB7 ${callTime(v, now)}` : `On call \xB7 ${callTime(v, now)}` }) })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "d-stage", ref: stage, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { className: "d-mascot", style: { transform: mascotAt }, children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { className: `d-mascot-scale ${kind} ${perch ? "small" : ""}`, children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Mascot, { sim, u: 4, spark: 88 }) }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { className: `d-caps ${thread ? "" : "on"}`, ref: capLayer, "aria-hidden": thread, children: /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Swap, { k: cap.key, className: "d-cap", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("span", { className: `d-label ${cap.tone || ""}`, children: [
-            cap.orb && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(ThinkingOrb, { state: cap.orb, size: 20, theme: "dark", "aria-hidden": "true" }),
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "d-stage", ref: stage, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "d-mascot", style: { transform: mascotAt }, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: `d-mascot-scale ${kind} ${perch ? "small" : ""}`, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Mascot, { sim, u: 4, spark: 88, room: 22 }) }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: `d-caps ${thread ? "" : "on"}`, ref: capLayer, "aria-hidden": thread, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Swap, { k: cap.key, className: "d-cap", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { className: `d-label ${cap.tone || ""}`, children: [
+            cap.orb && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(ThinkingOrb, { state: cap.orb, size: 20, theme: "dark", "aria-hidden": "true" }),
             cap.label
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: `d-text ${cap.tone || ""}`, children: cap.text })
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: `d-text ${cap.tone || ""}`, children: cap.text })
         ] }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: `d-thread ${thread ? "on" : ""}`, "aria-hidden": !thread, children: [
-          bubbleMsg && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { ref: bubble, className: "d-bubble claude flier", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Spoken, { msg: bubbleMsg }) }, bubbleMsg.id),
-          (thread || held.current.live || meText) && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(MeBubble, { sim, text: meText, live }),
-          showPending && /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { ref: orbRow, className: "d-pending", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(ThinkingOrb, { state: "breathing", size: 20, theme: "dark", "aria-hidden": "true" }),
-            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { children: "Claude is thinking\u2026" })
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: `d-thread ${thread ? "on" : ""}`, "aria-hidden": !thread, children: [
+          bubbleMsg && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { ref: bubble, className: "d-bubble claude flier", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Spoken, { msg: bubbleMsg }) }, bubbleMsg.id),
+          (thread || held.current.live || meText) && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(MeBubble, { sim, text: meText, live: live2 }),
+          showPending && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { ref: orbRow, className: "d-pending", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(ThinkingOrb, { state: "breathing", size: 20, theme: "dark", "aria-hidden": "true" }),
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { children: "Claude is thinking\u2026" })
           ] })
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { className: "d-status", role: "status", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Swap, { k: status || "none", children: status }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { className: "d-status", role: "status", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Swap, { k: status || "none", children: status }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(
         Morph,
         {
           open: caps && inCall,
@@ -27944,18 +28180,18 @@ ${Rt.split("{id}").join(he)}` : ia }),
           label: "Transcript",
           radius: 24,
           to: { top: 0, right: 12, bottom: 106, left: 12 },
-          face: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Icon.captions, {}),
+          face: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Icon.captions, {}),
           onClose: () => setCaps(false),
           children: [
-            /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "b-sheet-head", children: [
-              /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("strong", { children: "Transcript" }),
-              /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { className: "b-x", onClick: () => setCaps(false), "aria-label": "Close transcript", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Icon.close, {}) })
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "b-sheet-head", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("strong", { children: "Transcript" }),
+              /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { className: "b-x", onClick: () => setCaps(false), "aria-label": "Close transcript", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Icon.close, {}) })
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { className: "d-log", children: v.msgs.map((m) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { className: `c-row ${m.who}`, children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { className: "c-bubble", children: m.who === "claude" ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Spoken, { msg: m }) : m.text }) }, m.id)) })
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "d-log", children: v.msgs.map((m) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: `c-row ${m.who}`, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { className: "c-bubble", children: m.who === "claude" ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Spoken, { msg: m }) : m.text }) }, m.id)) })
           ]
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
         Morph,
         {
           open: typing2 && inCall && !ended,
@@ -27965,27 +28201,27 @@ ${Rt.split("{id}").join(he)}` : ia }),
           label: "Type a reply",
           radius: 32,
           to: { top: 0, right: 16, bottom: 26, left: 16 },
-          face: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Icon.keyboard, {}),
+          face: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Icon.keyboard, {}),
           onClose: () => setTyping(false),
-          children: /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("form", { className: "a-form", onSubmit: send, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("input", { ref: input, value: draft, onChange: (e) => setDraft(e.target.value), placeholder: "Type a reply", "aria-label": "Type a reply", autoComplete: "off" }),
-            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { className: "a-send", disabled: !draft.trim(), "aria-label": "Send", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Icon.send, {}) }),
-            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { type: "button", className: "a-x", onClick: () => setTyping(false), "aria-label": "Close", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Icon.close, {}) })
+          children: /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("form", { className: "a-form", onSubmit: send, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("input", { ref: input, value: draft, onChange: (e) => setDraft(e.target.value), placeholder: "Type a reply", "aria-label": "Type a reply", autoComplete: "off" }),
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { className: "a-send", disabled: !draft.trim(), "aria-label": "Send", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Icon.send, {}) }),
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { type: "button", className: "a-x", onClick: () => setTyping(false), "aria-label": "Close", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Icon.close, {}) })
           ] })
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: `a-controls ${inCall ? "on" : ""} ${typing2 && inCall ? "typing" : ""}`, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "a-grid", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Round2, { i: 0, label: v.muted ? "Unmute" : "Mute", pressed: v.muted, onClick: () => sim.toggleMute(), icon: v.muted ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Icon.micOff, {}) : /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Icon.mic, {}), hidden: !inCall, disabled: ended }),
-          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Round2, { i: 1, label: "Speaker", pressed: v.speaker, onClick: () => sim.toggleSpeaker(), icon: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Icon.speaker, {}), hidden: !inCall, disabled: ended }),
-          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Round2, { i: 2, label: "Captions", pressed: caps, expanded: caps, onClick: () => setCaps((c) => !c), icon: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Icon.captions, {}), hidden: !inCall, btnRef: capBtn, disabled: ended }),
-          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Round2, { i: 3, label: "Type", pressed: typing2, expanded: typing2, onClick: () => {
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: `a-controls ${inCall ? "on" : ""} ${typing2 && inCall ? "typing" : ""}`, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "a-grid", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Round2, { i: 0, label: v.muted ? "Unmute" : "Mute", pressed: v.muted, onClick: () => sim.toggleMute(), icon: v.muted ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Icon.micOff, {}) : /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Icon.mic, {}), hidden: !inCall, disabled: ended }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Round2, { i: 1, label: "Speaker", pressed: v.speaker, onClick: () => sim.toggleSpeaker(), icon: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Icon.speaker, {}), hidden: !inCall, disabled: ended || v.speakerAvailable === false }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Round2, { i: 2, label: "Captions", pressed: caps, expanded: caps, onClick: () => setCaps((c) => !c), icon: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Icon.captions, {}), hidden: !inCall, btnRef: capBtn, disabled: ended }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Round2, { i: 3, label: "Type", pressed: typing2, expanded: typing2, onClick: () => {
             setTyping((t) => !t);
             setTimeout(() => input.current?.focus({ preventScroll: true }), 200);
-          }, icon: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Icon.keyboard, {}), hidden: !inCall, btnRef: typeBtn, disabled: ended })
+          }, icon: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Icon.keyboard, {}), hidden: !inCall, btnRef: typeBtn, disabled: ended })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "a-main", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "a-main", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(
             "button",
             {
               className: `a-big ${incoming ? "answer" : "done"}`,
@@ -27993,19 +28229,19 @@ ${Rt.split("{id}").join(he)}` : ia }),
               onClick: () => incoming ? sim.answer() : sim.doneTalking(),
               "aria-label": incoming ? "Answer call" : "Done talking",
               children: [
-                /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: `a-glyph ${incoming ? "show" : ""}`, children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Icon.phone, { size: 30 }) }),
-                /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: `a-glyph ${incoming ? "" : "show"}`, children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Icon.check, { size: 30 }) })
+                /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: `a-glyph ${incoming ? "show" : ""}`, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Icon.phone, { size: 30 }) }),
+                /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: `a-glyph ${incoming ? "" : "show"}`, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Icon.check, { size: 30 }) })
               ]
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "a-biglabel", "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Swap, { k: incoming ? "a" : "d", children: incoming ? "Answer" : "Done talking" }) })
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "a-biglabel", "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Swap, { k: incoming ? "a" : "d", children: incoming ? "Answer" : "Done talking" }) })
         ] })
       ] })
     ] }) });
   }
   function Round2({ i, label, pressed, expanded, onClick, icon, hidden, btnRef, disabled: disabled2 }) {
-    return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "a-cell", style: { "--i": i }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+    return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "a-cell", style: { "--i": i }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
         "button",
         {
           ref: btnRef,
@@ -28019,10 +28255,10 @@ ${Rt.split("{id}").join(he)}` : ia }),
           children: icon
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "a-label", "aria-hidden": "true", children: label })
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "a-label", "aria-hidden": "true", children: label })
     ] });
   }
-  function MeBubble({ sim, text, live }) {
+  function MeBubble({ sim, text, live: live2 }) {
     const ref = (0, import_react8.useRef)(null), dots = (0, import_react8.useRef)(null), size = (0, import_react8.useRef)(null);
     (0, import_react8.useLayoutEffect)(() => {
       const el = ref.current, w = el.offsetWidth, h = el.offsetHeight, prev = size.current;
@@ -28042,10 +28278,10 @@ ${Rt.split("{id}").join(he)}` : ia }),
       tick();
       return () => cancelAnimationFrame(raf2);
     }, [text]);
-    return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { ref, className: `d-bubble me ${text ? "" : "dots"}`, children: text ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "d-me-text", children: text }, "t") : /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("span", { ref: dots, className: `d-dots ${live ? "" : "idle"}`, "aria-label": live ? "You are talking" : "Transcribing", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("i", {}),
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("i", {}),
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("i", {})
+    return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { ref, className: `d-bubble me ${text ? "" : "dots"}`, children: text ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "d-me-text", children: text }, "t") : /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { ref: dots, className: `d-dots ${live2 ? "" : "idle"}`, "aria-label": live2 ? "You are talking" : "Transcribing", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("i", {}),
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("i", {}),
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("i", {})
     ] }) });
   }
   function caption2(v, now) {
@@ -28058,43 +28294,43 @@ ${Rt.split("{id}").join(he)}` : ia }),
         return { key: "con", label: "Connecting", text: "One moment\u2026", tone: "dim" };
       case "talking": {
         const m = v.msgs.find((x) => x.live) || lastClaude;
-        return { key: `c${m.id}-${part(m)}`, label: "Claude", text: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Spoken, { msg: m, part: part(m) }) };
+        return { key: `c${m.id}-${part(m)}`, label: "Claude", text: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Spoken, { msg: m, part: part(m) }) };
       }
       case "hold":
         return { key: "hold", orb: "searching", label: `On hold \xB7 ${clock(now - v.holdStart)}`, text: `${v.holdLabel}.`, tone: "hold" };
       case "ended":
         return { key: "end", label: callTime(v, now), text: "Call ended.", tone: "dim" };
       default:
-        return lastClaude ? { key: `c${lastClaude.id}-${part(lastClaude)}`, label: "Claude", text: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Spoken, { msg: lastClaude, part: part(lastClaude) }), tone: "rest" } : { key: "turn", label: "Your turn", text: "Go ahead, Claude is listening.", tone: "dim" };
+        return lastClaude ? { key: `c${lastClaude.id}-${part(lastClaude)}`, label: "Claude", text: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Spoken, { msg: lastClaude, part: part(lastClaude) }), tone: "rest" } : { key: "turn", label: "Your turn", text: "Go ahead, Claude is listening.", tone: "dim" };
     }
   }
 
-  // B:/Projects/CallMe/design-preview/src/widgets.jsx
+  // src/widgets.jsx
   var import_react9 = __toESM(require_react());
-  var import_jsx_runtime9 = __toESM(require_jsx_runtime());
+  var import_jsx_runtime10 = __toESM(require_jsx_runtime());
   var MODES = [
     { id: "call", label: "Calls", title: "Calls only", line: "Claude can call you", color: "#F2A27E" },
     { id: "text", label: "Texts", title: "Texts only", line: "Claude can message you", color: "#86BEFF" },
     { id: "both", label: "Both", title: "Calls and texts", line: "Claude can call or message you", color: "#BBA2FF" },
     { id: "none", label: "None", title: "Do not disturb", line: "Claude saves its questions", color: "#A9B2C4" }
   ];
-  var G = ({ children, size = 22 }) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.9", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", children });
+  var G = ({ children, size = 22 }) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.9", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", children });
   var Glyph = {
-    call: (p) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(G, { ...p, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("path", { d: "M5.5 4h3l1.5 3.8-1.9 1.3a9.5 9.5 0 0 0 4.8 4.8l1.3-1.9 3.8 1.5v3a2 2 0 0 1-2 2A14.5 14.5 0 0 1 3.5 6a2 2 0 0 1 2-2z" }) }),
-    text: (p) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(G, { ...p, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("path", { d: "M4.5 6.5a2.5 2.5 0 0 1 2.5-2.5h10a2.5 2.5 0 0 1 2.5 2.5v7a2.5 2.5 0 0 1-2.5 2.5H10l-4 3.5V16h0a2.5 2.5 0 0 1-1.5-2.3z" }) }),
-    both: (p) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(G, { ...p, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("path", { d: "M3.5 8.5h2.2l1.1 2.7-1.4.9a6.8 6.8 0 0 0 3.4 3.4l.9-1.4 2.7 1.1v2.2a1.5 1.5 0 0 1-1.5 1.5A10.3 10.3 0 0 1 2 10a1.5 1.5 0 0 1 1.5-1.5z" }),
-      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("path", { d: "M12.5 4h7a1.8 1.8 0 0 1 1.8 1.8v4.4A1.8 1.8 0 0 1 19.5 12H17l-2.5 2v-2h-2a1.8 1.8 0 0 1-1.8-1.8V5.8A1.8 1.8 0 0 1 12.5 4z" })
+    call: (p) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(G, { ...p, children: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("path", { d: "M5.5 4h3l1.5 3.8-1.9 1.3a9.5 9.5 0 0 0 4.8 4.8l1.3-1.9 3.8 1.5v3a2 2 0 0 1-2 2A14.5 14.5 0 0 1 3.5 6a2 2 0 0 1 2-2z" }) }),
+    text: (p) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(G, { ...p, children: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("path", { d: "M4.5 6.5a2.5 2.5 0 0 1 2.5-2.5h10a2.5 2.5 0 0 1 2.5 2.5v7a2.5 2.5 0 0 1-2.5 2.5H10l-4 3.5V16h0a2.5 2.5 0 0 1-1.5-2.3z" }) }),
+    both: (p) => /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(G, { ...p, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("path", { d: "M3.5 8.5h2.2l1.1 2.7-1.4.9a6.8 6.8 0 0 0 3.4 3.4l.9-1.4 2.7 1.1v2.2a1.5 1.5 0 0 1-1.5 1.5A10.3 10.3 0 0 1 2 10a1.5 1.5 0 0 1 1.5-1.5z" }),
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("path", { d: "M12.5 4h7a1.8 1.8 0 0 1 1.8 1.8v4.4A1.8 1.8 0 0 1 19.5 12H17l-2.5 2v-2h-2a1.8 1.8 0 0 1-1.8-1.8V5.8A1.8 1.8 0 0 1 12.5 4z" })
     ] }),
-    none: (p) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(G, { ...p, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("path", { d: "M19.5 14.6A8 8 0 1 1 9.4 4.5a6.3 6.3 0 0 0 10.1 10.1z" }) })
+    none: (p) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(G, { ...p, children: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("path", { d: "M19.5 14.6A8 8 0 1 1 9.4 4.5a6.3 6.3 0 0 0 10.1 10.1z" }) })
   };
   var hhmm = (d) => `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
   function Flip({ mode, children, className = "" }) {
-    return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: `flip ${className}`, children: MODES.map((m) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: `flip-frame ${m.id === mode ? "on" : ""}`, style: { "--c": m.color }, "aria-hidden": m.id !== mode, inert: m.id !== mode, children: children(m) }, m.id)) });
+    return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { className: `flip ${className}`, children: MODES.map((m) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { className: `flip-frame ${m.id === mode ? "on" : ""}`, style: { "--c": m.color }, "aria-hidden": m.id !== mode, inert: m.id !== mode, children: children(m) }, m.id)) });
   }
   function Tap({ className = "", on, label, onClick, children, current }) {
     const [r, setR] = (0, import_react9.useState)(null);
-    return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(
+    return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(
       "button",
       {
         className: `tap ${className} ${on ? "on" : ""}`,
@@ -28106,71 +28342,71 @@ ${Rt.split("{id}").join(he)}` : ia }),
         },
         onClick,
         children: [
-          r && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "ripple", style: { left: `${r.x / r.w * 100}%`, top: `${r.y / r.h * 100}%` }, "aria-hidden": "true" }, r.k),
+          r && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "ripple", style: { left: `${r.x / r.w * 100}%`, top: `${r.y / r.h * 100}%` }, "aria-hidden": "true" }, r.k),
           children
         ]
       }
     );
   }
   function GlassCompact({ mode, set, since }) {
-    return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "wg glass compact", role: "group", "aria-label": "Claude contact mode", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Flip, { mode, children: (cur) => MODES.map((m) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Tap, { className: `g-row ${m.id === cur.id ? "sel" : ""}`, label: m.title, current: m.id === cur.id, onClick: () => set(m.id), children: [
-      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "g-ico", style: { color: m.id === cur.id ? m.color : void 0 }, children: Glyph[m.id]({ size: 20 }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "g-name", children: m.label }),
-      m.id === cur.id && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "g-since", children: since })
+    return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { className: "wg glass compact", role: "group", "aria-label": "Claude contact mode", children: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Flip, { mode, children: (cur) => MODES.map((m) => /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(Tap, { className: `g-row ${m.id === cur.id ? "sel" : ""}`, label: m.title, current: m.id === cur.id, onClick: () => set(m.id), children: [
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "g-ico", style: { color: m.id === cur.id ? m.color : void 0 }, children: Glyph[m.id]({ size: 20 }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "g-name", children: m.label }),
+      m.id === cur.id && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "g-since", children: since })
     ] }, m.id)) }) });
   }
   function GlassWide({ mode, set }) {
-    return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "wg glass wide1", role: "group", "aria-label": "Claude contact mode", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Flip, { mode, children: (cur) => MODES.map((m) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Tap, { className: `g-seg ${m.id === cur.id ? "sel" : ""}`, label: m.title, current: m.id === cur.id, onClick: () => set(m.id), children: [
-      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "g-ico", style: { color: m.id === cur.id ? m.color : void 0 }, children: Glyph[m.id]({ size: 22 }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "g-name", children: m.label })
+    return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { className: "wg glass wide1", role: "group", "aria-label": "Claude contact mode", children: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Flip, { mode, children: (cur) => MODES.map((m) => /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(Tap, { className: `g-seg ${m.id === cur.id ? "sel" : ""}`, label: m.title, current: m.id === cur.id, onClick: () => set(m.id), children: [
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "g-ico", style: { color: m.id === cur.id ? m.color : void 0 }, children: Glyph[m.id]({ size: 22 }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "g-name", children: m.label })
     ] }, m.id)) }) });
   }
   function AuraCompact({ mode, set }) {
-    return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "wg aura compact", role: "group", "aria-label": "Claude contact mode", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Flip, { mode, children: (cur) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "a-quad", children: MODES.map((m) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Tap, { className: `a-tile ${m.id === cur.id ? "sel" : ""}`, label: m.title, current: m.id === cur.id, onClick: () => set(m.id), children: /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { style: { "--c": m.color }, className: "a-tile-in", children: [
+    return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { className: "wg aura compact", role: "group", "aria-label": "Claude contact mode", children: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Flip, { mode, children: (cur) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { className: "a-quad", children: MODES.map((m) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Tap, { className: `a-tile ${m.id === cur.id ? "sel" : ""}`, label: m.title, current: m.id === cur.id, onClick: () => set(m.id), children: /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("span", { style: { "--c": m.color }, className: "a-tile-in", children: [
       Glyph[m.id]({ size: m.id === cur.id ? 26 : 22 }),
-      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "a-tile-name", children: m.label })
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "a-tile-name", children: m.label })
     ] }) }, m.id)) }) }) });
   }
   function AuraWide({ mode, set, since }) {
-    return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "wg aura wide2", role: "group", "aria-label": "Claude contact mode", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Flip, { mode, children: (cur) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "a-split", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "a-hero", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "a-hero-ico", children: Glyph[cur.id]({ size: 30 }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "a-hero-title", children: cur.title }),
-        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "a-hero-line", children: cur.line }),
-        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { className: "a-hero-since", children: [
+    return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { className: "wg aura wide2", role: "group", "aria-label": "Claude contact mode", children: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Flip, { mode, children: (cur) => /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { className: "a-split", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { className: "a-hero", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "a-hero-ico", children: Glyph[cur.id]({ size: 30 }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "a-hero-title", children: cur.title }),
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "a-hero-line", children: cur.line }),
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("span", { className: "a-hero-since", children: [
           "Changed ",
           since
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "a-quad small", children: MODES.map((m) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Tap, { className: `a-tile ${m.id === cur.id ? "sel" : ""}`, label: m.title, current: m.id === cur.id, onClick: () => set(m.id), children: /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { style: { "--c": m.color }, className: "a-tile-in row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { className: "a-quad small", children: MODES.map((m) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Tap, { className: `a-tile ${m.id === cur.id ? "sel" : ""}`, label: m.title, current: m.id === cur.id, onClick: () => set(m.id), children: /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("span", { style: { "--c": m.color }, className: "a-tile-in row", children: [
         Glyph[m.id]({ size: 20 }),
-        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "a-tile-name", children: m.label })
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "a-tile-name", children: m.label })
       ] }) }, m.id)) })
     ] }) }) });
   }
   function InkCompact({ mode, set, since }) {
-    return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "wg ink compact", role: "group", "aria-label": "Claude contact mode", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Flip, { mode, children: (cur) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(import_jsx_runtime9.Fragment, { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "i-head", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "i-kicker", children: "Reach me by" }),
-        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "i-since", children: since })
+    return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { className: "wg ink compact", role: "group", "aria-label": "Claude contact mode", children: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Flip, { mode, children: (cur) => /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(import_jsx_runtime10.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { className: "i-head", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "i-kicker", children: "Reach me by" }),
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "i-since", children: since })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "i-word", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { className: "i-word", children: [
         cur.label,
-        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "i-dot" })
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "i-dot" })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "i-grid", children: MODES.map((m) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Tap, { className: `i-opt ${m.id === cur.id ? "sel" : ""}`, label: m.title, current: m.id === cur.id, onClick: () => set(m.id), children: m.label }, m.id)) })
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { className: "i-grid", children: MODES.map((m) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Tap, { className: `i-opt ${m.id === cur.id ? "sel" : ""}`, label: m.title, current: m.id === cur.id, onClick: () => set(m.id), children: m.label }, m.id)) })
     ] }) }) });
   }
   function InkWide({ mode, set }) {
-    return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "wg ink wide1", role: "group", "aria-label": "Claude contact mode", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Flip, { mode, children: (cur) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "i-wide", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "i-left", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "i-kicker", children: "Reach me by" }),
-        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { className: "i-word small", children: [
+    return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { className: "wg ink wide1", role: "group", "aria-label": "Claude contact mode", children: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Flip, { mode, children: (cur) => /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { className: "i-wide", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { className: "i-left", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "i-kicker", children: "Reach me by" }),
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("span", { className: "i-word small", children: [
           cur.label,
-          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "i-dot" })
+          /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "i-dot" })
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "i-row", children: MODES.map((m) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Tap, { className: `i-glyph ${m.id === cur.id ? "sel" : ""}`, label: m.title, current: m.id === cur.id, onClick: () => set(m.id), children: Glyph[m.id]({ size: 22 }) }, m.id)) })
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { className: "i-row", children: MODES.map((m) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Tap, { className: `i-glyph ${m.id === cur.id ? "sel" : ""}`, label: m.title, current: m.id === cur.id, onClick: () => set(m.id), children: Glyph[m.id]({ size: 22 }) }, m.id)) })
     ] }) }) });
   }
   var WIDGETS = [
@@ -28216,27 +28452,28 @@ ${Rt.split("{id}").join(he)}` : ia }),
   ];
   function HomeScreen({ design, mode, set, since }) {
     const { Compact, Wide } = design;
-    return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: `home home-${design.id}`, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(StatusBar, {}),
-      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "home-grid", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "cell c2x2", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Compact, { mode, set, since }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "cell apps2x2", "aria-hidden": "true", children: ["Phone", "Messages", "Camera", "Gallery"].map((n, i) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { className: "app", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("i", { className: `appi a${i}` }),
+    return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { className: `home home-${design.id}`, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(StatusBar, {}),
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { className: "home-grid", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { className: "cell c2x2", children: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Compact, { mode, set, since }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { className: "cell apps2x2", "aria-hidden": "true", children: ["Phone", "Messages", "Camera", "Gallery"].map((n, i) => /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("span", { className: "app", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("i", { className: `appi a${i}` }),
           n
         ] }, n)) }),
-        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: `cell ${design.Wide === AuraWide ? "c4x2" : "c4x1"}`, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Wide, { mode, set, since }) })
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { className: `cell ${design.Wide === AuraWide ? "c4x2" : "c4x1"}`, children: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Wide, { mode, set, since }) })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "home-dots", "aria-hidden": "true", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("i", { className: "on" }),
-        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("i", {}),
-        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("i", {})
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { className: "home-dots", "aria-hidden": "true", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("i", { className: "on" }),
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("i", {}),
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("i", {})
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "dock", "aria-hidden": "true", children: [0, 1, 2, 3].map((i) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("i", { className: `appi d${i}` }, i)) })
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { className: "dock", "aria-hidden": "true", children: [0, 1, 2, 3].map((i) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("i", { className: `appi d${i}` }, i)) })
     ] });
   }
 
-  // B:/Projects/CallMe/design-preview/src/main.jsx
-  var import_jsx_runtime10 = __toESM(require_jsx_runtime());
+  // src/main.jsx
+  var import_jsx_runtime11 = __toESM(require_jsx_runtime());
+  var CallD2 = (props) => /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(CallD, { ...props, statusBar: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(StatusBar, {}) });
   (function springCurve() {
     const D = 0.75, DECAY = 5.4, W = DECAY / D, WD = W * Math.sqrt(1 - D * D);
     const pts = [];
@@ -28249,7 +28486,7 @@ ${Rt.split("{id}").join(he)}` : ia }),
     document.documentElement.style.setProperty("--spring-liquid", `linear(${pts.join(", ")})`);
   })();
   var DESIGNS = [
-    { id: "d", name: "D. Your mix", C: CallD, blurb: "A\u2019s controls, B\u2019s live captions while Claude talks, C\u2019s thread while you talk and Claude thinks. The caption flies into its bubble when you start talking, and grows back out when Claude answers." },
+    { id: "d", name: "D. Your mix", C: CallD2, blurb: "A\u2019s controls, B\u2019s live captions while Claude talks, C\u2019s thread while you talk and Claude thinks. The caption flies into its bubble when you start talking, and grows back out when Claude answers." },
     { id: "a", name: "A. Phone call", C: CallA, blurb: "A native in-call screen: big avatar, round controls, the conversation behind Captions. The four buttons grow out of Answer, which becomes Done talking." },
     { id: "b", name: "B. Captions first", C: CallB, blurb: "Claude\u2019s words, large, lighting up as they are said. While you talk, Claude\u2019s question stays up. The full transcript grows out of its chip." },
     { id: "c", name: "C. Chat and call", C: CallC, blurb: "The conversation as a thread, a thinking orb while Claude works, and a reply dock that glows with your voice." }
@@ -28270,16 +28507,16 @@ ${Rt.split("{id}").join(he)}` : ia }),
     return s;
   }
   function Frame({ s, children, label }) {
-    return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { className: "frame", style: { width: 412 * s, height: 892 * s }, "aria-label": label, children: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { className: "phone", style: { transform: `scale(${s})` }, children }) });
+    return /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "frame", style: { width: 412 * s, height: 892 * s }, "aria-label": label, children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "phone", style: { transform: `scale(${s})` }, children }) });
   }
   function CallFrame({ d, sim, s }) {
     const v = useSim(sim);
     const Design = d.C;
-    return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("section", { className: "col", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("h2", { children: d.name }),
-      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("p", { className: "blurb", children: d.blurb }),
-      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Frame, { s, label: `${d.name} call screen`, children: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Design, { sim }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { className: "chips", role: "group", "aria-label": `${d.name} state`, children: Object.keys(STATE_STEPS).map((k) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { className: "chip", "aria-pressed": v.phase === k && !(k === "listening" && v.muted), onClick: () => sim.jump(STATE_STEPS[k], false), children: STATE_LABELS[k] }, k)) })
+    return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("section", { className: "col", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("h2", { children: d.name }),
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { className: "blurb", children: d.blurb }),
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Frame, { s, label: `${d.name} call screen`, children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Design, { sim }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "chips", role: "group", "aria-label": `${d.name} state`, children: Object.keys(STATE_STEPS).map((k) => /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("button", { className: "chip", "aria-pressed": v.phase === k && !(k === "listening" && v.muted), onClick: () => sim.jump(STATE_STEPS[k], false), children: STATE_LABELS[k] }, k)) })
     ] });
   }
   function WidgetFrame({ w, s }) {
@@ -28292,18 +28529,18 @@ ${Rt.split("{id}").join(he)}` : ia }),
     (0, import_react10.useEffect)(() => {
       (window.__widgetSetters ||= {})[w.id] = setMode;
     }, []);
-    return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("section", { className: "col", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("h2", { children: [
+    return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("section", { className: "col", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("h2", { children: [
         w.name,
         " ",
-        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "sizes", children: w.sizes })
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { className: "sizes", children: w.sizes })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("p", { className: "blurb", children: w.blurb }),
-      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Frame, { s, label: `${w.name} widget on a home screen`, children: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(HomeScreen, { design: w, mode, set, since }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { className: "chips", role: "group", "aria-label": `${w.name} mode`, children: MODES.map((m) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { className: "chip", "aria-pressed": mode === m.id, onClick: () => set(m.id), children: m.label }, m.id)) }),
-      /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("details", { className: "map", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("summary", { children: "How it maps to a real Android widget" }),
-        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("ul", { children: w.map.map((t) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("li", { children: t }, t)) })
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { className: "blurb", children: w.blurb }),
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Frame, { s, label: `${w.name} widget on a home screen`, children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(HomeScreen, { design: w, mode, set, since }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "chips", role: "group", "aria-label": `${w.name} mode`, children: MODES.map((m) => /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("button", { className: "chip", "aria-pressed": mode === m.id, onClick: () => set(m.id), children: m.label }, m.id)) }),
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("details", { className: "map", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("summary", { children: "How it maps to a real Android widget" }),
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("ul", { children: w.map.map((t) => /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("li", { children: t }, t)) })
       ] })
     ] });
   }
@@ -28312,36 +28549,38 @@ ${Rt.split("{id}").join(he)}` : ia }),
     const s = useScale();
     const [motion, setMotion] = (0, import_react10.useState)("liquid");
     const [mascot, setMascot] = (0, import_react10.useState)("clawd");
+    const [pers, setPers] = (0, import_react10.useState)("mixed");
     (0, import_react10.useEffect)(() => {
       document.documentElement.dataset.motion = motion;
     }, [motion]);
     const play = () => sims.forEach((sim) => sim.jump(0, true));
     (0, import_react10.useEffect)(() => {
-      window.__preview = { mascot: setMascot, state: (k) => sims.forEach((sim) => sim.jump(STATE_STEPS[k], false)), play, sims, mode: (m) => Object.values(window.__widgetSetters).forEach((f) => f(m)) };
+      window.__preview = { mascot: setMascot, personality: setPers, state: (k) => sims.forEach((sim) => sim.jump(STATE_STEPS[k], false)), play, sims, mode: (m) => Object.values(window.__widgetSetters).forEach((f) => f(m)) };
     }, []);
-    return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(MascotKind.Provider, { value: mascot, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("header", { className: "top", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("h1", { children: "Claude Call: design preview" }),
-          /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("p", { children: "Three directions for the call screen and the home-screen widget. Nothing here changes the app." })
+    return /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(MascotKind.Provider, { value: mascot, children: /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Personality.Provider, { value: pers, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("header", { className: "top", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("h1", { children: "Claude Call: design preview" }),
+          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { children: "Three directions for the call screen and the home-screen widget. Nothing here changes the app." })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { className: "top-actions", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { className: "seg", role: "group", "aria-label": "Mascot", children: [["clawd", "Clawd"], ["spark", "Claude spark"]].map(([k, l]) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { "aria-pressed": mascot === k, onClick: () => setMascot(k), children: l }, k)) }),
-          /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { className: "seg", role: "group", "aria-label": "Motion style", children: ["liquid", "gentle"].map((m) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { "aria-pressed": motion === m, onClick: () => setMotion(m), children: m === "liquid" ? "Liquid" : "Gentle" }, m)) }),
-          /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { className: "primary", onClick: play, children: "Auto play the call" })
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "top-actions", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "seg", role: "group", "aria-label": "Mascot", children: [["clawd", "Clawd"], ["spark", "Claude spark"]].map(([k, l]) => /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("button", { "aria-pressed": mascot === k, onClick: () => setMascot(k), children: l }, k)) }),
+          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "seg", role: "group", "aria-label": "Personality", children: [["mixed", "Mixed"], ["playful", "Playful"], ["wild", "Wild"]].map(([k, l]) => /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("button", { "aria-pressed": pers === k, onClick: () => setPers(k), children: l }, k)) }),
+          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "seg", role: "group", "aria-label": "Motion style", children: ["liquid", "gentle"].map((m) => /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("button", { "aria-pressed": motion === m, onClick: () => setMotion(m), children: m === "liquid" ? "Liquid" : "Gentle" }, m)) }),
+          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("button", { className: "primary", onClick: play, children: "Auto play the call" })
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("h2", { className: "section", children: "Call screen" }),
-      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("p", { className: "section-note", children: "Tap Answer in any phone to play its call from there, or use the state buttons to hold one state. Typing a reply and Send work too." }),
-      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { className: "row", children: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(CallFrame, { d: DESIGNS[0], sim: sims[0], s }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("h2", { className: "section", children: "For reference: the three directions" }),
-      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { className: "row", children: DESIGNS.slice(1).map((d, i) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(CallFrame, { d, sim: sims[i + 1], s }, d.id)) }),
-      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("h2", { className: "section", children: "Home-screen widget" }),
-      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("p", { className: "section-note", children: "Contact mode: how Claude and other agents may reach you. Tap a mode in the widget or below it. The change crossfades, as a real Android widget can." }),
-      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { className: "row", children: WIDGETS.map((w) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(WidgetFrame, { w, s }, w.id)) })
-    ] });
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("h2", { className: "section", children: "Call screen" }),
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { className: "section-note", children: "Tap Answer in any phone to play its call from there, or use the state buttons to hold one state. Typing a reply and Send work too." }),
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "row", children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(CallFrame, { d: DESIGNS[0], sim: sims[0], s }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("h2", { className: "section", children: "For reference: the three directions" }),
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "row", children: DESIGNS.slice(1).map((d, i) => /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(CallFrame, { d, sim: sims[i + 1], s }, d.id)) }),
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("h2", { className: "section", children: "Home-screen widget" }),
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { className: "section-note", children: "Contact mode: how Claude and other agents may reach you. Tap a mode in the widget or below it. The change crossfades, as a real Android widget can." }),
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "row", children: WIDGETS.map((w) => /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(WidgetFrame, { w, s }, w.id)) })
+    ] }) });
   }
-  (0, import_client.createRoot)(document.getElementById("root")).render(/* @__PURE__ */ (0, import_jsx_runtime10.jsx)(App, {}));
+  (0, import_client.createRoot)(document.getElementById("root")).render(/* @__PURE__ */ (0, import_jsx_runtime11.jsx)(App, {}));
 })();
 /*! Bundled license information:
 

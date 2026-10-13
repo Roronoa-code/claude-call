@@ -1,0 +1,163 @@
+/* The Claude Call screen (design D). Generated from design-preview/styles.css, then laid out for a real phone. */
+/* ---------- Tokens ---------- */
+:root {
+  --bg: #111214; --fg: #f2f2f3; --fg2: #c9cbd1; --muted: #9a9ca3; --accent: #d97757; --ok: #2fa84f; --me: #2f4f7a;
+  --btn: #26282d; --btn-on: #ececee; --panel: #26282d;
+  /* Liquid (the default): ColorOS-style spring for opening, One UI sine for closing, ease-out for the rest */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --close-ease: cubic-bezier(0.33, 0, 0.3, 1);
+  --spring: var(--spring-liquid, cubic-bezier(0.16, 1, 0.3, 1));
+  --open-ms: 500ms; --close-ms: 300ms; --swap-ms: 280ms; --fade-ms: 240ms;
+  color-scheme: dark;
+}
+/* Gentle: no bounce, a little slower and softer */
+:root[data-motion="gentle"] {
+  --spring: cubic-bezier(0.4, 0, 0.2, 1); --ease-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --open-ms: 380ms; --close-ms: 300ms; --swap-ms: 360ms; --fade-ms: 360ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root, :root[data-motion="gentle"] { --open-ms: 1ms; --close-ms: 1ms; --swap-ms: 1ms; --fade-ms: 1ms; }
+  .a-big.answer, .c-row { animation: none !important; }
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; background: var(--bg); }
+body { margin: 0; color: var(--fg); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; overscroll-behavior: none; -webkit-user-select: none; user-select: none; }
+button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; padding: 0; -webkit-tap-highlight-color: transparent; }
+button:disabled { cursor: default; }
+:focus-visible { outline: 2px solid #8fb4ff; outline-offset: 2px; }
+input { font: inherit; color: var(--fg); -webkit-user-select: text; user-select: text; }
+input::placeholder { color: #8c8f97; }
+input:focus { outline: none; }
+/* ---------- Shared pieces ---------- */
+.swap { display: inline-grid; }
+.swap-item { grid-area: 1 / 1; }
+.swap-item.in { animation: swapIn var(--swap-ms) var(--ease-out) calc(var(--swap-ms) * .4) both; }
+.swap-item.in:only-child { animation-delay: 0ms; }
+.swap-item.out { animation: swapOut calc(var(--swap-ms) * .5) var(--close-ease) both; pointer-events: none; }
+@keyframes swapIn { from { opacity: 0; transform: translateY(6px); } }
+@keyframes swapOut { to { opacity: 0; transform: translateY(-6px); } }
+
+.w { color: rgba(242, 242, 243, .28); transition: color 220ms var(--ease-out); }
+.w.lit { color: var(--fg); }
+.w.unsaid { color: rgba(242, 242, 243, .2); }
+
+.morph { position: absolute; left: 0; right: 0; z-index: 8; background: var(--panel); transition: clip-path var(--close-ms) var(--close-ease); }
+.morph[data-state="open"] { transition: clip-path var(--open-ms) var(--spring); }
+.morph-face { position: absolute; display: grid; place-items: center; color: var(--fg); opacity: 1; transition: opacity 140ms linear calc(var(--close-ms) - 140ms); }
+.morph[data-state="open"] .morph-face { opacity: 0; transition: opacity 140ms linear; }
+.morph-body { position: absolute; opacity: 0; transition: opacity 90ms linear; }
+.morph[data-state="open"] .morph-body { opacity: 1; transition: opacity 220ms var(--ease-out) 120ms; }
+
+/* ---------- Mascot ---------- */
+/* Nothing shows below the line it stands on: it can duck behind it, and confetti never falls onto text. */
+.mascot { display: flex; align-items: flex-end; justify-content: center; flex: none; clip-path: inset(-400px -400px -6px -400px); }
+.mascot-host { display: block; flex: none; will-change: transform; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.mascot svg { display: block; overflow: visible; }
+
+/* ---------- A. Phone call ---------- */
+.a-type { top: 616px; height: 90px; z-index: 9; }
+.a-form { height: 100%; display: flex; align-items: center; gap: 4px; padding: 0 8px 0 20px; }
+.a-form input { flex: 1; min-width: 0; height: 48px; background: none; border: 0; font-size: 17px; }
+.a-send, .a-x { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; flex: none; transition: background 200ms var(--ease-out), color 200ms, opacity 200ms; }
+.a-send { background: var(--accent); color: #fff; }
+.a-send:disabled { background: transparent; color: var(--muted); }
+.a-controls { position: absolute; z-index: 5; left: 16px; right: 16px; top: 616px; height: 224px; }
+.a-grid { display: grid; grid-template-columns: repeat(4, 1fr); height: 90px; }
+.a-cell { display: flex; flex-direction: column; align-items: center; gap: 6px;
+  transition: transform var(--open-ms) var(--spring) calc(var(--i) * 30ms), opacity 200ms var(--ease-out) calc(var(--i) * 30ms); }
+.a-controls:not(.on) .a-cell { transform: translate(calc((1.5 - var(--i)) * 95px), 124px) scale(.35); opacity: 0; pointer-events: none;
+  transition: transform var(--close-ms) var(--close-ease), opacity 160ms linear; }
+.a-round { width: 64px; height: 64px; border-radius: 50%; background: var(--btn); display: grid; place-items: center;
+  transition: background 200ms var(--ease-out), color 200ms, transform 160ms var(--ease-out), opacity 200ms; }
+.a-round[aria-pressed="true"] { background: var(--btn-on); color: #111; }
+.a-round:active:not(:disabled), .b-round:active:not(:disabled), .c-icon:active:not(:disabled) { transform: scale(.93); }
+.a-round:disabled { opacity: .4; }
+.a-label { height: 18px; font-size: 13px; line-height: 18px; color: var(--fg2); transition: opacity 160ms linear; }
+.a-controls.typing .a-label, .a-controls.typing .a-round { opacity: 0; transition: opacity 120ms linear; }
+.a-main { position: absolute; top: 118px; left: 0; right: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.a-big { position: relative; width: 76px; height: 76px; border-radius: 50%; background: var(--ok); color: #fff;
+  transition: background 260ms var(--ease-out), color 260ms, transform 160ms var(--ease-out); }
+.a-big:active:not(:disabled) { transform: scale(.94); }
+.a-big:disabled { background: #2a2c31; color: #7d8088; }
+.a-big.answer { animation: ring 1.8s var(--ease-out) infinite; }
+@keyframes ring { 0% { box-shadow: 0 0 0 0 rgba(47, 168, 79, .55); } 100% { box-shadow: 0 0 0 26px rgba(47, 168, 79, 0); } }
+.a-glyph { position: absolute; inset: 0; display: grid; place-items: center; opacity: 0; transform: scale(.6) rotate(-40deg);
+  transition: opacity 180ms linear, transform var(--open-ms) var(--spring); }
+.a-glyph.show { opacity: 1; transform: none; }
+.a-biglabel { height: 20px; font-size: 14px; line-height: 20px; color: var(--fg2); }
+.a-biglabel .swap { justify-items: center; }
+
+
+.b-sheet-head { display: flex; align-items: center; justify-content: space-between; height: 60px; padding: 0 6px 0 20px; flex: none; border-bottom: 1px solid #2a2c31; }
+.b-sheet-head strong { font-size: 17px; }
+.b-x { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; }
+.c-row { display: flex; gap: 10px; align-items: flex-end; animation: rowIn 340ms var(--ease-out) both; }
+@keyframes rowIn { from { opacity: 0; transform: translateY(10px); } }
+.c-row.me { justify-content: flex-end; }
+.c-row.pending { align-items: center; }
+.c-bubble { margin: 0; max-width: 80%; padding: 10px 14px; border-radius: 20px; font-size: 16.5px; line-height: 1.45; text-wrap: pretty; overflow-wrap: anywhere; }
+.claude .c-bubble { background: #202227; border-bottom-left-radius: 6px; }
+.me .c-bubble { background: var(--me); border-bottom-right-radius: 6px; color: #fff; }
+/* ---------- D. Your mix ---------- */
+.d-head { position: absolute; z-index: 5; top: 40px; left: 24px; right: 24px; height: 52px; display: flex; flex-direction: column; justify-content: center; }
+.d-head strong { font-size: 18px; line-height: 24px; }
+.d-time { display: block; height: 20px; font-size: 14px; line-height: 20px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.d-stage { position: absolute; z-index: 5; top: 96px; left: 0; right: 0; height: 470px; }
+.d-mascot { position: absolute; left: 0; top: 0; z-index: 2; transition: transform var(--open-ms) var(--spring); }
+.d-mascot .mascot { justify-content: flex-start; }
+.d-mascot-scale { transform-origin: 0 100%; transition: transform var(--open-ms) var(--spring); }
+/* Pixel art only ever shows at whole pixels per cell: 4, then 3, then 2 CSS px. */
+.d-mascot-scale.clawd { transition: transform 300ms steps(3, jump-none); }
+.d-mascot-scale.small { transform: scale(.5); }
+.d-caps { position: absolute; inset: 0; padding: 140px 24px 0; }
+.d-cap { width: 100%; }
+.d-cap .swap-item { display: flex; flex-direction: column; gap: 14px; }
+.d-label { display: flex; align-items: center; gap: 8px; height: 20px; font-size: 14px; font-weight: 650; letter-spacing: .02em; color: #e7a084; font-variant-numeric: tabular-nums; transition: opacity 260ms var(--ease-out) 200ms; }
+.d-label.rest, .d-label.dim { color: var(--muted); }
+.d-label.hold { color: #c9b6ff; }
+.d-caps:not(.on) .d-label { opacity: 0; transition: opacity 60ms linear; }
+.d-text[data-flown], .d-caps.fresh .swap-item.out { visibility: hidden; }
+.d-text { display: block; transform-origin: 0 0; font-size: 30px; line-height: 1.28; font-weight: 500; letter-spacing: -.012em; text-wrap: pretty; }
+.d-text.rest { opacity: .62; }
+.d-text.dim { color: var(--fg2); }
+.d-thread { position: absolute; inset: 0; padding: 72px 16px 0; display: flex; flex-direction: column; gap: 12px; pointer-events: none; }
+.d-thread.on { pointer-events: auto; }
+.d-thread:not(.on) > :not(.flier) { opacity: 0; transition: opacity 140ms linear; }
+.d-thread:not(.on) > .flier { opacity: 0; }
+.d-thread.on > :not(.flier) { animation: rowIn 340ms var(--ease-out) 220ms both; }
+.d-bubble { margin: 0; max-width: 82%; padding: 10px 14px; border-radius: 20px; font-size: 16.5px; line-height: 1.45; text-wrap: pretty; transform-origin: 0 0; }
+.d-bubble.claude { align-self: flex-start; background: #202227; border-top-left-radius: 6px; }
+.d-bubble.me { align-self: flex-end; background: var(--me); color: #fff; border-bottom-right-radius: 6px; overflow: hidden; }
+.d-bubble.dots { padding: 13px 18px; }
+.d-dots { display: flex; gap: 6px; height: 20px; align-items: center; }
+.d-dots i { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,.88); }
+.d-dots.idle i { animation: dotPulse 1.1s ease-in-out infinite; }
+.d-dots.idle i:nth-child(2) { animation-delay: .15s; }
+.d-dots.idle i:nth-child(3) { animation-delay: .3s; }
+@keyframes dotPulse { 50% { opacity: .35; } }
+.d-me-text { display: block; animation: swapIn 220ms var(--ease-out) both; }
+.d-pending { display: flex; align-items: center; gap: 10px; padding: 2px 4px; font-size: 15px; line-height: 20px; color: var(--fg2); }
+.d-status { position: absolute; z-index: 5; top: 576px; left: 16px; right: 16px; height: 22px; margin: 0; font-size: 15px; line-height: 22px; color: var(--fg2); text-align: center; }
+.d-status .swap { width: 100%; justify-items: center; }
+.d-transcript { top: 44px; height: 662px; background: #1c1d21; }
+.d-transcript .morph-body { display: flex; flex-direction: column; }
+.d-log { flex: 1; overflow-y: auto; scrollbar-width: none; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.d-log::before { content: ''; margin-top: auto; }
+@media (prefers-reduced-motion: reduce) { .d-dots.idle i, .d-thread.on > * { animation: none !important; } .d-caps:not(.on) .d-text { visibility: hidden; } }
+
+/* ---------- The real phone ----------
+   The design was laid out on a 412 x 892 screen with a 36 px status bar and a 24 px gesture bar.
+   Here the screen is whatever the phone gives the page: everything below the header is placed
+   from the bottom (above the gesture bar), the header from the top (below the status bar). */
+:root { --sat: max(env(safe-area-inset-top), 36px); --sab: max(env(safe-area-inset-bottom), 24px); }
+#root > div { position: fixed; inset: 0; } /* the voice glow's wrapper fills the screen */
+.screen.d { position: absolute; inset: 0; width: auto; height: auto; border-radius: 0; background: var(--bg); overflow: hidden; }
+.d-head { top: calc(var(--sat) + 4px); }
+.d-stage { top: calc(var(--sat) + 60px); bottom: calc(var(--sab) + 302px); height: auto; }
+.d-status { top: auto; bottom: calc(var(--sab) + 270px); }
+.a-controls { top: auto; bottom: calc(var(--sab) + 28px); }
+.a-type { top: auto; bottom: calc(var(--sab) + 162px); }
+.d-transcript { top: calc(var(--sat) + 8px); height: auto; bottom: calc(var(--sab) + 162px); }
+/* The phone fades the screen out itself when the call ends. */
+.screen.d.closed > * { opacity: 0; transition: opacity 500ms var(--close-ease); }

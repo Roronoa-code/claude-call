@@ -2,11 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { CallSim, STATE_LABELS, STATE_STEPS } from './sim.js';
 import { useSim } from './ui.jsx';
-import { MascotKind } from './mascot.jsx';
+import { MascotKind, Personality } from '../../call-ui/src/mascot.jsx';
 import CallA from './callA.jsx';
 import CallB from './callB.jsx';
 import CallC from './callC.jsx';
-import CallD from './callD.jsx';
+import CallDShared from '../../call-ui/src/callD.jsx';
+import { StatusBar } from './ui.jsx';
+const CallD = props => <CallDShared {...props} statusBar={<StatusBar />} />;
 import { HomeScreen, MODES, WIDGETS, hhmm } from './widgets.jsx';
 
 // Liquid's open spring (from Halimah Apps lib/motion-fluid.ts: damping 0.75, decay 5.4,
@@ -93,13 +95,14 @@ function App() {
   const s = useScale();
   const [motion, setMotion] = useState('liquid');
   const [mascot, setMascot] = useState('clawd');
+  const [pers, setPers] = useState('mixed');
   useEffect(() => { document.documentElement.dataset.motion = motion; }, [motion]);
   const play = () => sims.forEach(sim => sim.jump(0, true));
   useEffect(() => {
-    window.__preview = { mascot: setMascot, state: k => sims.forEach(sim => sim.jump(STATE_STEPS[k], false)), play, sims, mode: m => Object.values(window.__widgetSetters).forEach(f => f(m)) };
+    window.__preview = { mascot: setMascot, personality: setPers, state: k => sims.forEach(sim => sim.jump(STATE_STEPS[k], false)), play, sims, mode: m => Object.values(window.__widgetSetters).forEach(f => f(m)) };
   }, []);
   return (
-    <MascotKind.Provider value={mascot}>
+    <MascotKind.Provider value={mascot}><Personality.Provider value={pers}>
       <header className="top">
         <div>
           <h1>Claude Call: design preview</h1>
@@ -108,6 +111,9 @@ function App() {
         <div className="top-actions">
           <div className="seg" role="group" aria-label="Mascot">
             {[['clawd', 'Clawd'], ['spark', 'Claude spark']].map(([k, l]) => <button key={k} aria-pressed={mascot === k} onClick={() => setMascot(k)}>{l}</button>)}
+          </div>
+          <div className="seg" role="group" aria-label="Personality">
+            {[['mixed', 'Mixed'], ['playful', 'Playful'], ['wild', 'Wild']].map(([k, l]) => <button key={k} aria-pressed={pers === k} onClick={() => setPers(k)}>{l}</button>)}
           </div>
           <div className="seg" role="group" aria-label="Motion style">
             {['liquid', 'gentle'].map(m => <button key={m} aria-pressed={motion === m} onClick={() => setMotion(m)}>{m === 'liquid' ? 'Liquid' : 'Gentle'}</button>)}
@@ -123,7 +129,7 @@ function App() {
       <h2 className="section">Home-screen widget</h2>
       <p className="section-note">Contact mode: how Claude and other agents may reach you. Tap a mode in the widget or below it. The change crossfades, as a real Android widget can.</p>
       <div className="row">{WIDGETS.map(w => <WidgetFrame key={w.id} w={w} s={s} />)}</div>
-    </MascotKind.Provider>
+    </Personality.Provider></MascotKind.Provider>
   );
 }
 

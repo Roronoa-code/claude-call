@@ -27,7 +27,7 @@ export const SCRIPT = [
 export const STATE_STEPS = { incoming: 0, talking: 6, listening: 3, hearing: 4, thinking: 5, hold: 7, ended: 12 };
 export const STATE_LABELS = { incoming: 'Incoming', talking: 'Claude talking', listening: 'Listening', hearing: 'Hearing you', thinking: 'Thinking', hold: 'On hold', ended: 'Ended' };
 
-const words = t => t.split(/\s+/).filter(Boolean);
+import { words } from '../../call-ui/src/text.js';
 function stepMs(st) {
   if (st.s !== 'talking') return st.ms || 0;
   const parts = st.cut ? st.parts.slice(0, st.cut.part + 1) : st.parts;
@@ -228,23 +228,4 @@ export class CallSim {
   }
 }
 
-// What the status line says, matching page.html's copy.
-export function statusText(v) {
-  switch (v.phase) {
-    case 'incoming': return 'Incoming call';
-    case 'connecting': return 'Connecting…';
-    case 'talking': return 'Claude is talking…';
-    case 'listening': return v.muted ? 'Mic muted, type a reply' : 'Listening… take your time';
-    case 'hearing': return 'Hearing you…';
-    case 'thinking': return v.sub === 'transcribing' ? 'Got it, transcribing…' : 'Claude is thinking…';
-    case 'hold': return 'On hold';
-    case 'ended': return 'Call ended';
-  }
-  return '';
-}
-
-export const clock = ms => {
-  const s = Math.max(0, Math.floor(ms / 1000));
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-};
-export { words };
+export { statusText, clock, words } from '../../call-ui/src/text.js';

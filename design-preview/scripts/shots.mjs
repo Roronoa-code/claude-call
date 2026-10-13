@@ -7,7 +7,7 @@ import { join } from 'node:path';
 const out = join(import.meta.dirname, '..', 'shots');
 await mkdir(join(out, 'frames'), { recursive: true });
 const only = process.argv[2] || '';
-const run = k => !only || only === k;
+const run = k => !only || only === k || (only === 'hold' && (k === 'holdonly'));
 const browser = await chromium.launch({ channel: 'msedge', headless: true });
 const STATES = ['incoming', 'talking', 'listening', 'hearing', 'thinking', 'hold', 'ended'];
 const WAIT = { incoming: 900, talking: 3200, listening: 1200, hearing: 1500, thinking: 2200, hold: 2200, ended: 700 };
@@ -91,19 +91,64 @@ if (run('film')) {
   }
 }
 if (run('mascot')) {
-  // The mascot itself while talking and thinking, both looks, in A (the biggest one).
-  for (const mascot of ['clawd', 'spark']) {
-    await p.evaluate(m => window.__preview.mascot(m), mascot);
-    const M = frame(p, 'a').locator('.a-avatar');
-    for (const k of ['talking', 'thinking', 'hearing']) {
-      await state(p, k);
-      await p.waitForTimeout(k === 'talking' ? 1200 : 1800);
-      await film(p, M, `mascot-${k}-${mascot}`, 10, 60);
+  // Every antic and state animation, both personalities, both looks, on A's big mascot.
+  // Clipped to the mascot plus room around it for hops, thought dots, z's and confetti.
+  const ANTICS = { playful: ['joy', 'giggle', 'look', 'wiggle', 'peek', 'shuffle', 'surprise', 'wave'], wild: ['cartwheel', 'hide', 'shuffle', 'surprise', 'confetti'] };
+  const DUR = { joy: 1.15, cartwheel: 1.35, giggle: 0.95, look: 1.7, wiggle: 1.1, peek: 1.8, shuffle: 1.7, hide: 2.3, surprise: 0.85, wave: 1.45, confetti: 1.8 };
+  const A = frame(p, 'a');
+  await A.scrollIntoViewIfNeeded();
+  const strip = async (name, seconds) => {
+    const b = await A.locator('.a-avatar').boundingBox();
+    const clip = { x: b.x - 110, y: Math.max(0, b.y - 110), width: b.width + 220, height: b.height + 130 };
+    const t0 = Date.now(); // 16 frames spread evenly over the antic
+    for (let i = 0; i < 16; i++) {
+      const wait = t0 + (i * seconds * 1000) / 15 - Date.now();
+      if (wait > 0) await p.waitForTimeout(wait);
+      await p.screenshot({ path: join(out, 'frames', `${name}-${String(i).padStart(2, '0')}.png`), clip, scale: 'css' });
+    }
+  };
+  for (const pers of ['playful', 'wild']) {
+    await p.evaluate(x => window.__preview.personality(x), pers);
+    for (const mascot of ['clawd', 'spark']) {
+      await p.evaluate(m => window.__preview.mascot(m), mascot);
+      await p.waitForTimeout(400);
+      for (const name of ANTICS[pers]) {
+        await p.evaluate(() => window.__preview.sims[1].jump(1, false)); // connecting: a quiet base pose
+        await p.waitForTimeout(700);
+        await p.evaluate(n => window.__mascotAntic(n), name);
+        await strip(`mascot-${pers}-${name}-${mascot}`, DUR[name] + 0.15);
+      }
+      for (const k of ['talking', 'hearing', 'thinking', 'hold']) {
+        await state(p, k);
+        await p.waitForTimeout(k === 'talking' ? 1200 : 1800);
+        await strip(`mascot-${pers}-${k}-${mascot}`, 1.6);
+      }
     }
   }
+  await p.evaluate(() => window.__preview.personality('mixed'));
+}
+if (run('holdonly')) {
+  // Just the hold strips (both personalities, both looks) and the hold states.
+  const A = frame(p, 'a');
+  await A.scrollIntoViewIfNeeded();
+  for (const pers of ['playful', 'wild']) {
+    await p.evaluate(x => window.__preview.personality(x), pers);
+    for (const mascot of ['clawd', 'spark']) {
+      await p.evaluate(m => window.__preview.mascot(m), mascot);
+      await state(p, 'hold');
+      await p.waitForTimeout(1800);
+      const b = await A.locator('.a-avatar').boundingBox();
+      const clip = { x: b.x - 110, y: Math.max(0, b.y - 110), width: b.width + 220, height: b.height + 130 };
+      const t0 = Date.now();
+      for (let i = 0; i < 16; i++) { const w = t0 + i * 107 - Date.now(); if (w > 0) await p.waitForTimeout(w); await p.screenshot({ path: join(out, 'frames', `mascot-${pers}-hold-${mascot}-${String(i).padStart(2, '0')}.png`), clip, scale: 'css' }); }
+      if (pers === 'playful') for (const d of DESIGNS) await shoot(frame(p, d), `call-${d}-hold-${mascot}`);
+    }
+  }
+  await p.evaluate(() => window.__preview.personality('mixed'));
 }
 if (run('widget')) {
-  const W = p.locator('.row').last().locator('.frame');
+  const W = p.locator('.frame[aria-label*="widget"]');
+  console.log('widget frames', await W.count());
   for (const m of ['call', 'text', 'both', 'none']) {
     await p.evaluate(m => window.__preview.mode(m), m);
     await p.waitForTimeout(800);

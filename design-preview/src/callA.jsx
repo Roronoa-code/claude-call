@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { VoiceBeam } from 'voice-glow';
 import { ThinkingOrb } from 'thinking-orbs';
-import { Mascot } from './mascot.jsx';
+import { Mascot } from '../../call-ui/src/mascot.jsx';
 import { clock, statusText } from './sim.js';
 import { Icon, Morph, Spoken, StatusBar, Swap, callTime, useNow, useSim } from './ui.jsx';
 
@@ -29,7 +29,7 @@ export default function CallA({ sim }) {
         <StatusBar />
         <header className="a-head">
           <div className="a-avatar">
-            <Mascot sim={sim} u={5} spark={110} />
+            <Mascot sim={sim} u={5} spark={110} room={40} />
           </div>
           <h2 className="a-name">Claude</h2>
           <p className="a-status" role="status"><Swap k={statusText(v)}>{orb && <span className="a-orb"><ThinkingOrb state={orb} size={20} theme="dark" aria-hidden="true" /></span>}{statusText(v)}</Swap></p>

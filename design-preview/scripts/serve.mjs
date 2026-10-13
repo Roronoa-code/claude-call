@@ -5,7 +5,12 @@ import { extname, join, normalize } from 'node:path';
 import * as esbuild from 'esbuild';
 
 const root = join(import.meta.dirname, '..');
-const ctx = await esbuild.context({ entryPoints: [join(root, 'src/main.jsx')], bundle: true, outfile: join(root, 'dist/app.js'), jsx: 'automatic', logLevel: 'warning' });
+// The D design's source lives in ../call-ui (it is the real call screen); make every import of these
+// packages use the preview's copy, so the page never carries two Reacts.
+const pkgs = ['react', 'react-dom', 'voice-glow', 'thinking-orbs'];
+export const alias = Object.fromEntries(pkgs.map(n => [n, join(root, 'node_modules', n)]));
+const ctx = await esbuild.context({ entryPoints: [join(root, 'src/main.jsx')], bundle: true, outfile: join(root, 'dist/app.js'), jsx: 'automatic', logLevel: 'warning', alias });
+if (process.argv.includes('--build')) { await ctx.rebuild(); await ctx.dispose(); process.exit(0); }
 await ctx.watch();
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml' };
 createServer(async (req, res) => {

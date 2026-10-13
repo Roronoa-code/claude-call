@@ -33,7 +33,7 @@ input:focus { outline: none; }
 .top { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; justify-content: space-between; max-width: 1400px; margin: 0 auto 8px; }
 .top h1 { margin: 0; font-size: 22px; font-weight: 650; }
 .top p { margin: 4px 0 0; color: var(--muted); }
-.top-actions { display: flex; gap: 10px; align-items: center; }
+.top-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .seg { display: flex; background: #1a1b1f; border-radius: 22px; padding: 3px; }
 .seg button { height: 38px; padding: 0 16px; border-radius: 19px; color: var(--fg2); font-weight: 600; transition: background 200ms var(--ease-out), color 200ms; }
 .seg button[aria-pressed="true"] { background: #33363d; color: #fff; }
@@ -85,8 +85,9 @@ input:focus { outline: none; }
 .morph[data-state="open"] .morph-body { opacity: 1; transition: opacity 220ms var(--ease-out) 120ms; }
 
 /* ---------- Mascot ---------- */
-.mascot { display: flex; align-items: flex-end; justify-content: center; flex: none; }
-.mascot-host { display: block; flex: none; will-change: transform; }
+/* Nothing shows below the line it stands on: it can duck behind it, and confetti never falls onto text. */
+.mascot { display: flex; align-items: flex-end; justify-content: center; flex: none; clip-path: inset(-400px -400px -6px -400px); }
+.mascot-host { display: block; flex: none; will-change: transform; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .mascot svg { display: block; overflow: visible; }
 
 /* ---------- A. Phone call ---------- */
@@ -365,7 +366,7 @@ input:focus { outline: none; }
 .d-dots.idle i:nth-child(2) { animation-delay: .15s; }
 .d-dots.idle i:nth-child(3) { animation-delay: .3s; }
 @keyframes dotPulse { 50% { opacity: .35; } }
-.d-me-text { display: block; animation: swapIn 260ms var(--ease-out) 80ms both; }
+.d-me-text { display: block; animation: swapIn 220ms var(--ease-out) both; }
 .d-pending { display: flex; align-items: center; gap: 10px; padding: 2px 4px; font-size: 15px; line-height: 20px; color: var(--fg2); }
 .d-status { position: absolute; z-index: 5; top: 576px; left: 16px; right: 16px; height: 22px; margin: 0; font-size: 15px; line-height: 22px; color: var(--fg2); text-align: center; }
 .d-status .swap { width: 100%; justify-items: center; }
@@ -373,4 +374,4 @@ input:focus { outline: none; }
 .d-transcript .morph-body { display: flex; flex-direction: column; }
 .d-log { flex: 1; overflow-y: auto; scrollbar-width: none; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
 .d-log::before { content: ''; margin-top: auto; }
-@media (prefers-reduced-motion: reduce) { .d-dots.idle i, .d-thread.on > * { animation: none !important; } }
+@media (prefers-reduced-motion: reduce) { .d-dots.idle i, .d-thread.on > * { animation: none !important; } .d-caps:not(.on) .d-text { visibility: hidden; } }
