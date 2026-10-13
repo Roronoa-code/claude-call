@@ -2,7 +2,6 @@
 // places a call and answers it with phone-sim.mjs (the real call page in headless Edge with a fake mic).
 // Covers: contact-mode gate, streamed voice, live captions, early end of turn, talking over Claude (quietly and
 // loudly), hold (a reply given while on hold is kept), continue -> gets the held reply at once, end.
-// `node test-call.mjs fallback`: no GPU (Kokoro voice in whole files, CPU Whisper, no live captions): call, reply, end.
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { spawn } from 'node:child_process';
@@ -10,16 +9,15 @@ import assert from 'node:assert';
 import os from 'node:os';
 import path from 'node:path';
 
-const fallback = process.argv[2] === 'fallback';
 const client = new Client({ name: 'test', version: '1' });
 const statusFile = path.join(os.tmpdir(), `callme-status-${Date.now()}.json`); // never touches the real status
-const transport = new StdioClientTransport({ command: 'node', args: ['server.mjs'], cwd: import.meta.dirname, stderr: 'pipe',
-  env: { ...process.env, CALLME_TOPIC: 'claude-test-' + Date.now(), CALLME_STATUS: statusFile, CALLME_LOCAL: '1', CALLME_DEBUG: '1', ...(fallback && { CALLME_NO_GPU: '1' }) } });
+const transport = new StdioClientTransport({ command: path.join(import.meta.dirname, 'target/release/callme.exe'), args: [], cwd: import.meta.dirname, stderr: 'pipe',
+  env: { ...process.env, CALLME_TOPIC: 'claude-test-' + Date.now(), CALLME_STATUS: statusFile, CALLME_LOCAL: '1', CALLME_DEBUG: '1' } });
 let sim = null;
 transport.stderr.on('data', d => {
   process.stderr.write(d);
   const m = String(d).match(/call link (\S+)/);
-  if (m && !sim) sim = spawn('node', ['phone-sim.mjs', m[1], ...(fallback ? ['basic'] : [])], { cwd: import.meta.dirname, stdio: 'inherit' });
+  if (m && !sim) sim = spawn('node', ['phone-sim.mjs', m[1]], { cwd: import.meta.dirname, stdio: 'inherit' });
 });
 await client.connect(transport);
 const tools = (await client.listTools()).tools.map(t => t.name);
@@ -38,8 +36,6 @@ console.log('contact mode gate OK');
 const r1 = await call('call_user', 'Hi, it is Claude. This is a test call. Say anything back.', { reason: 'test call' });
 console.log('REPLY 1:', said(r1));
 assert.match(said(r1), /^User said: .*hear you/i);
-if (fallback) await call('end_call', 'Okay, bye!');
-else {
 
 const r2 = await call('continue_call', 'Great. So the plan is to move the settings into a side panel, change the colours to match the new theme, and rename a few of the buttons so they read more clearly. Then I will run the tests and push it.');
 console.log('REPLY 2 (talked over quietly):', said(r2));
@@ -59,7 +55,6 @@ console.log('REPLY 5 (talked over loudly):', said(r5));
 assert.match(said(r5), /^User said: \(interrupting you\) .*stop/i);
 
 await call('end_call', 'Okay, I will leave it. Bye!');
-}
 await new Promise(r => sim.on('exit', r));
 assert.equal(sim.exitCode, 0, 'phone sim failed');
 await client.close();

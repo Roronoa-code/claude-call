@@ -1,0 +1,242 @@
+//! Voice and hearing (the GPU server voice/voice_server.py), the ElevenLabs fallback voice, ringing through ntfy,
+//! and the user's contact mode.
+use crate::{cfg, dir, log, now_iso};
+use serde_json::{Value, json};
+use std::{sync::LazyLock, time::Duration};
+
+pub static HTTP: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
+
+// ---- GPU voice + hearing: the user's own voice cloned by Qwen3-TTS, and Whisper large. One instance is shared by
+// all sessions and exits itself after 30 idle minutes.
+const QWEN: &str = "http://127.0.0.1:47811";
+
+pub async fn qwen_up() -> bool {
+    !cfg().no_gpu
+        && HTTP.get(format!("{QWEN}/health")).timeout(Duration::from_secs(2)).send().await.is_ok_and(|r| r.status().is_success())
+}
+
+static LOADING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// Starts the GPU server if needed (40-70 s); false on machines without it (e.g. the laptop).
+pub async fn load_qwen() -> bool {
+    let _one_at_a_time = LOADING.lock().await;
+    if qwen_up().await {
+        return true;
+    }
+    let voice = dir().join("voice");
+    let pythonw = voice.join(".venv/Scripts/pythonw.exe");
+    if cfg().no_gpu || !voice.join("voice.json").exists() || !pythonw.exists() {
+        return false;
+    }
+    let out = std::fs::File::create(voice.join("voice_server.log"));
+    let mut cmd = std::process::Command::new(pythonw);
+    cmd.args(["voice_server.py", "47811"]).current_dir(&voice);
+    if let Ok(out) = out {
+        cmd.stdout(out.try_clone().unwrap()).stderr(out);
+    }
+    if let Err(e) = crate::spawn_hidden(&mut cmd) {
+        log(format!("gpu voice did not start: {e}"));
+        return false;
+    }
+    for _ in 0..180 {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        if qwen_up().await {
+            return true;
+        }
+    }
+    log("gpu voice did not start; see voice/voice_server.log");
+    false
+}
+
+/// Calls the GPU server; if it has exited (idle timeout), starts it again once.
+pub async fn gpu(route: &str, body: Vec<u8>, context: Option<&str>) -> Option<reqwest::Response> {
+    for _ in 0..2 {
+        if !load_qwen().await {
+            return None;
+        }
+        let mut req = HTTP.post(format!("{QWEN}{route}")).body(body.clone());
+        if let Some(c) = context {
+            req = req.header("x-context", urlencoding::encode(c).into_owned());
+        }
+        match req.send().await {
+            Ok(r) if r.status().is_success() => return Some(r),
+            Ok(r) => {
+                log(format!("gpu {route} {}", r.status()));
+                return None;
+            }
+            Err(_) => {} // it exited between the health check and the call: start it again
+        }
+    }
+    None
+}
+
+fn f32_bytes(pcm: &[f32]) -> Vec<u8> {
+    pcm.iter().flat_map(|x| x.to_le_bytes()).collect()
+}
+
+/// Speech-to-text, prompted with what Claude just said so names are heard right.
+/// ponytail: no CPU fallback (the old small-Whisper path); without the GPU server the user types instead.
+pub async fn hear(pcm: &[f32], context: &str) -> String {
+    match gpu("/stt", f32_bytes(pcm), Some(context)).await {
+        Some(r) => r.text().await.unwrap_or_default().trim().to_string(),
+        None => {
+            log("no hearing: the GPU voice server is not available");
+            String::new()
+        }
+    }
+}
+
+/// Live captions: GPU only and never starts it; None = skipped.
+pub async fn hear_quick(pcm: &[f32], context: &str) -> Option<String> {
+    if !qwen_up().await {
+        return None;
+    }
+    let r = HTTP
+        .post(format!("{QWEN}/stt"))
+        .header("x-context", urlencoding::encode(context).into_owned())
+        .body(f32_bytes(pcm))
+        .send()
+        .await
+        .ok()
+        .filter(|r| r.status().is_success())?;
+    Some(r.text().await.ok()?.trim().to_string())
+}
+
+/// Whisper invents these on near-silence.
+pub fn is_noise(text: &str) -> bool {
+    let t = text.trim().to_lowercase();
+    t.is_empty()
+        || (t.starts_with('[') && t.ends_with(']'))
+        || (t.starts_with('(') && t.ends_with(')'))
+        || ["you", "thank you", "thank you.", "thanks for watching", "thanks for watching!"].contains(&t.as_str())
+        || t.chars().all(|c| c == '.')
+}
+
+pub struct Audio {
+    pub data: Vec<u8>,
+    pub kind: &'static str,
+}
+
+/// ElevenLabs, for machines without a GPU (e.g. the laptop): the user's own ElevenLabs voice.
+/// Needs ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID.
+async fn eleven(text: &str) -> Option<Audio> {
+    let key = std::env::var("ELEVENLABS_API_KEY").ok()?;
+    let voice = std::env::var("ELEVENLABS_VOICE_ID").ok()?;
+    let model = std::env::var("ELEVENLABS_MODEL").unwrap_or_else(|_| "eleven_flash_v2_5".into());
+    let r = HTTP
+        .post(format!("https://api.elevenlabs.io/v1/text-to-speech/{voice}?output_format=mp3_44100_128"))
+        .header("xi-api-key", key)
+        .header("content-type", "application/json")
+        .body(json!({ "text": text, "model_id": model }).to_string())
+        .send()
+        .await
+        .ok()?;
+    if !r.status().is_success() {
+        log(format!("elevenlabs {} {}", r.status(), r.text().await.unwrap_or_default().chars().take(200).collect::<String>()));
+        return None;
+    }
+    Some(Audio { data: r.bytes().await.ok()?.to_vec(), kind: "audio/mpeg" })
+}
+
+/// A whole-file line: the cloned voice if the GPU server is up, else ElevenLabs; None = the phone's own voice.
+pub async fn synth(text: &str) -> Option<Audio> {
+    if qwen_up().await {
+        if let Some(r) = gpu("/tts", text.as_bytes().to_vec(), None).await {
+            if let Ok(b) = r.bytes().await {
+                return Some(Audio { data: b.to_vec(), kind: "audio/wav" });
+            }
+        }
+    }
+    eleven(text).await
+}
+
+// ---- Ringing: a generic alert on the private ntfy topic; the phone app rings on the title "Claude is calling". ----
+pub async fn ring(link: &str, reason: Option<&str>) {
+    let agent = &cfg().agent;
+    // ponytail: message text is not sent through ntfy (public server); only a generic alert + private link.
+    let body = match reason {
+        Some(r) => format!("{agent} needs you: {r}"),
+        None => format!("{agent} needs to talk to you"),
+    };
+    let r = HTTP
+        .post(format!("https://ntfy.sh/{}", cfg().topic))
+        .header("Title", "Claude is calling")
+        .header("Priority", "5")
+        .header("Tags", "telephone_receiver")
+        .header("Click", link)
+        .header("Actions", format!("view, Answer, {link}"))
+        .body(body)
+        .send()
+        .await;
+    if let Err(e) = r {
+        log(format!("ntfy failed {e}"));
+    }
+}
+
+// ---- Contact mode, shared by every agent (Discord Input MCP reads the same file):
+// "call" = calls only, "text" = Discord only, "both", "none" = don't contact.
+pub const MODES: [&str; 4] = ["call", "text", "both", "none"];
+
+pub fn read_status() -> Value {
+    std::fs::read_to_string(&cfg().status_path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_else(|| json!({ "mode": "both", "updatedAt": "1970-01-01T00:00:00.000Z", "by": "default" }))
+}
+
+pub fn write_status(mode: &str, updated_at: String, by: &str) {
+    let s = json!({ "mode": mode, "updatedAt": updated_at, "by": by });
+    let _ = std::fs::write(&cfg().status_path, serde_json::to_string_pretty(&s).unwrap());
+}
+
+fn iso_ms(s: &str) -> u64 {
+    humantime::parse_rfc3339_weak(s).ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_millis() as u64)
+}
+
+/// The phone app publishes its setting on the ntfy topic (title "Contact mode"); take it if it's newer than the file.
+pub async fn contact_mode() -> String {
+    let file = read_status();
+    let mode = file["mode"].as_str().unwrap_or("both").to_string();
+    if cfg().test_status {
+        return mode;
+    }
+    let poll = async {
+        let r = HTTP
+            .get(format!("https://ntfy.sh/{}/json?poll=1&since=12h", cfg().topic))
+            .timeout(Duration::from_secs(4))
+            .send()
+            .await
+            .ok()?;
+        let text = r.text().await.ok()?;
+        text.lines()
+            .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+            .filter(|m| m["event"] == "message" && m["title"] == "Contact mode")
+            .filter(|m| MODES.contains(&m["message"].as_str().unwrap_or("").trim()))
+            .last()
+    };
+    if let Some(latest) = poll.await {
+        let new = latest["message"].as_str().unwrap_or("").trim();
+        let at = latest["time"].as_u64().unwrap_or(0) * 1000;
+        // >= : ntfy times are whole seconds, so two changes in one second tie; the later message wins.
+        if at >= iso_ms(file["updatedAt"].as_str().unwrap_or("")) && new != mode {
+            let when = std::time::UNIX_EPOCH + Duration::from_millis(at);
+            write_status(new, humantime::format_rfc3339_millis(when).to_string(), "phone app");
+            return new.to_string();
+        }
+    }
+    mode
+}
+
+pub async fn set_contact_mode(mode: &str) {
+    write_status(mode, now_iso(), "claude");
+    // Publish too, so the phone app shows the new mode. Never from tests: they must not change the real phone.
+    if !cfg().test_status {
+        let _ = HTTP
+            .post(format!("https://ntfy.sh/{}", cfg().topic))
+            .header("Title", "Contact mode")
+            .header("Priority", "1")
+            .body(mode.to_string())
+            .send()
+            .await;
+    }
+}

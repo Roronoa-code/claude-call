@@ -1,0 +1,20 @@
+[package]
+name = "callme-phone"
+version = "1.0.0"
+edition = "2024"
+description = "The Claude Call screen and call audio for Android, drawn natively (Slint) instead of in a WebView."
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+android-activity = { version = "0.6", features = ["native-activity"] }
+jni = "0.21"
+ndk = { version = "0.9", features = ["audio", "nativewindow", "api-level-30"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "stream"] }
+serde_json = "1"
+slint = { version = "1.18", default-features = false, features = ["std", "compat-1-2", "backend-android-activity-06", "renderer-femtovg"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
+
+[build-dependencies]
+slint-build = "1.18"
