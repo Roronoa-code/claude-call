@@ -21,8 +21,9 @@ import soundfile as sf
 HERE = Path(__file__).parent
 LINES, MOODS_DIR = HERE / "lines", HERE / "moods"
 VOICE_NAME = "American woman"
-MODEL = "eleven_v3"  # performs the [bracketed] tags
+MODEL = "eleven_v4"  # performs the [bracketed] tags; the user's samples were made with it
 SR = 24000
+SETTINGS = {"stability": 0.5, "similarity_boost": 0.75, "speed": 1.0}  # as the user's own samples (sp100 s50 sb75)
 # The user's own sample lines, joined into one take per mood.
 FROM_SAMPLES = {
     "smug": ["sample2-01d", "sample2-02", "sample3-00", "sample3-01d", "sample3-02", "sample3-06e", "sample3-06f"],
@@ -51,7 +52,7 @@ def hear(audio):
 def generated(mood, i, line, voice_id):
     path = MOODS_DIR / f"{mood}-{i + 1}.wav"
     if not path.exists():
-        pcm = api(f"/v1/text-to-speech/{voice_id}?output_format=pcm_24000", {"text": line, "model_id": MODEL}, raw=True)
+        pcm = api(f"/v1/text-to-speech/{voice_id}?output_format=pcm_24000", {"text": line, "model_id": MODEL, "voice_settings": SETTINGS}, raw=True)
         sf.write(path, np.frombuffer(pcm, dtype="<i2").astype(np.float32) / 32768, SR, subtype="PCM_16")
         print(f"  made {path.name}")
     return path
