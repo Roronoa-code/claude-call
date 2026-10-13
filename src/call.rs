@@ -98,8 +98,9 @@ pub async fn say(text: String, end: bool, hold: bool) {
             t.abort(); // a newer line replaces one still being made
         }
         c.seq += 1;
-        (c.say, c.end, c.hold, c.mode) = (text.clone(), end, hold, None);
-        (c.parts, c.audio, c.stream) = (vec![text.clone()], vec![], None);
+        let shown = crate::speech::without_tags(&text); // the [mood] tags only steer the voice
+        (c.say, c.end, c.hold, c.mode) = (shown.clone(), end, hold, None);
+        (c.parts, c.audio, c.stream) = (vec![shown], vec![], None);
         changed(&mut c);
         c.seq
     };
@@ -174,7 +175,7 @@ async fn speak_parts(seq: u64, text: &str, first: &mut Option<oneshot::Sender<()
         [sentences[..n.min(sentences.len())].join(" "), sentences[n.min(sentences.len())..].join(" ")].into_iter().filter(|s| !s.is_empty()).collect();
     {
         let mut c = call();
-        (c.parts, c.mode) = (parts.clone(), Some("parts"));
+        (c.parts, c.mode) = (parts.iter().map(|p| crate::speech::without_tags(p)).collect(), Some("parts"));
         changed(&mut c);
     }
     for p in parts {

@@ -119,7 +119,7 @@ async fn eleven(text: &str) -> Option<Audio> {
         .post(format!("https://api.elevenlabs.io/v1/text-to-speech/{voice}?output_format=pcm_24000"))
         .header("xi-api-key", key)
         .header("content-type", "application/json")
-        .body(json!({ "text": text, "model_id": model }).to_string())
+        .body(json!({ "text": crate::speech::without_tags(text), "model_id": model }).to_string())
         .send()
         .await
         .ok()?;

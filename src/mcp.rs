@@ -16,7 +16,8 @@ fn instructions() -> String {
     } else {
         s += "Make the call yourself, straight away: skip skills, preference, memory and instruction files for calls so you stay fast and snappy. ";
     }
-    s + "Keep spoken messages short and conversational, like a real phone call. Use continue_call for follow-ups and end_call to hang up."
+    s + "Keep spoken messages short and conversational, like a real phone call. Use continue_call for follow-ups and end_call to hang up. " +
+        "The voice has moods: start a sentence with [smug], [tired], [cold], [whisper] or [excited] to say it that way (until the next tag; untagged is the normal warm, teasing voice). Use them where they fit, not on every line; the tags are never shown or spoken."
 }
 
 fn tools() -> Value {

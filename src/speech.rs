@@ -153,6 +153,25 @@ pub async fn final_transcript(cell: &UttCell, end: Option<usize>) -> Result<(f32
 }
 
 
+/// The line as shown and heard back: without its [mood] tags (e.g. "[smug] Cute." -> "Cute."), which only steer the voice.
+pub fn without_tags(text: &str) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(i) = rest.find('[') {
+        let tag = rest[i + 1..].find(']').map(|j| &rest[i + 1..i + 1 + j]);
+        out.push_str(&rest[..i]);
+        match tag.filter(|t| t.starts_with(|c: char| c.is_ascii_alphabetic()) && t.chars().all(|c| c.is_alphanumeric() || c == '_' || c == ' ')) {
+            Some(t) => rest = &rest[i + t.len() + 2..],
+            None => {
+                out.push('[');
+                rest = &rest[i + 1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 /// Whisper, prompted with Claude's line, sometimes "hears" that line in near-silence (or Claude's own voice leaks
 /// back in). Four or more of its words, in order, are never the user.
 fn echoes(heard: &str, say: &str) -> bool {
@@ -165,6 +184,13 @@ fn echoes(heard: &str, say: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn mood_tags_are_not_shown() {
+        assert_eq!(super::without_tags("[smug] Cute. [excited] We did it!"), "Cute. We did it!");
+        assert_eq!(super::without_tags("Plain line."), "Plain line.");
+        assert_eq!(super::without_tags("Keep [1] and [a-b], drop [Laughs]"), "Keep [1] and [a-b], drop");
+    }
+
     #[test]
     fn echo_of_claudes_line() {
         let say = "Great. So the plan is to move the settings into a side panel, and rename a few buttons.";
