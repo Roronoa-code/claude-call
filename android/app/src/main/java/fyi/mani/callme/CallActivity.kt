@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
 import android.view.WindowInsets
 import android.view.WindowManager
@@ -16,6 +17,7 @@ import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.FrameLayout
 
 /** The call screen: shows Claude's call page; the mic is granted by the app, so the page never asks. */
 class CallActivity : Activity() {
@@ -27,6 +29,8 @@ class CallActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        if (Build.VERSION.SDK_INT >= 30) window.setDecorFitsSystemWindows(false)
         web = WebView(this).apply {
             setBackgroundColor(Color.parseColor("#111214"))
             settings.javaScriptEnabled = true
@@ -49,14 +53,20 @@ class CallActivity : Activity() {
                     }
                 }
             }
-            // Keep the page clear of the status and navigation bars.
+        }
+        val frame = FrameLayout(this).apply {
+            setBackgroundColor(Color.parseColor("#111214"))
+            addView(web, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+            // Resize the WebView itself so CSS controls move above the keyboard.
             setOnApplyWindowInsetsListener { v, insets ->
-                val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.ime())
-                v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
-                insets
+                if (Build.VERSION.SDK_INT >= 30) {
+                    val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.ime())
+                    v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+                    WindowInsets.CONSUMED
+                } else insets // Android 10's decor handles system bars and keyboard resizing.
             }
         }
-        setContentView(web)
+        setContentView(frame)
         load(intent)
     }
 

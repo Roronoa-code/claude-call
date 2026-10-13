@@ -29,6 +29,8 @@ try {
     // A value updated on every animation frame must stay inside the glow's subtree.
     beam.style.setProperty('--glow-cascade-check', 'changed');
     return {
+      stroke: getComputedStyle(beam, '::after').display,
+      warpLayers: beam.querySelectorAll('[data-voice-beam-warp]').length,
       isolated: ['.d-mascot', '.d-stage', '.a-controls'].every(selector =>
         getComputedStyle(document.querySelector(selector)).getPropertyValue('--glow-cascade-check') === ''),
       bounds: [beam, screen].map(el => {
@@ -38,6 +40,8 @@ try {
     };
   });
   assert.ok(glow.isolated, 'per-frame glow styles must not cascade through foreground content');
+  assert.equal(glow.stroke, 'none', 'the full-screen stroke must not retain a painting layer');
+  assert.equal(glow.warpLayers, 0, 'extra full-screen warp layers must remain disabled');
   assert.deepEqual(glow.bounds[0], glow.bounds[1], 'glow must retain the screen bounds');
   await page.evaluate(() => {
     window.originalMascot = document.querySelector('.d-mascot');
@@ -114,6 +118,18 @@ try {
   await page.getByRole('button', { name: 'Close transcript', exact: true }).click();
   await page.getByRole('button', { name: 'Type', exact: true }).click();
   await page.getByRole('textbox', { name: 'Type a reply', exact: true }).fill('Offline layout check');
+  await page.setViewportSize({ width: 384, height: 439 }); // The S25 viewport above its open keyboard.
+  const typing = await page.evaluate(() => ({
+    inputBottom: document.querySelector('input').getBoundingClientRect().bottom,
+    composerTop: document.querySelector('.a-type').getBoundingClientRect().top,
+    stageBottom: document.querySelector('.d-stage').getBoundingClientRect().bottom,
+    status: getComputedStyle(document.querySelector('.d-status')).visibility,
+    controls: getComputedStyle(document.querySelector('.a-controls')).visibility,
+  }));
+  assert.ok(typing.inputBottom <= 439 && typing.stageBottom < typing.composerTop, 'caption and input must fit above the keyboard');
+  assert.equal(typing.status, 'hidden');
+  assert.equal(typing.controls, 'hidden');
+  await page.setViewportSize({ width: 412, height: 892 });
   await page.getByRole('button', { name: 'Close', exact: true }).click();
   await page.evaluate(() => events.ended());
   await page.waitForFunction(() => getComputedStyle(document.querySelector('.d-stage')).opacity === '0');

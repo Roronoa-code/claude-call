@@ -66,7 +66,7 @@ Claude then edited code for items 1, 4 and 8. **Written and built, NOT tested** 
 
 ## 3c. Codex continuation, 2026-10-13
 
-**Current boundary: the user is expecting a call and explicitly prohibited phone tests.** No ADB, Android build/install, real calls, microphone access, model startup, contact-mode changes or service restarts were performed in this continuation. Keep this boundary until the user reauthorizes phone work.
+**Initial boundary (subsequently superseded by the user's phone-test authorization; see 3e):** the user was expecting a call and prohibited phone tests. No ADB, Android build/install, real calls, microphone access, model startup, contact-mode changes or service restarts were performed in this initial batch.
 
 The pasted Claude handoff reports that the app was built and installed over the S25 app, its listener restarted, and the old voice server stopped after the earlier section 3b was written. These are prior-session reports; Codex has not independently checked the device or service state.
 
@@ -102,18 +102,38 @@ A separate **pre-separation** desktop replay inspected 1,287 screencast deliveri
 
 Local evidence is in `D:\Outputs\CallMe\recording-20261013\` (frames, timestamps, metrics, contact sheets, four-frame evidence strips and second-opinion comparisons), with the offline replay in `D:\Outputs\CallMe\offline-flicker-probe\`. Recording/screenshots were not added to Git. Phone confirmation remains deferred under the user's no-phone-test boundary. No APK update is needed for this page-only change.
 
-## 4. Open issues (the work left). Recording: `C:\Users\abdul\Downloads\Screen_Recording_20261013_141027.mp4`
+## 3e. Authorized S25 verification and fixes, 2026-10-13
+
+The user explicitly authorized all phone tests at `192.168.0.210:44567`, then left the phone available while AFK. This superseded the earlier no-phone boundary for this task. Checks used the normal `fyi.mani.callme` release app, with a temporary signed instrumentation runner opening its real CallActivity without ringing. Contact mode stayed **text**; the real-audio fixture used its own status file and private test topic.
+
+**Flicker:** reproduced on the actual SM-S938B, WebView 156.0.8078.25, CSS 384x798 at DPR 3.75. Chromium reported `tile memory limits exceeded, some content may not draw`. Glow separation alone did not fix it. The final shared CallD keeps the full-size main VoiceBeam glow but disables its distortion mirrors and removes the full-screen stroke pseudo-element through the library's CSS hook. Merely setting stroke opacity to zero still left one 25ms controls dropout; removing its painting entirely passed the next replay. The old speculative stage `translateZ(0)` guard was removed. This removes the thin perimeter reflection and lower-band distortion; frozen comparisons retain the main glow's color, reach and movement, but are not pixel-identical.
+
+**Native frame evidence:** all **2,820 frames / 31.970s** in `pruned-glow.mp4` retain mascot, header and all four controls across five turn cycles and maximum microphone glow. Zero tile warnings; largest encoded-frame gap 35.356ms, none over 50ms. A separate **2,586-frame / 32.013s** real-audio recording has no unexplained screen/control disappearance, including keyboard opening and restoration. It did log **six untimed tile warnings**, plus gaps during route changes and a CDP screenshot. Do not claim universal zero warnings, 120Hz rendering, or continuous smoothness from these recordings. CDP stills also shrink the header incorrectly; use native recordings/screenshots as visual evidence.
+
+**Keyboard:** CallActivity puts WebView inside an inset-padded FrameLayout, so system bars and IME change the WebView's actual size. With the Samsung keyboard, height changes **798 -> 439 -> 798 CSS px**; input bottom 405.2 is inside the visible viewport. The compact layout hides the covered controls/status, reserves space for the composer, and scrolls the caption in its own region. Native screenshot and scroll checks confirm the final caption line is reachable above the field. Older Android versions have not been device-tested.
+
+**Playback completion:** CallAudio stopped AudioTrack before waiting for its playback head; stopping reset that head to zero and caused another full-duration wait. It now drains before stopping, retaining cancellation and the bounded timeout. On the real phone a **17,040ms** clip completed **17,229ms** after its start (about **189ms** overhead), with monotonic playback positions. This is playback completion evidence, not proof of the entire conversation's 0.3s handover target.
+
+**Audio routing:** automatic earpiece -> speaker -> earpiece checks matched the native device, kept a live microphone, and advanced native playback. Human speech and quiet barge-in were not tested while the user was AFK. The WebView accepts a best-effort AEC constraint without applying it; an exact constraint fails, while acquiring a replacement stream applies the requested setting.
+
+**Microphone replacement:** `call-engine.js` acquires a replacement stream before disconnecting the current one, retaining one audio processor/context. The latest route request wins; stale/late streams are stopped, failed replacements preserve the working capture, and pending answer/unmute operations inherit the latest request's result. `node mic-check.mjs` passes the failure, ordering and end-cleanup cases, including a newer failed request settling before an older startup returns. The final S25 check passes earpiece -> speaker -> earpiece, three rapid toggles and restoration: actual `getSettings().echoCancellation` is false/true/false/true/false, native routes agree, mic frames keep arriving, exactly one track remains live and only one processor is created. `mic-route-results.json` records all snapshots with no page errors. This check uses the actual engine/native app without voice models or recognition.
+
+**Delivery/evidence:** the normal release APK was built and installed with `adb install --user 0 -r`, preserving data and the existing signing identity. Original APK backup: `D:\Backups\CallMe\20261013-before-insets.apk`. `page.html` is rebuilt from source. Local recordings, probes, timing/geometry results and frame reports are in `D:\Outputs\CallMe\phone-20261013\`; these are not committed. Frame reports are under `frame-analysis/REPORT-pruned-glow.md` and `REPORT-audio.md`. The reusable test-only `PhoneCheckInstrumentation` enables debugging only during its bounded check and closes the activity afterward; instrumentation completion stops the normal app, so restart MainActivity/ListenService after device work.
+
+**Final cleanup:** temporary instrumentation APK and ADB forwarding removed; owned fixture, audio helpers, GPU server and Gradle stopped. The normal app's foreground ListenService was restarted and verified active, then the phone returned home. Contact mode remains text; shared gateway/tunnel and other session servers remain running. No test call was sent to the real notification topic.
+
+## 4. Original issues and remaining acceptance. Recording: `C:\Users\abdul\Downloads\Screen_Recording_20261013_141027.mp4`
 
 All came from the first real call on the S25. Items 1 to 4 are call-screen (`call-ui/`); no app rebuild needed for those.
 
 1. **Giant bubble after an interrupt.** After the user cuts in, the whole long line, including the words never spoken, becomes one giant Claude bubble that pushes the user's live bubble behind the status line.
    Fix: keep only the *spoken* words in the bubble (the engine already reports `spoken` with a cut index), cap the bubble height, and scroll so the user's bubble always stays visible.
-2. **Clawd vanishes for a frame or two**, including during steady speech. The full-frame review and glow separation are documented in section 3d; the S25 result remains unverified.
-3. **Control row disappears repeatedly.** The full-frame review found 26 missing-control frames in 14 episodes. Source/offline checks show it stays mounted; glow style updates no longer cascade through it. The phone-specific cause and result remain unconfirmed.
+2. **Clawd vanishes for a frame or two:** the original recording and failed first approach are in 3d; final native verification is in 3e.
+3. **Control row disappears repeatedly:** confirmed in the original video, then fixed with the glow-layer reduction; see 3e for final frame evidence and limits.
 4. **Empty "Claude" caption** flashes before a line's first words. Don't render the caption until there is text.
 5. **Turn handover takes 3.3 s** even when it reuses the live transcript; target about **0.3 s**. Trace from "user stopped" (engine) to `/speech` sent to the agent receiving the text to the next line arriving. `timing.log` has marks; `node test-call.mjs` prints "you stopped -> turn sent X ms, transcript back Y ms". Find the first stage that waits longer than it needs to (likely a final `/stt` request being awaited when the last live partial is already complete).
-6. **Quiet interrupts fail on the earpiece.** Samsung's call mode mutes the mic (rms about 0) while Claude is playing, so only loud speech gets through (one normal-volume interrupt worked). Needs a real-device experiment: try a different `AudioSource` (e.g. `VOICE_COMMUNICATION` vs `MIC`), mic gain, or different audio mode/route during playback. This needs the phone, not the simulator.
-7. **Route flipped earpiece to speaker by itself once.** Look at the route watcher in `CallAudio.kt`; probably a device-change callback that should re-assert the earpiece unless the user chose Speaker.
+6. **Quiet interrupts fail on the earpiece.** The original report had near-zero microphone levels during playback; Samsung call-mode suppression was a hypothesis. The authorized automatic check received live microphone frames during playback, but no human quiet-speech test was possible while the user was AFK. See 3e for the route-specific echo-cancellation fix. Quiet interruption sensitivity remains open.
+7. **Route flipped earpiece to speaker by itself once.** The earlier route-watcher fix passed the automatic earpiece/speaker/earpiece check in 3e. An extended human call remains unverified.
 8. **Mishearing: "call screen" heard as "cold screen".** Add a fixed vocabulary hint (Claude, Clawd, Codex, call screen, ntfy, Discord, ...) to Whisper's prompt in `voice/voice_server.py`. Check with `node asr-check.mjs` and add the failing phrase there.
 
 ## 5. Icon work (UPDATE: Codex has since committed it, as `0cf86b4`; this section is history)
@@ -127,6 +147,7 @@ They are not mine. Review them, build, and commit them if they are done and look
 ## 6. How to test (never ring the user's real phone)
 
 - While phone/service work is restricted, use only `node speech-check.mjs` and `cd call-ui; npm run build; node check.mjs`. They use fake I/O and do not load voice models or start call services.
+- `node mic-check.mjs` checks the actual engine's capture lifecycle with deferred fake microphone requests: replacements, failures, rapid toggles, pending startup and call-end cleanup. It is also safe offline.
 - `node test-call.mjs` runs a whole call against the real call page in headless Edge with a fake mic (`phone-sim.mjs`). It uses a private test topic, no tunnel, and its own status file. It sets `CALLME_STATUS` / `CALLME_LOCAL` so it **never touches the real `status.json` or the real ntfy topic**. Expect PASS plus latency lines.
 - `node test-call.mjs fallback` checks the no-GPU voices.
 - `node asr-check.mjs` checks that context fixes misheard names.
@@ -145,7 +166,7 @@ adb connect 192.168.0.210:<port>
 adb install -r ClaudeCall.apk
 ```
 
-- The wireless-debugging port changes every time. Last seen: `192.168.0.210:36555`. Ask the user for the new port (Settings, Developer options, Wireless debugging).
+- The wireless-debugging port changes every time. Last verified: `192.168.0.210:44567` on 2026-10-13. Ask for the current port if it no longer connects (Settings, Developer options, Wireless debugging).
 - Install **over** the normal app with `-r`. Do not uninstall and do not make a separate Dev app: the user wants their existing app and its settings kept.
 - The build is signed with the PC's `debug.keystore`, which is also backed up in the private repo. A different keystore will fail to install over the existing app.
 - `android/app/src/main/res/values/topic.xml` (gitignored) must exist or the app won't build. Template: `android/app/topic.example.xml`.
@@ -172,11 +193,8 @@ adb install -r ClaudeCall.apk
   - `discord-input-mcp` is private.
 - Baseline before the Codex continuation: `38b0f58`; use `git log` for the latest delivered continuation commit.
 
-## 10. Suggested order
+## 10. Remaining acceptance
 
-1. Items 1 to 4 together in `call-ui/` (one batch), check with `CALLME_SHOTS` screenshots and `node test-call.mjs`.
-2. Item 8 (Whisper vocabulary hint). Small, quick win.
-3. Item 5 (handover latency), measured with `test-call.mjs` before and after.
-4. Items 6 and 7 together on the phone. They need the user present for a real call.
-5. Rebuild and install the app only if `android/` changed (items 5 to 7 and the icon). Items 1 to 4 and 8 need no app rebuild.
-6. Update the README "Open issues" section as each one is fixed, then commit and push.
+1. With the user present, check quiet earpiece interruptions, Whisper's recognition of the reported phrase, route stability and full conversation handover timing. Automatic microphone and playback checks do not substitute for this.
+2. Keep the native frame evidence in 3e as the baseline. If flicker returns, capture the normal app and inspect Chromium tile warnings; do not restore the removed glow layers or add speculative compositing layers.
+3. The phone APK is already updated. `page.html` and `call-engine.js` load on the next call-page load. The earlier `server.mjs` packet-ordering fixes require a newly started MCP process; shared existing session servers were not restarted.

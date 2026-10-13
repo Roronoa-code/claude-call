@@ -60,7 +60,7 @@
     const app = window.CallMeApp; // inside the Claude Call app: native earpiece audio
     const player = new Audio();
     let ended = false, muted = false, debug = false;
-    let ctx = null, rate = 48000, micStream = null, micNode = null;
+    let ctx = null, rate = 48000, micStream = null, micNode = null, micSource = null;
     let noiseFloor = 0.01, echo = 0.004, preroll = [];
     let mode = 'idle';      // idle | listen (waiting for speech) | talk (user speaking) | claude (Claude's line)
     let utt = null, barge = null, cutIn = false, quietSince = 0, startedAt = 0;
@@ -85,16 +85,35 @@
 
     // ---- the user's voice: mic on the phone, live transcripts and the final one from Whisper on the PC ----
     const audioCtx = () => { if (!ctx) ctx = new AudioContext(); ctx.resume(); return ctx; };
-    // On the earpiece Claude's voice hardly reaches the mic, so echo cancelling only risks eating quiet speech
-    // (the phone's call mode already mutes the mic while Claude plays); on the loudspeaker it is needed.
+    // Echo cancellation can eat quiet speech on the earpiece; the loudspeaker needs it for Claude's echo.
     const micOpts = loud => ({ echoCancellation: loud, noiseSuppression: true, autoGainControl: true });
-    let onSpeaker = false;
-    async function startMic() {
-      micStream = await navigator.mediaDevices.getUserMedia({ audio: micOpts(!app || onSpeaker) });
-      const c = audioCtx(); rate = c.sampleRate;
-      micNode = c.createScriptProcessor(FRAME, 1, 1);
-      c.createMediaStreamSource(micStream).connect(micNode); micNode.connect(c.destination);
-      micNode.onaudioprocess = e => onFrame(new Float32Array(e.inputBuffer.getChannelData(0)), performance.now());
+    // Keep the newest result after it settles: older answer/unmute requests must inherit its failure too.
+    let onSpeaker = false, micVersion = 0, micPending = null, micReady = null;
+    function startMic() {
+      const version = ++micVersion;
+      let pending;
+      pending = (async () => {
+        let stream, source;
+        try {
+          // The S25 keeps echo cancellation fixed on an existing track; acquire its replacement first.
+          stream = await navigator.mediaDevices.getUserMedia({ audio: micOpts(!app || onSpeaker) });
+          if (ended || version !== micVersion) { stream.getTracks().forEach(tr => tr.stop()); return; }
+          const c = audioCtx(); rate = c.sampleRate;
+          if (!micNode) {
+            micNode = c.createScriptProcessor(FRAME, 1, 1); micNode.connect(c.destination);
+            micNode.onaudioprocess = e => onFrame(new Float32Array(e.inputBuffer.getChannelData(0)), performance.now());
+          }
+          source = c.createMediaStreamSource(stream); source.connect(micNode);
+          micSource?.disconnect(); micStream?.getTracks().forEach(tr => tr.stop());
+          micSource = source; micStream = stream;
+        } catch (error) {
+          source?.disconnect(); stream?.getTracks().forEach(tr => tr.stop());
+          if (!ended && version === micVersion) throw error;
+        }
+      })().then(() => version !== micVersion && !ended ? micReady : undefined)
+        .finally(() => { if (micPending === pending) micPending = null; });
+      micReady = micPending = pending;
+      return pending;
     }
     const newUtt = frames => {
       const u = { id: Math.random().toString(36).slice(2, 10), unsent: [], raw: 0, sentRaw: 0, sent16: 0, speechEndRaw: 0,
@@ -357,6 +376,7 @@
     function end() {
       ended = true; mode = 'idle';
       emit('status', 'Call ended'); emit('busy', false); emit('canFinish', false);
+      micSource?.disconnect(); micNode?.disconnect();
       micStream?.getTracks().forEach(tr => tr.stop()); ctx?.close(); // release the mic
       emit('ended');
       if (app) setTimeout(() => app.ended(), 1200);
@@ -369,6 +389,7 @@
         app?.begin?.(); // call audio (earpiece) from now on
         emit('status', 'Connected');
         try { await startMic(); } catch { muted = true; emit('muted', true); }
+        if (ended) return;
         fetch(api('answer'), { method: 'POST' });
         loop();
       },
@@ -381,7 +402,9 @@
         await fetch(api('reply'), { method: 'POST', body: text });
       },
       async setMuted(on) {
+        if (ended) return muted;
         if (!on && !micStream) { try { await startMic(); } catch { emit('status', 'Mic blocked, type a reply'); return muted; } }
+        if (ended) return muted;
         muted = on; emit('muted', muted);
         if (muted) {
           if (mode === 'talk' || mode === 'listen') dropUtterance();
@@ -391,8 +414,9 @@
         return muted;
       },
       setSpeaker(on) {
+        if (ended) return onSpeaker;
         app?.setSpeaker(on); onSpeaker = !!on;
-        micStream?.getAudioTracks()[0]?.applyConstraints(micOpts(onSpeaker)).catch(() => {});
+        if (micStream || micPending) startMic().catch(() => emit('status', 'Could not update microphone. Try Speaker again or type a reply.'));
         return !!on;
       },
       get hasSpeaker() { return !!app; },

@@ -104,8 +104,9 @@ export default function CallD({ sim, statusBar = null }) {
 
   return (
       <div className={`screen d ${v.closed ? 'closed' : ''} ${thread ? 'threaded' : ''}`} ref={root} data-phase={v.phase}>
-        {/* The glow's per-frame CSS variables must not cascade through the foreground. */}
-        <VoiceBeam className="d-glow" type="mobile" level={sim.level} paused={ended}
+        {/* The extra full-screen stroke and warp layers exhaust the S25 WebView's tile budget. */}
+        <VoiceBeam className="d-glow" type="mobile" distortion={0} level={sim.level} paused={ended}
+          css={'[data-voice-beam="{id}"]::after { display: none; }'}
           style={{ position: 'absolute', inset: 0, zIndex: 0, borderRadius: 'inherit', pointerEvents: 'none' }}>
           <div aria-hidden="true" style={{ height: '100%', borderRadius: 'inherit' }} />
         </VoiceBeam>

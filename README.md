@@ -20,21 +20,22 @@ Fallbacks: Kokoro for the voice, small Whisper on the CPU for hearing, and the p
 
 **Checks**
 - `node speech-check.mjs`: offline checks of audio packet ordering and final transcript reuse. No sockets, models, microphone or notifications.
+- `node mic-check.mjs`: offline checks of microphone replacement, failed requests, rapid route changes and call-end cleanup. No device or microphone access.
 - `cd call-ui; npm run build; node check.mjs`: offline screen checks in headless Edge with a fake engine and all requests intercepted. Covers interrupted captions, scrolling, long replies at three viewport heights, glow isolation, controls and closing; no phone or call service involved.
 - `node test-call.mjs`: a whole call against the real call page in headless Edge with a fake mic (`phone-sim.mjs`, started by the test). Private test topic, no tunnel, its own status file: it never rings the real phone. Prints the latencies. `node test-call.mjs fallback` checks the no-GPU voices.
 - `node asr-check.mjs`: checks that context fixes misheard names.
 - `node voice/server_check.mjs`: checks the voice server's speed and audio.
 
-**Open issues (from the first real call on the S25, 2026-10-13; recording `Downloads\Screen_Recording_20261013_141027.mp4`)**
-Status: Codex continued on 2026-10-13 with **no phone operations or call-service restarts**, because the user is expecting a call. Offline checks pass for the first interrupted-caption render, manual scrolling, long reply layout and speech handover packet handling. The server now retains late audio packets during final transcription (fixing a three-second timeout path), rejects missing audio, and avoids replacing a long reply with only its last 28 seconds. Real-call timing remains unmeasured. The page was rebuilt. See `CODEX-HANDOFF.md` section 3c for deployment and remaining checks. Stage/control flicker and quiet earpiece interrupts remain unverified on the S25.
+**Issue status (from the first real call on the S25, 2026-10-13; recording `Downloads\Screen_Recording_20261013_141027.mp4`)**
+Status: the user subsequently authorized S25 tests. The normal app was updated without clearing data. Final native recordings retained Clawd and the controls in all 2,820 scripted frames and showed no unexplained disappearance in 2,586 real-audio frames. The keyboard now resizes the page and leaves the reply field visible. Native playback completion no longer waits another clip duration after sound finishes. See `CODEX-HANDOFF.md` section 3e for evidence and limits, including six transient drawing warnings during the real-audio/keyboard run. Quiet human interruptions and end-to-end conversation latency still need a human call.
 - Call screen (`call-ui/`):
-  - After an interrupt, the whole long line, including the unspoken words, becomes a giant Claude bubble that pushes the user's live bubble behind the status line. The bubble should keep only the spoken words, be capped, and scroll so the user's bubble stays visible.
-  - Clawd vanishes during steady speech and transitions. Review of all 809 original recording frames confirmed partial and whole-stage losses. The glow now runs separately so its frame-by-frame style changes do not cascade through the foreground; desktop rendering work decreased, but the S25 result remains unverified.
-  - The control row disappears repeatedly: 26 frames in 14 episodes in that same recording. The glow separation covers controls too. See handoff section 3d for evidence and limitations.
-  - An empty "Claude" caption showed before a line's first words.
+  - Interrupted captions now keep only the spoken words, cap the bubble height and preserve scrolling. Offline layout checks pass.
+  - Clawd/control flicker: reproduced drawing-memory exhaustion on the S25. The glow stays separate, its full-screen stroke is removed, and distortion mirrors are disabled. The main animated glow remains. Final frame review passed; this is not a universal frame-rate guarantee.
+  - Keyboard overlay: native window insets resize the WebView itself; the compact typing layout keeps captions scrollable above the field.
+  - The empty "Claude" label stays hidden until its first words arrive.
 - Turn handover took 3.3 s even when reusing the live transcript; it should be about 0.3 s.
-- On the earpiece, Samsung's call mode mutes the mic while Claude plays (rms ~0), so quiet interrupts can't be detected. A normal-volume interrupt worked once.
-- The route flipped earpiece→speaker by itself once.
-- Mishearing: "call screen" was heard as "cold screen". Add a fixed vocabulary hint (Claude, Clawd, Codex, call screen…) to Whisper's prompt.
+- Quiet earpiece interruptions remain unverified with human speech. Automatic checks received live mic frames during playback; that does not establish quiet-speech sensitivity.
+- The route stayed earpiece→speaker→earpiece as selected during the automatic check. Changing Speaker replaces the microphone capture so the S25 actually applies the new echo-cancellation setting; the previous capture stays live until its replacement is ready.
+- Both GPU and CPU Whisper paths now receive the vocabulary hint (Claude, Clawd, Codex, call screen…). Human recognition accuracy remains unverified.
 
 **Android app:** `android/` (Kotlin, no libraries). Build with `gradlew assembleRelease`, then install with `adb install -r ClaudeCall.apk`.

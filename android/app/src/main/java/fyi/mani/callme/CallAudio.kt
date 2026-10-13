@@ -176,10 +176,10 @@ class CallAudio(context: Context, private val web: WebView, private val origin: 
                 if (cancelled || tr == null) return
                 val frames = bytes / 2
                 js("window.__audioDur && window.__audioDur($id, ${frames * 1000 / rate})")
-                // Let the end play out, then report.
-                tr.stop()
+                // stop() resets the playback head, so wait for the tail before stopping.
                 val until = System.currentTimeMillis() + 500 + frames * 1000 / rate
                 while (!cancelled && tr.playbackHeadPosition < frames && System.currentTimeMillis() < until) sleep(20)
+                tr.stop()
                 ok = bytes > 0
             } catch (_: Exception) {
             } finally {

@@ -103,8 +103,7 @@ input:focus { outline: none; }
 .d-head { position: absolute; z-index: 5; top: 40px; left: 24px; right: 24px; height: 52px; display: flex; flex-direction: column; justify-content: center; }
 .d-head strong { font-size: 18px; line-height: 24px; }
 .d-time { display: block; height: 20px; font-size: 14px; line-height: 20px; color: var(--muted); font-variant-numeric: tabular-nums; }
-/* Its own layer: on the S25 recording whole frames of the stage (Clawd + caption) went blank while the rest stayed. */
-.d-stage { position: absolute; z-index: 5; top: 96px; left: 0; right: 0; height: 470px; isolation: isolate; transform: translateZ(0); }
+.d-stage { position: absolute; z-index: 5; top: 96px; left: 0; right: 0; height: 470px; }
 .d-mascot { position: absolute; left: 0; top: 0; z-index: 2; transition: transform var(--open-ms) var(--spring); }
 .d-mascot .mascot { justify-content: flex-start; }
 .d-mascot-scale { transform-origin: 0 100%; transition: transform var(--open-ms) var(--spring); }
@@ -167,6 +166,13 @@ input:focus { outline: none; }
 .d-status { top: auto; bottom: calc(var(--sab) + 270px); }
 .a-controls { top: auto; bottom: calc(var(--sab) + 28px); }
 .a-type { top: auto; bottom: calc(var(--sab) + 162px); }
+@media (max-height: 600px) {
+  .screen.d .a-type { bottom: 0; } /* Keep the reply field above the keyboard in the resized viewport. */
+  .screen.d:has(.a-type[data-state="open"]) .d-stage { bottom: 110px; }
+  .screen.d:has(.a-type[data-state="open"]) .d-caps { inset: 140px 24px 0; padding: 0; overflow-y: auto; }
+  .screen.d:has(.a-type[data-state="open"]) .d-status,
+  .screen.d .a-controls.typing { visibility: hidden; }
+}
 .d-transcript { top: calc(var(--sat) + 8px); height: auto; bottom: calc(var(--sab) + 162px); }
 /* The phone fades the screen out itself when the call ends. */
 .screen.d.closed > :not(.d-glow) { opacity: 0; transition: opacity 500ms var(--close-ease); }
