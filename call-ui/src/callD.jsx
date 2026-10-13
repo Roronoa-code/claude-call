@@ -1,7 +1,7 @@
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { VoiceBeam } from 'voice-glow';
 import { ThinkingOrb } from 'thinking-orbs';
-import { clock, statusText } from './text.js';
+import { clock, statusText, words } from './text.js';
 import { Icon, Morph, Spoken, Swap, callTime, useNow, useSim } from './ui.jsx';
 import { Mascot, MascotKind } from './mascot.jsx';
 
@@ -35,7 +35,8 @@ export default function CallD({ sim, statusBar = null }) {
   const pending = v.phase === 'thinking' && v.sub === 'thinking';
   // The thread's own content is frozen when it hides, so it can fade out instead of vanishing.
   const held = useRef({ meText: null, live: false, pending: false, claude: null });
-  if (thread || !held.current.claude) held.current = { meText: pending ? lastMe?.text : null, live: v.phase === 'hearing', pending, claude: lastClaude };
+  // Your bubble: your live words while you talk (when the engine has them), then what was heard.
+  if (thread || !held.current.claude) held.current = { meText: pending ? lastMe?.text : v.partial || null, live: v.phase === 'hearing', pending, claude: lastClaude };
   const bubbleMsg = thread ? lastClaude : held.current.claude;
   const { meText, live } = held.current;
   const showPending = held.current.pending;
@@ -120,7 +121,7 @@ export default function CallD({ sim, statusBar = null }) {
                 {cap.orb && <ThinkingOrb state={cap.orb} size={20} theme="dark" aria-hidden="true" />}
                 {cap.label}
               </span>
-              <span className={`d-text ${cap.tone || ''}`}>{cap.text}</span>
+              <span className={`d-text ${cap.tone || ''} ${cap.size || ''}`}>{cap.text}</span>
             </Swap>
           </div>
 
@@ -167,7 +168,7 @@ export default function CallD({ sim, statusBar = null }) {
             <Round i={3} label="Type" pressed={typing} expanded={typing} onClick={() => { setTyping(t => !t); setTimeout(() => input.current?.focus({ preventScroll: true }), 200); }} icon={<Icon.keyboard />} hidden={!inCall} btnRef={typeBtn} disabled={ended} />
           </div>
           <div className="a-main">
-            <button className={`a-big ${incoming ? 'answer' : 'done'}`} disabled={!incoming && v.phase !== 'hearing'}
+            <button className={`a-big ${incoming ? 'answer' : 'done'}`} disabled={!incoming && !(v.canFinish ?? v.phase === 'hearing')}
               onClick={() => (incoming ? sim.answer() : sim.doneTalking())} aria-label={incoming ? 'Answer call' : 'Done talking'}>
               <span className={`a-glyph ${incoming ? 'show' : ''}`}><Icon.phone size={30} /></span>
               <span className={`a-glyph ${incoming ? '' : 'show'}`}><Icon.check size={30} /></span>
@@ -196,8 +197,10 @@ function MeBubble({ sim, text, live }) {
   const ref = useRef(null), dots = useRef(null), size = useRef(null);
   useLayoutEffect(() => {
     const el = ref.current, w = el.offsetWidth, h = el.offsetHeight, prev = size.current;
-    size.current = { w, h };
-    if (prev && (prev.w !== w || prev.h !== h) && ms()) el.animate([{ width: `${prev.w}px`, height: `${prev.h}px` }, { width: `${w}px`, height: `${h}px` }], { duration: ms() * 0.75, easing: LIQUID });
+    size.current = { w, h, text: !!text };
+    // Reshape only when the dots turn into words (or back). Live captions that grow word by word
+    // just grow, so their text is never clipped mid-animation.
+    if (prev && prev.text !== !!text && (prev.w !== w || prev.h !== h) && ms()) el.animate([{ width: `${prev.w}px`, height: `${prev.h}px` }, { width: `${w}px`, height: `${h}px` }], { duration: ms() * 0.75, easing: LIQUID });
   }, [text]);
   useEffect(() => {
     if (text || REDUCE.matches) return;
@@ -222,12 +225,14 @@ function MeBubble({ sim, text, live }) {
 function caption(v, now) {
   const lastClaude = [...v.msgs].reverse().find(m => m.who === 'claude');
   const part = m => Math.min(m.spoken[0], m.parts.length - 1);
+  // Long sentences get a smaller caption so they always fit above the controls.
+  const size = m => { const n = words(m.parts[part(m)] || '').length; return n > 30 ? 'xlong' : n > 18 ? 'long' : ''; };
   switch (v.phase) {
     case 'incoming': return { key: 'inc', label: 'Calling now', text: 'Claude would like to talk.' };
     case 'connecting': return { key: 'con', label: 'Connecting', text: 'One moment…', tone: 'dim' };
     case 'talking': {
       const m = v.msgs.find(x => x.live) || lastClaude;
-      return { key: `c${m.id}-${part(m)}`, label: 'Claude', text: <Spoken msg={m} part={part(m)} /> };
+      return { key: `c${m.id}-${part(m)}`, label: 'Claude', text: <Spoken msg={m} part={part(m)} />, size: size(m) };
     }
     case 'hold':
       return { key: 'hold', orb: 'searching', label: `On hold · ${clock(now - v.holdStart)}`, text: `${v.holdLabel}.`, tone: 'hold' };
@@ -235,7 +240,7 @@ function caption(v, now) {
       return { key: 'end', label: callTime(v, now), text: 'Call ended.', tone: 'dim' };
     default: // listening (and the frozen caption under the thread)
       return lastClaude
-        ? { key: `c${lastClaude.id}-${part(lastClaude)}`, label: 'Claude', text: <Spoken msg={lastClaude} part={part(lastClaude)} />, tone: 'rest' }
+        ? { key: `c${lastClaude.id}-${part(lastClaude)}`, label: 'Claude', text: <Spoken msg={lastClaude} part={part(lastClaude)} />, tone: 'rest', size: size(lastClaude) }
         : { key: 'turn', label: 'Your turn', text: 'Go ahead, Claude is listening.', tone: 'dim' };
   }
 }

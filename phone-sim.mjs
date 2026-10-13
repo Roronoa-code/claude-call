@@ -45,6 +45,24 @@ await page.addInitScript(() => {
     set: f => { engine = opts => f({ ...opts, on: new Proxy(opts.on, { get: (o, k) => x => { window.__ev.push({ k, x: x === undefined ? null : JSON.parse(JSON.stringify(x)), t: performance.now() }); return o[k]?.(x); } }) }); },
   });
 });
+// CALLME_SHOTS=<folder>: also screenshot each state of the call screen, just after it first shows (phone-sized).
+if (process.env.CALLME_SHOTS) {
+  await page.setViewportSize({ width: 412, height: 892 });
+  const seen = new Set();
+  (async () => {
+    while (!page.isClosed()) {
+      const k = await page.evaluate(() => {
+        const v = window.__call?.view;
+        if (!v) return null;
+        const at = v.msgs.at(-1)?.spoken?.[1] ?? 0;
+        return (v.phase === 'thinking' ? 'thinking-' + v.sub : v.phase === 'talking' && at > 2 ? 'talking' : v.phase === 'talking' ? 'talking-start'
+          : v.phase === 'hearing' && v.partial ? 'hearing-partial' : v.phase) + (v.cutIn && v.phase === 'hearing' ? '-cut-in' : '');
+      }).catch(() => null);
+      if (k && !seen.has(k)) { seen.add(k); await new Promise(r => setTimeout(r, 380)); await page.screenshot({ path: `${process.env.CALLME_SHOTS}/${k}.png` }).catch(() => {}); } // once it has settled
+      await new Promise(r => setTimeout(r, 120));
+    }
+  })();
+}
 const reqs = [];
 page.on('request', r => { const u = new URL(r.url()); if (['/speech', '/stream', '/listen'].includes(u.pathname)) reqs.push({ p: u.pathname, t: Date.now(), partial: u.searchParams.has('partial') }); });
 await page.goto(link.href + '&auto=1');
@@ -95,4 +113,5 @@ for (;;) {
 }
 await waitFor(e => e.k === 'ended', 10_000);
 console.log('SIM DONE');
+if (process.env.CALLME_SHOTS) await new Promise(r => setTimeout(r, 1500)); // let the last screens be captured
 await browser.close();

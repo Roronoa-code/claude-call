@@ -349,6 +349,9 @@ input:focus { outline: none; }
 .d-caps:not(.on) .d-label { opacity: 0; transition: opacity 60ms linear; }
 .d-text[data-flown], .d-caps.fresh .swap-item.out { visibility: hidden; }
 .d-text { display: block; transform-origin: 0 0; font-size: 30px; line-height: 1.28; font-weight: 500; letter-spacing: -.012em; text-wrap: pretty; }
+.d-text.long { font-size: 24px; }
+.d-text.xlong { font-size: 20px; line-height: 1.32; }
+.d-caps { overflow: hidden; } /* a caption never reaches the controls */
 .d-text.rest { opacity: .62; }
 .d-text.dim { color: var(--fg2); }
 .d-thread { position: absolute; inset: 0; padding: 72px 16px 0; display: flex; flex-direction: column; gap: 12px; pointer-events: none; }

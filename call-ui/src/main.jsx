@@ -1,6 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import CallD from './callD.jsx';
-import { CallEngine } from './engine.js';
+import { CallView } from './call.js';
 import { MascotKind, Personality } from './mascot.jsx';
 import './call.css';
 
@@ -16,12 +16,12 @@ import './call.css';
   document.documentElement.style.setProperty('--spring-liquid', `linear(${pts.join(', ')})`);
 })();
 
-const engine = new CallEngine();
-window.__call = engine; // for checks
+const call = new CallView();
+window.__call = call; // for checks
 createRoot(document.getElementById('root')).render(
   <MascotKind.Provider value="clawd">
     <Personality.Provider value="mixed">
-      <CallD sim={engine} />
+      <CallD sim={call} />
     </Personality.Provider>
   </MascotKind.Provider>,
 );

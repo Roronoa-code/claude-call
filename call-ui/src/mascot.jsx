@@ -78,7 +78,7 @@ function targets(v, t, te, lvC, lvM, pers) {
     }
     case 'ended':
       p.eyeOpen = 0.2;
-      p.fade = te < 1.0 ? 1 : Math.max(0, 1 - (te - 1.0) / 0.5);
+      p.fade = te < 0.75 ? 1 : Math.max(0, 1 - (te - 0.75) / 0.4); // gone before the app closes the screen at 1.2 s
       break;
   }
   if (blink && p.eyeOpen > 0.5 && v.phase !== 'ended') p.eyeOpen = 0.1;

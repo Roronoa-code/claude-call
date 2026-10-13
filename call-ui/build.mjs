@@ -1,6 +1,6 @@
-// Builds the call screen into one self-contained page (dist/page.html) that server.mjs can serve as is.
+// Builds the call screen into ../page.html, the page server.mjs serves (it loads call-engine.js beside it).
 import * as esbuild from 'esbuild';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const root = import.meta.dirname;
@@ -12,6 +12,6 @@ const pick = ext => r.outputFiles.find(f => f.path.endsWith(ext))?.text ?? '';
 // Keep "</script>" inside the bundle from closing the tag early.
 const js = pick('.js').replaceAll('</script', '<\/script');
 const html = readFileSync(join(root, 'src/page.html'), 'utf8').replace('/*CSS*/', () => pick('.css')).replace('/*JS*/', () => js);
-mkdirSync(join(root, 'dist'), { recursive: true });
-writeFileSync(join(root, 'dist/page.html'), html);
-console.log(`dist/page.html ${(html.length / 1024).toFixed(0)} KB`);
+writeFileSync(join(root, '..', 'page.html'), `<!-- Built from call-ui/ (cd call-ui && npm run build). Edit the source there, not this file. -->
+${html}`);
+console.log(`page.html ${(html.length / 1024).toFixed(0)} KB`);

@@ -25,7 +25,7 @@ Download `cloudflared-windows-amd64.exe` from the cloudflare/cloudflared GitHub 
   Never commit the key.
 
 ## 4. Phone app UI work
-- The call screen is `page.html`, served by the call server; there is no app rebuild for it.
+- The call screen is `page.html` (built from `call-ui/`), served by the call server; there is no app rebuild for it.
 - The phone app itself (home screen, widget, ringing) lives in `android/`.
 - Build with `cd android; .\gradlew.bat assembleRelease`, then `.\gradlew.bat --stop`. The build is signed with that machine's debug key.
 - **Signing matters:** an APK built on the laptop has a different debug key from the PC's. To install over the existing app on the phone, either copy the PC's `%USERPROFILE%\.android\debug.keystore` to the laptop first (recommended; the app keeps its data), or uninstall the app first (it loses its settings).
