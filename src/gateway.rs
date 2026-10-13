@@ -181,11 +181,7 @@ async fn proxy(req: Request) -> axum::response::Response {
     let token = req.uri().query().unwrap_or("").split('&').find_map(|kv| kv.strip_prefix("t=")).map(String::from);
     let port = {
         let b = BACKENDS.lock().unwrap();
-        // Calls carry their token; untokened requests are the call page's public script, which any server can give.
-        match &token {
-            Some(t) => b.get(t).map(|v| v.port),
-            None => b.values().max_by_key(|v| v.seen).map(|v| v.port),
-        }
+        token.and_then(|t| b.get(&t).map(|v| v.port))
     };
     let Some(port) = port else { return StatusCode::NOT_FOUND.into_response() };
     let (parts, body) = req.into_parts();

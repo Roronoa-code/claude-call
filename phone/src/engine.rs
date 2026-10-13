@@ -108,7 +108,6 @@ pub struct Engine {
     t0: Instant,
     line_stop: Notify,
     speech_order: tokio::sync::Mutex<()>,
-    pub rt: tokio::runtime::Handle,
 }
 
 impl Engine {
@@ -151,7 +150,6 @@ impl Engine {
             t0: Instant::now(),
             line_stop: Notify::new(),
             speech_order: tokio::sync::Mutex::new(()),
-            rt: RT.handle().clone(),
         })
     }
 
@@ -166,7 +164,7 @@ impl Engine {
     }
     fn post(&self, url: String, body: Vec<u8>) {
         let http = self.http.clone();
-        self.rt.spawn(async move {
+        RT.spawn(async move {
             let _ = http.post(url).body(body).send().await;
         });
     }
@@ -335,8 +333,8 @@ impl Engine {
             s.mic = mic;
         }
         self.post(self.api("answer"), vec![]);
-        self.rt.spawn(self.clone().run());
-        self.rt.spawn(self.clone().debug_log());
+        RT.spawn(self.clone().run());
+        RT.spawn(self.clone().debug_log());
     }
 
     pub fn done_talking(self: &Arc<Self>) {

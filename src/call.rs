@@ -2,7 +2,7 @@
 //! tunnel).
 use crate::speech::{UTTS, final_transcript, partial, take_audio};
 use crate::voice::{self, Audio};
-use crate::{cfg, debug_on, dir, log, log_line};
+use crate::{cfg, debug_on, log, log_line};
 use axum::{
     body::{Body, to_bytes},
     extract::Request,
@@ -294,20 +294,14 @@ async fn handle(req: Request) -> Result<Response, String> {
         .unwrap_or_default();
     let q = |k: &str| query.get(k).map(String::as_str);
     let num = |k: &str| q(k).and_then(|v| v.parse::<u64>().ok());
-    if q("t") != Some(cfg().token.as_str()) && path != "/call-engine.js" {
-        return Ok(StatusCode::NOT_FOUND.into_response()); // the engine is public code
+    if q("t") != Some(cfg().token.as_str()) {
+        return Ok(StatusCode::NOT_FOUND.into_response());
     }
     let post = req.method() == Method::POST;
     let body = |limit: usize| async move { to_bytes(req.into_body(), limit).await.map_err(|e| e.to_string()) };
     let no_content = || StatusCode::NO_CONTENT.into_response();
 
     Ok(match path.as_str() {
-        "/" | "/call-engine.js" => {
-            // Read on each request so page changes apply to a running server.
-            let (file, kind) = if path == "/" { ("page.html", "text/html; charset=utf-8") } else { ("call-engine.js", "text/javascript; charset=utf-8") };
-            let data = std::fs::read(dir().join(file)).map_err(|e| e.to_string())?;
-            ([(header::CONTENT_TYPE, kind), (header::CACHE_CONTROL, "no-store")], data).into_response()
-        }
         "/state" => {
             let want = q("v").and_then(|v| v.parse::<i64>().ok()).unwrap_or(-1);
             let _watching = Watching::new();

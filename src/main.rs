@@ -9,7 +9,7 @@ mod voice;
 
 use std::{io::Write, path::PathBuf, sync::OnceLock};
 
-/// The project folder: page.html, config.json, status.json, voice/, bin/cloudflared.exe.
+/// The project folder: config.json, status.json, timing.log, voice/, bin/cloudflared.exe.
 pub fn dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }

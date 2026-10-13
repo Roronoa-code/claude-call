@@ -2,24 +2,24 @@
 
 Lets Claude Code phone you when it needs you, for a real two-way voice conversation. Free: no phone number, accounts or API keys.
 
-**How a call works:** the `callme` MCP server (Rust, `src/`, one binary `bin/callme.exe`) is reached through one free Cloudflare quick tunnel shared by every session (`callme.exe gateway`: started hidden by the first server, routes by call token, log in `gateway.log`), and posts a "Claude is calling" alert to a private ntfy topic. The **Claude Call** Android app keeps a connection open to that topic and rings with a full-screen call screen. The call page (`page.html`, built from `call-ui/` with `cd call-ui && npm install && npm run build`; its call logic is `call-engine.js`) plays Claude's voice and records you. Your speech is transcribed on this PC by Whisper on the GPU, which uses what Claude just said as context so names are heard correctly.
+**How a call works:** the `callme` MCP server (Rust, `src/`, one binary `bin/callme.exe`) is reached through one free Cloudflare quick tunnel shared by every session (`callme.exe gateway`: started hidden by the first server, routes by call token, log in `gateway.log`), and posts a "Claude is calling" alert to a private ntfy topic. The **Claude Call** Android app keeps a connection open to that topic and rings with a full-screen call screen. The call screen and call audio are Rust too (`phone/`: drawn with Slint, sound through AAudio on the phone-call path). Your speech is transcribed on this PC by Whisper on the GPU, which uses what Claude just said as context so names are heard correctly.
 
-**Voice:** your own ElevenLabs clips (`voice/*.mp3`) are cloned on the GPU by Qwen3-TTS Base through `faster-qwen3-tts` (`voice/voice_server.py`, venv in `voice/.venv`; the model is read from ThePipeline). The same GPU server (`voice/voice_server.py`) also runs the hearing, with Whisper large-v3-turbo. The clip in use is set in `voice/voice.json`.
+**Voice:** your own ElevenLabs clips (`voice/*.mp3`) are cloned on the GPU by Qwen3-TTS Base through `faster-qwen3-tts` (`voice/voice_server.py`, venv in `voice/.venv`; the model is read from ThePipeline). The same GPU server also runs the hearing, with Whisper large-v3-turbo. The clip in use is set in `voice/voice.json`.
 
 Timing:
 - The server uses about 7.2 GB of VRAM. One copy is shared by all Claude sessions, and it exits after 30 idle minutes.
 - A call first loads the server (about 40–70 s if it isn't already running) and prepares the first line. Only then does the phone ring, so there is no wait after answering.
-- After that, Claude's voice is streamed while it is made: the first sound reaches the phone about 0.2 s after a line is ready (the app plays it natively on the earpiece). Captions appear in step with the voice.
+- After that, Claude's voice is streamed while it is made, with a 250 ms cushion on the phone so a late piece is never a gap. Captions follow the real playback position.
 - While you talk, your words show live (Whisper every ~0.9 s). Your turn ends 0.7 s after you stop if what you said reads as finished, otherwise after 1.8 s (or press Done talking).
-- Interrupt detection uses loudness and Whisper word confirmation to reject Claude's echo and "mm-hmm". Quiet human interruption on the earpiece still needs verification.
+- Talking over Claude: loudness against the measured echo, confirmed by Whisper words; transcripts that only repeat Claude's own line are dropped.
 - Debug: `"debug": true` in `config.json` (or `CALLME_DEBUG=1`) logs the phone's mic levels, echo level and interrupts to `timing.log`.
 
-Fallbacks: ElevenLabs for the voice (`ELEVENLABS_API_KEY` + `ELEVENLABS_VOICE_ID`), then the phone's own voice. Without the GPU server there is no hearing: type replies instead.
+Fallbacks: ElevenLabs for the voice (`ELEVENLABS_API_KEY` + `ELEVENLABS_VOICE_ID`), then captions only. Without the GPU server there is no hearing: type replies instead.
 
-**Tools:** `call_user`, `continue_call`, `end_call`. Build: `cargo build --release` (needs the Visual C++ Build Tools), then copy `target/release/callme.exe` to `bin/`. Registered for all projects: `claude mcp add --scope user callme -- B:\Projects\CallMein\callme.exe`.
+**Tools:** `call_user`, `continue_call`, `hold_call`, `end_call`, `get_contact_mode`, `set_contact_mode`.
 
-**Test:** `npm install` once, then `node test-call.mjs` runs a whole call against the real call page in headless Edge with a fake mic (`phone-sim.mjs`). Private test topic, no tunnel, own status file: it never rings the real phone.
+**Build:**
+- PC: `cargo build --release -p callme` (needs the Visual C++ Build Tools), then copy `target\release\callme.exe` to `bin\`. Registered for all projects with `claude mcp add --scope user callme -- B:\Projects\CallMe\bin\callme.exe`.
+- Phone: `cd android; .\gradlew.bat assembleRelease` builds the Rust library first (needs `rustup target add aarch64-linux-android` and `cargo install cargo-ndk`), then the app. Install with `adb install -r app\build\outputs\apk\release\app-release.apk`.
 
-**Known issues:** the phone runs hot and feels laggy during calls (call screen drawing cost). Quiet interruptions on the earpiece are unverified.
-
-**Android app:** `android/` (Kotlin, no libraries). Build with `gradlew assembleRelease`, then install with `adb install -r ClaudeCall.apk`.
+**Check:** `npm install` once, `.\gradlew.bat installReleaseAndroidTest` once, then `node phone-check.mjs <adb serial>`: a whole call on the real phone without ringing it (private test topic, typed replies), with screenshots, a screen recording and CPU readings in `D:\Outputs\CallMe\`. It restarts the app's call listener at the end.

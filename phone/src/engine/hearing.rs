@@ -103,7 +103,7 @@ impl Engine {
         let covers = u.raw;
         let url = format!("{}&u={}&off={off}&partial=1", self.api("listen"), u.id);
         let me = self.clone();
-        self.rt.spawn(async move {
+        RT.spawn(async move {
             let t0 = me.now();
             let r: Option<Value> = async { me.http.post(url).body(body).send().await.ok()?.json().await.ok() }.await;
             let mut s = me.lock();
@@ -326,7 +326,7 @@ impl Engine {
         );
         let me = self.clone();
         let uid = u.id;
-        self.rt.spawn(async move {
+        RT.spawn(async move {
             let r: Option<Value> = {
                 let _in_order = me.speech_order.lock().await; // successive turns reach Claude in order
                 if me.lock().ended {

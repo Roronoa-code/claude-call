@@ -1,6 +1,6 @@
 // Real-phone check of the call screen, without ringing: places a call on a private test topic (nobody listens to it),
 // opens it on the phone through the app's CallCheck instrumentation, answers with typed replies, and saves
-// screenshots, a screen recording and drawing/CPU stats.
+// screenshots, a screen recording and CPU readings.
 //   node phone-check.mjs [device]          (device: adb serial; default the first one)
 // Needs: the app and its check APK installed (gradlew installRelease installReleaseAndroidTest).
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -42,13 +42,6 @@ const reply = async (text, after) => {
   await fetch(`${base}/reply?${query.split('&')[0]}`, { method: 'POST', body: text });
   say('typed reply:', text);
 };
-const stats = label => {
-  const g = String(adb('shell', 'dumpsys', 'gfxinfo', 'fyi.mani.callme'));
-  const pick = k => (g.match(new RegExp(`${k}: ([^\\n]+)`)) || [])[1];
-  const line = `${label}: frames ${pick('Total frames rendered')}, janky ${pick('Janky frames')}, p90 ${pick('90th percentile')}, p99 ${pick('99th percentile')}`;
-  say(line);
-  return line;
-};
 const cpu = () => {
   const pid = String(adb('shell', 'pidof', 'fyi.mani.callme')).trim();
   const top = String(adb('shell', 'top', '-b', '-n', '1', '-p', pid)).split('\n').find(l => l.includes(pid)) || '';
@@ -60,7 +53,6 @@ const first = call('call_user', 'Hi, it is Claude. This is a quick test of the n
 while (!link) await sleep(200);
 await sleep(9000);
 shot('1-talking');
-adb('shell', 'dumpsys', 'gfxinfo', 'fyi.mani.callme', 'reset');
 const replied = reply('Looks good so far.', 3000);
 say('REPLY 1', await first);
 await replied;
@@ -69,11 +61,10 @@ shot('2-thinking');
 
 // A long line: captions word by word, the glow and Clawd's dance; recorded and measured.
 const rec = spawn('adb', adbArgs(['shell', 'screenrecord', '--time-limit', '20', '/sdcard/callme-check.mp4']), { stdio: 'ignore' });
-adb('shell', 'dumpsys', 'gfxinfo', 'fyi.mani.callme', 'reset');
 const long = call('continue_call', 'Great. So the plan is to move the settings into a side panel, change the colours to match the new theme, and rename a few of the buttons so they read more clearly. Then I will run the tests and push it.');
 const cpus = [];
 for (let i = 0; i < 6; i++) { await sleep(2500); cpus.push(cpu()); if (i === 2) shot('3-talking-long'); }
-report.push(stats('talking'), `cpu while talking: ${cpus.join(', ')}%`);
+report.push(`cpu while talking: ${cpus.join(', ')}%`);
 const r2 = reply('Sounds right.', 0);
 say('REPLY 2', await long);
 await r2;
@@ -83,10 +74,9 @@ adb('pull', '/sdcard/callme-check.mp4', path.join(out, 'talking.mp4'));
 say(await call('hold_call', 'One sec, let me check with the main Claude.'));
 await sleep(5000);
 shot('4-hold');
-adb('shell', 'dumpsys', 'gfxinfo', 'fyi.mani.callme', 'reset');
 const idle = [];
 for (let i = 0; i < 4; i++) { await sleep(2000); idle.push(cpu()); }
-report.push(stats('on hold'), `cpu on hold: ${idle.join(', ')}%`);
+report.push(`cpu on hold: ${idle.join(', ')}%`);
 const r3 = reply('Also make the button blue.', 0);
 say('REPLY 3', await call('continue_call', 'Okay, I am back. The main Claude says yes.'));
 await r3;

@@ -117,14 +117,14 @@ pub struct Audio {
     pub kind: &'static str,
 }
 
-/// ElevenLabs, for machines without a GPU (e.g. the laptop): the user's own ElevenLabs voice.
+/// ElevenLabs, for machines without a GPU (e.g. the laptop): the user's own ElevenLabs voice, as 24 kHz WAV.
 /// Needs ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID.
 async fn eleven(text: &str) -> Option<Audio> {
     let key = std::env::var("ELEVENLABS_API_KEY").ok()?;
     let voice = std::env::var("ELEVENLABS_VOICE_ID").ok()?;
     let model = std::env::var("ELEVENLABS_MODEL").unwrap_or_else(|_| "eleven_flash_v2_5".into());
     let r = HTTP
-        .post(format!("https://api.elevenlabs.io/v1/text-to-speech/{voice}?output_format=mp3_44100_128"))
+        .post(format!("https://api.elevenlabs.io/v1/text-to-speech/{voice}?output_format=pcm_24000"))
         .header("xi-api-key", key)
         .header("content-type", "application/json")
         .body(json!({ "text": text, "model_id": model }).to_string())
@@ -135,7 +135,7 @@ async fn eleven(text: &str) -> Option<Audio> {
         log(format!("elevenlabs {} {}", r.status(), r.text().await.unwrap_or_default().chars().take(200).collect::<String>()));
         return None;
     }
-    Some(Audio { data: r.bytes().await.ok()?.to_vec(), kind: "audio/mpeg" })
+    Some(Audio { data: wav(&r.bytes().await.ok()?, 24_000), kind: "audio/wav" })
 }
 
 /// A whole-file line: the cloned voice if the GPU server is up, else ElevenLabs; None = the phone's own voice.
@@ -238,5 +238,32 @@ pub async fn set_contact_mode(mode: &str) {
             .body(mode.to_string())
             .send()
             .await;
+    }
+}
+
+/// 16-bit mono PCM as a WAV file (what the phone plays).
+fn wav(pcm: &[u8], rate: u32) -> Vec<u8> {
+    let n = pcm.len() as u32;
+    let mut w = Vec::with_capacity(44 + pcm.len());
+    for part in [&b"RIFF"[..], &(36 + n).to_le_bytes(), b"WAVEfmt ", &16u32.to_le_bytes(), &1u16.to_le_bytes(), &1u16.to_le_bytes()] {
+        w.extend_from_slice(part);
+    }
+    for part in [rate.to_le_bytes(), (rate * 2).to_le_bytes()] {
+        w.extend_from_slice(&part);
+    }
+    for part in [&2u16.to_le_bytes()[..], &16u16.to_le_bytes(), b"data", &n.to_le_bytes(), pcm] {
+        w.extend_from_slice(part);
+    }
+    w
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn wav_header() {
+        let w = super::wav(&[1, 0, 2, 0], 24_000);
+        assert_eq!((&w[0..4], &w[8..16], w.len()), (&b"RIFF"[..], &b"WAVEfmt "[..], 48));
+        assert_eq!(u32::from_le_bytes(w[24..28].try_into().unwrap()), 24_000);
+        assert_eq!(&w[36..40], b"data");
     }
 }

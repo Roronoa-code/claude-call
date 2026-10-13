@@ -25,8 +25,8 @@ Download `cloudflared-windows-amd64.exe` from the cloudflare/cloudflared GitHub 
   Never commit the key.
 
 ## 4. Phone app UI work
-- The call screen is `page.html` (built from `call-ui/`), served by the call server; there is no app rebuild for it.
-- The phone app itself (home screen, widget, ringing) lives in `android/`.
+- The call screen is Rust (`phone/`: `ui/*.slint` for the layout, `src/` for the call logic). The rest of the app (home screen, widget, ringing) lives in `android/`.
+- Tools: `rustup target add aarch64-linux-android`, `cargo install cargo-ndk`, and the Android NDK (SDK Manager). The app build compiles the Rust library first.
 - Build with `cd android; .\gradlew.bat assembleRelease`, then `.\gradlew.bat --stop`. The build is signed with that machine's debug key.
 - **Signing matters:** an APK built on the laptop has a different debug key from the PC's. To install over the existing app on the phone, either copy the PC's `%USERPROFILE%\.android\debug.keystore` to the laptop first (recommended; the app keeps its data), or uninstall the app first (it loses its settings).
 - Install over wifi adb: on the phone, Settings → Developer options → Wireless debugging; `adb connect <phone ip>:<port>`; `adb install -r ClaudeCall.apk`.
@@ -37,5 +37,5 @@ Download `cloudflared-windows-amd64.exe` from the cloudflare/cloudflared GitHub 
 - The GPU voice server (`voice/voice_server.py`); it needs an NVIDIA GPU.
 
 ## 6. Check
-- `node test-call.mjs` (private test channel, never rings the phone) with `node phone-sim.mjs <link>` as the phone. Expect PASS.
+- `node phone-check.mjs <adb serial>`: a whole call on the phone without ringing it (see README). It needs the PC's GPU voice, so run it on the PC.
 - Keep work in sync with the PC through git: pull before you start, and commit and push when done.
