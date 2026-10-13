@@ -96,5 +96,5 @@ class MainActivity : NativeActivity() {
         getSystemService(AppWidgetManager::class.java).requestPinAppWidget(ComponentName(this, cls), null, null)
     }
 
-    fun testRing() = Ringer.ring(applicationContext, CallActivity.TEST_LINK, "Test ring")
+    fun testRing() = Native.ring(applicationContext, CallActivity.TEST_LINK, "Test ring")
 }

@@ -6,7 +6,7 @@ import android.content.Intent
 
 class DeclineReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        Ringer.stop(context)
+        Native.stopRinging(context, true)
         intent.getStringExtra(EXTRA_LINK)?.let {
             if (!CallActivity.finishCall(it)) {
                 ListenService.callEnded(context, it)

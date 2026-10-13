@@ -8,6 +8,8 @@ mod audio;
 mod engine;
 #[cfg(target_os = "android")]
 mod net;
+#[cfg(target_os = "android")]
+mod ring;
 mod antics;
 mod mascot;
 mod view;

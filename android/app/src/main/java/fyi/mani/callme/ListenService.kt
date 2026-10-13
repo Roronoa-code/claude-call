@@ -74,8 +74,7 @@ class ListenService : Service() {
 
         if (!running) {
             running = true
-            Native.app = applicationContext
-            thread(name = "ntfy") { Native.listen(Prefs.topic(this)) } // in Rust (phone/src/net.rs)
+            thread(name = "ntfy") { Native.listen(applicationContext, Prefs.topic(this)) } // in Rust (phone/src/net.rs)
         }
         return START_STICKY
     }

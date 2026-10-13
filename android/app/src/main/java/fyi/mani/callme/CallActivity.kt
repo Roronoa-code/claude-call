@@ -27,7 +27,7 @@ class CallActivity : NativeActivity() {
             return
         }
         // Opened by "Answer": stop now. Opened by the ringing itself (locked phone): keep ringing until touched.
-        if (intent.getBooleanExtra(EXTRA_ANSWER, false)) Ringer.stop(this)
+        if (intent.getBooleanExtra(EXTRA_ANSWER, false)) Native.stopRinging(this, true)
         if (Build.VERSION.SDK_INT >= 33) {
             onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) { leaveCall() }
         }
@@ -36,13 +36,13 @@ class CallActivity : NativeActivity() {
     // "Return to call" while it is open: just come back to it.
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        if (intent.getBooleanExtra(EXTRA_ANSWER, false)) Ringer.stop(this)
+        if (intent.getBooleanExtra(EXTRA_ANSWER, false)) Native.stopRinging(this, true)
     }
 
     /** Called from Rust once the call is answered. */
     @Suppress("unused")
     fun callBegan() = runOnUiThread {
-        Ringer.stop(this)
+        Native.stopRinging(this, true)
         active = true
         link?.let { ListenService.callStarted(this, it) }
     }
@@ -50,7 +50,7 @@ class CallActivity : NativeActivity() {
     // Any touch on the call screen silences the ringing.
     override fun onUserInteraction() {
         super.onUserInteraction()
-        Ringer.stop(this)
+        Native.stopRinging(this, true)
     }
 
     // Back and Home keep a live call going (the notification brings it back); before answering, Back closes it.
@@ -63,7 +63,7 @@ class CallActivity : NativeActivity() {
 
     // Finishing the call screen hangs up.
     override fun onDestroy() {
-        Ringer.stop(this)
+        Native.stopRinging(this, true)
         link?.takeIf { it != TEST_LINK }?.let {
             DeclineReceiver.hangUp(it)
             ListenService.callEnded(this, it)

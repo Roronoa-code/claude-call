@@ -2,7 +2,7 @@
 //! Claude's calls and contact-mode changes on the private ntfy topic, hanging up, and the contact mode itself.
 use jni::{
     JNIEnv,
-    objects::{JClass, JString, JValue},
+    objects::{JClass, JObject, JString, JValue},
     sys::jstring,
 };
 use serde_json::Value;
@@ -28,10 +28,10 @@ fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64
 }
 
-/// Listens until `stop`: rings for fresh calls (`Native.onRing(link, reason)`) and passes contact-mode changes on
-/// (`Native.onMode(mode, atMs)`). Reconnects with backoff; after a drop it catches up on what it missed.
+/// Listens until `stop`: rings for fresh calls (ring.rs) and passes contact-mode changes on (`Native.onMode`).
+/// Reconnects with backoff; after a drop it catches up on what it missed.
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_fyi_mani_callme_Native_listen(mut env: JNIEnv, class: JClass, topic: JString) {
+pub extern "system" fn Java_fyi_mani_callme_Native_listen(mut env: JNIEnv, class: JClass, ctx: JObject, topic: JString) {
     let topic = string(&mut env, &topic);
     STOP.store(false, Ordering::Relaxed);
     let (tx, rx) = std::sync::mpsc::channel::<Value>();
@@ -82,15 +82,13 @@ pub extern "system" fn Java_fyi_mani_callme_Native_listen(mut env: JNIEnv, class
         let link = msg["click"].as_str().unwrap_or("").to_string();
         let res = match msg["title"].as_str() {
             Some("Contact mode") if MODES.contains(&text.as_str()) => env.new_string(&text).and_then(|m| {
-                env.call_static_method(&class, "onMode", "(Ljava/lang/String;J)V", &[JValue::Object(&m), JValue::Long(at as i64)])
+                let sig = "(Landroid/content/Context;Ljava/lang/String;J)V";
+                env.call_static_method(&class, "onMode", sig, &[JValue::Object(&ctx), JValue::Object(&m), JValue::Long(at as i64)]).map(drop)
             }),
             // Claude keeps a call open ~75 s; anything older has already given up.
-            Some("Claude is calling") if now_ms().saturating_sub(at) < 75_000 && link.starts_with("https://") => env
-                .new_string(&link)
-                .and_then(|l| Ok((l, env.new_string(&text)?)))
-                .and_then(|(l, t)| {
-                    env.call_static_method(&class, "onRing", "(Ljava/lang/String;Ljava/lang/String;)V", &[JValue::Object(&l), JValue::Object(&t)])
-                }),
+            Some("Claude is calling") if now_ms().saturating_sub(at) < 75_000 && link.starts_with("https://") => {
+                crate::ring::ring(&mut env, &ctx, &link, &text)
+            }
             _ => continue,
         };
         if res.is_err() && env.exception_check().unwrap_or(false) {
@@ -144,5 +142,22 @@ pub extern "system" fn Java_fyi_mani_callme_Native_latestMode(mut env: JNIEnv, _
     match latest.and_then(|s| env.new_string(s).ok()) {
         Some(s) => s.into_raw(),
         None => std::ptr::null_mut(),
+    }
+}
+
+/// Rings for a call (also the home screen's test ring).
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_fyi_mani_callme_Native_ring(mut env: JNIEnv, _class: JClass, ctx: JObject, link: JString, reason: JString) {
+    let (link, reason) = (string(&mut env, &link), string(&mut env, &reason));
+    if crate::ring::ring(&mut env, &ctx, &link, &reason).is_err() && env.exception_check().unwrap_or(false) {
+        let _ = env.exception_clear();
+    }
+}
+
+/// Stops ringing (answered, declined, or the call screen was touched).
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_fyi_mani_callme_Native_stopRinging(mut env: JNIEnv, _class: JClass, ctx: JObject, handled: jni::sys::jboolean) {
+    if crate::ring::stop(&mut env, &ctx, handled != 0).is_err() && env.exception_check().unwrap_or(false) {
+        let _ = env.exception_clear();
     }
 }
