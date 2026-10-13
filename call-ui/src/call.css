@@ -164,3 +164,11 @@ input:focus { outline: none; }
 .d-transcript { top: calc(var(--sat) + 8px); height: auto; bottom: calc(var(--sab) + 162px); }
 /* The phone fades the screen out itself when the call ends. */
 .screen.d.closed > * { opacity: 0; transition: opacity 500ms var(--close-ease); }
+
+/* Labels and status stay crisp above the voice glow (its layers are z-index 1-4), with a soft dark halo
+   so they stay readable even where the glow is brightest. */
+.a-label, .a-biglabel, .d-status { position: relative; z-index: 5; color: #e8e9ec; text-shadow: 0 0 2px rgba(0, 0, 0, .9), 0 0 8px rgba(0, 0, 0, .9); }
+/* Over the brightest part of the glow a halo is not enough: a backing in the page colour, invisible on
+   the plain background, keeps the labels readable. */
+.a-label, .a-biglabel .swap-item { padding: 0 7px; border-radius: 9px; background: rgba(17, 18, 20, .6); }
+.d-status { position: absolute; }

@@ -24385,7 +24385,8 @@
     if (state.sleepy) {
       for (let i = 0; i < 2; i++) {
         const k = (t + i * 1.3) % 2.6 / 2.6;
-        const x = Math.round(31 + k * 4), y = Math.round(-1 - k * 3), o = (k < 0.12 ? k / 0.12 : 1) * (1 - Math.max(0, (k - 0.4) / 0.2));
+        if (k >= 0.46) continue;
+        const x = Math.round(31 + k * 8), y = Math.round(-1 - k * 6), o = (k < 0.06 ? k / 0.06 : 1) * (1 - Math.max(0, (k - 0.32) / 0.14));
         if (o <= 0) continue;
         const Z = ["#####", "...#.", "..#..", ".#...", "#####"];
         Z.forEach((row, j) => [...row].forEach((ch, i2) => ch === "#" && out.push({ x: x + i2, y: y + j * 0.5, w: 1, h: 0.5, c: "#F2C7AE", o })));
@@ -24408,8 +24409,9 @@
     }
     if (state.sleepy) {
       for (let i = 0; i < 2; i++) {
-        const k = (t + i * 1.3) % 2.6 / 2.6, x = 34 + k * 12, y = -26 - k * 14, z = 6 + k * 2;
-        const o = (k < 0.12 ? k / 0.12 : 1) * (1 - Math.max(0, (k - 0.4) / 0.2));
+        const k = (t + i * 1.3) % 2.6 / 2.6, x = 34 + k * 24, y = -26 - k * 28, z = 6 + k * 4;
+        if (k >= 0.46) continue;
+        const o = (k < 0.06 ? k / 0.06 : 1) * (1 - Math.max(0, (k - 0.32) / 0.14));
         if (o <= 0) continue;
         s += `<path d="M${x} ${y}h${z}l-${z} ${z}h${z}" fill="none" stroke="#F2C7AE" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" opacity="${o.toFixed(2)}"/>`;
       }
@@ -24512,7 +24514,7 @@
       }
       case "ended":
         p.eyeOpen = 0.2;
-        p.fade = te < 1 ? 1 : Math.max(0, 1 - (te - 1) / 0.5);
+        p.fade = te < 0.75 ? 1 : Math.max(0, 1 - (te - 0.75) / 0.4);
         break;
     }
     if (blink && p.eyeOpen > 0.5 && v.phase !== "ended") p.eyeOpen = 0.1;
@@ -28090,7 +28092,7 @@ ${Rt.split("{id}").join(he)}` : ia }),
     const lastMe = [...v.msgs].reverse().find((m) => m.who === "me");
     const pending = v.phase === "thinking" && v.sub === "thinking";
     const held = (0, import_react8.useRef)({ meText: null, live: false, pending: false, claude: null });
-    if (thread || !held.current.claude) held.current = { meText: pending ? lastMe?.text : null, live: v.phase === "hearing", pending, claude: lastClaude };
+    if (thread || !held.current.claude) held.current = { meText: pending ? lastMe?.text : v.partial || null, live: v.phase === "hearing", pending, claude: lastClaude };
     const bubbleMsg = thread ? lastClaude : held.current.claude;
     const { meText, live: live2 } = held.current;
     const showPending = held.current.pending;
@@ -28112,7 +28114,8 @@ ${Rt.split("{id}").join(he)}` : ia }),
     const first = (0, import_react8.useRef)(true);
     (0, import_react8.useLayoutEffect)(() => {
       const d = ms(), fly = (el, kf) => el && d && el.animate(kf, { duration: d, easing: LIQUID, fill: "both" });
-      if (thread) {
+      if (thread && !bubble.current) setPerch(null);
+      else if (thread) {
         const b = offsetIn2(bubble.current, stage.current);
         setPerch({ x: b.x + 14, y: b.y - 12 });
         const src2 = rects.current.cap, srcEl = capLayer.current.querySelector(".swap-item.in .d-text");
@@ -28158,7 +28161,7 @@ ${Rt.split("{id}").join(he)}` : ia }),
             cap.orb && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(ThinkingOrb, { state: cap.orb, size: 20, theme: "dark", "aria-hidden": "true" }),
             cap.label
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: `d-text ${cap.tone || ""}`, children: cap.text })
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: `d-text ${cap.tone || ""} ${cap.size || ""}`, children: cap.text })
         ] }) }),
         /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: `d-thread ${thread ? "on" : ""}`, "aria-hidden": !thread, children: [
           bubbleMsg && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { ref: bubble, className: "d-bubble claude flier", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Spoken, { msg: bubbleMsg }) }, bubbleMsg.id),
@@ -28225,7 +28228,7 @@ ${Rt.split("{id}").join(he)}` : ia }),
             "button",
             {
               className: `a-big ${incoming ? "answer" : "done"}`,
-              disabled: !incoming && v.phase !== "hearing",
+              disabled: !incoming && !(v.canFinish ?? v.phase === "hearing"),
               onClick: () => incoming ? sim.answer() : sim.doneTalking(),
               "aria-label": incoming ? "Answer call" : "Done talking",
               children: [
@@ -28262,8 +28265,8 @@ ${Rt.split("{id}").join(he)}` : ia }),
     const ref = (0, import_react8.useRef)(null), dots = (0, import_react8.useRef)(null), size = (0, import_react8.useRef)(null);
     (0, import_react8.useLayoutEffect)(() => {
       const el = ref.current, w = el.offsetWidth, h = el.offsetHeight, prev = size.current;
-      size.current = { w, h };
-      if (prev && (prev.w !== w || prev.h !== h) && ms()) el.animate([{ width: `${prev.w}px`, height: `${prev.h}px` }, { width: `${w}px`, height: `${h}px` }], { duration: ms() * 0.75, easing: LIQUID });
+      size.current = { w, h, text: !!text };
+      if (prev && prev.text !== !!text && (prev.w !== w || prev.h !== h) && ms()) el.animate([{ width: `${prev.w}px`, height: `${prev.h}px` }, { width: `${w}px`, height: `${h}px` }], { duration: ms() * 0.75, easing: LIQUID });
     }, [text]);
     (0, import_react8.useEffect)(() => {
       if (text || REDUCE3.matches) return;
@@ -28287,6 +28290,10 @@ ${Rt.split("{id}").join(he)}` : ia }),
   function caption2(v, now) {
     const lastClaude = [...v.msgs].reverse().find((m) => m.who === "claude");
     const part = (m) => Math.min(m.spoken[0], m.parts.length - 1);
+    const size = (m) => {
+      const n = words(m.parts[part(m)] || "").length;
+      return n > 30 ? "xlong" : n > 18 ? "long" : "";
+    };
     switch (v.phase) {
       case "incoming":
         return { key: "inc", label: "Calling now", text: "Claude would like to talk." };
@@ -28294,14 +28301,14 @@ ${Rt.split("{id}").join(he)}` : ia }),
         return { key: "con", label: "Connecting", text: "One moment\u2026", tone: "dim" };
       case "talking": {
         const m = v.msgs.find((x) => x.live) || lastClaude;
-        return { key: `c${m.id}-${part(m)}`, label: "Claude", text: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Spoken, { msg: m, part: part(m) }) };
+        return { key: `c${m.id}-${part(m)}`, label: "Claude", text: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Spoken, { msg: m, part: part(m) }), size: size(m) };
       }
       case "hold":
         return { key: "hold", orb: "searching", label: `On hold \xB7 ${clock(now - v.holdStart)}`, text: `${v.holdLabel}.`, tone: "hold" };
       case "ended":
         return { key: "end", label: callTime(v, now), text: "Call ended.", tone: "dim" };
       default:
-        return lastClaude ? { key: `c${lastClaude.id}-${part(lastClaude)}`, label: "Claude", text: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Spoken, { msg: lastClaude, part: part(lastClaude) }), tone: "rest" } : { key: "turn", label: "Your turn", text: "Go ahead, Claude is listening.", tone: "dim" };
+        return lastClaude ? { key: `c${lastClaude.id}-${part(lastClaude)}`, label: "Claude", text: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Spoken, { msg: lastClaude, part: part(lastClaude) }), tone: "rest", size: size(lastClaude) } : { key: "turn", label: "Your turn", text: "Go ahead, Claude is listening.", tone: "dim" };
     }
   }
 

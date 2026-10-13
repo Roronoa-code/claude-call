@@ -66,7 +66,8 @@ export default function CallD({ sim, statusBar = null }) {
     // New animations replace older ones on the same element, so nothing is cancelled mid-flight:
     // an outgoing caption stays hidden instead of flashing back for a frame.
     const d = ms(), fly = (el, kf) => el && d && el.animate(kf, { duration: d, easing: LIQUID, fill: 'both' });
-    if (thread) {
+    if (thread && !bubble.current) setPerch(null); // you spoke before Claude said anything: no bubble to sit on
+    else if (thread) {
       const b = offsetIn(bubble.current, stage.current);
       setPerch({ x: b.x + 14, y: b.y - 12 }); // 12 px of air between the mascot and its bubble
       const src = rects.current.cap, srcEl = capLayer.current.querySelector('.swap-item.in .d-text');

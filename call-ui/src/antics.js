@@ -90,9 +90,11 @@ export function clawdParticles(state, t, now, confetti) {
   }
   if (state.sleepy) { // z's drift up and fade
     for (let i = 0; i < 2; i++) {
-      // Small z's just off the head: they rise only a couple of rows and are gone by halfway.
+      // Small z's just off the head, taking turns: each lives in its own half of the loop, so the
+      // second only appears once the first has risen and gone. They never overlap.
       const k = ((t + i * 1.3) % 2.6) / 2.6;
-      const x = Math.round(31 + k * 4), y = Math.round(-1 - k * 3), o = (k < 0.12 ? k / 0.12 : 1) * (1 - Math.max(0, (k - 0.4) / 0.2));
+      if (k >= 0.46) continue;
+      const x = Math.round(31 + k * 8), y = Math.round(-1 - k * 6), o = (k < 0.06 ? k / 0.06 : 1) * (1 - Math.max(0, (k - 0.32) / 0.14));
       if (o <= 0) continue;
       // Drawn in half rows (each one exactly u px square on screen): a 5 x 5 Z with full bars and a
       // one-pixel diagonal stepping from top right to bottom left.
@@ -115,8 +117,9 @@ export function sparkParticles(state, t, now, confetti) {
   }
   if (state.sleepy) {
     for (let i = 0; i < 2; i++) {
-      const k = ((t + i * 1.3) % 2.6) / 2.6, x = 34 + k * 12, y = -26 - k * 14, z = 6 + k * 2;
-      const o = (k < 0.12 ? k / 0.12 : 1) * (1 - Math.max(0, (k - 0.4) / 0.2));
+      const k = ((t + i * 1.3) % 2.6) / 2.6, x = 34 + k * 24, y = -26 - k * 28, z = 6 + k * 4;
+      if (k >= 0.46) continue;
+      const o = (k < 0.06 ? k / 0.06 : 1) * (1 - Math.max(0, (k - 0.32) / 0.14));
       if (o <= 0) continue;
       s += `<path d="M${x} ${y}h${z}l-${z} ${z}h${z}" fill="none" stroke="#F2C7AE" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" opacity="${o.toFixed(2)}"/>`;
     }

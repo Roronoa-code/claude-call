@@ -378,3 +378,11 @@ input:focus { outline: none; }
 .d-log { flex: 1; overflow-y: auto; scrollbar-width: none; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
 .d-log::before { content: ''; margin-top: auto; }
 @media (prefers-reduced-motion: reduce) { .d-dots.idle i, .d-thread.on > * { animation: none !important; } .d-caps:not(.on) .d-text { visibility: hidden; } }
+
+/* Labels and status stay crisp above the voice glow (its layers are z-index 1-4), with a soft dark halo
+   so they stay readable even where the glow is brightest. */
+.a-label, .a-biglabel, .d-status { position: relative; z-index: 5; color: #e8e9ec; text-shadow: 0 0 2px rgba(0, 0, 0, .9), 0 0 8px rgba(0, 0, 0, .9); }
+/* Over the brightest part of the glow a halo is not enough: a backing in the page colour, invisible on
+   the plain background, keeps the labels readable. */
+.a-label, .a-biglabel .swap-item { padding: 0 7px; border-radius: 9px; background: rgba(17, 18, 20, .6); }
+.d-status { position: absolute; }
