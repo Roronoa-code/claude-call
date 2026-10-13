@@ -236,8 +236,10 @@ const server = http.createServer(async (req, res) => {
       }
       const end = Number(q('end') ?? pcm.length);
       // Reuse the live transcript when it already covers everything they said (only silence came after it).
-      const live = (await utt.busy) ?? utt.partial;
-      const reuse = live && live.upTo >= end - 160 && live.upTo > pcm.length - PARTIAL_WINDOW;
+      const covers = p => p && p.upTo >= end - 160 && p.upTo > pcm.length - PARTIAL_WINDOW;
+      // Use the transcript we already have if it covers the speech: waiting on a newer one only costs time.
+      const live = covers(utt.partial) ? utt.partial : (await utt.busy) ?? utt.partial;
+      const reuse = covers(live);
       const heard = reuse ? live.text : await hear(pcm, call.say);
       mark(`transcribed (${(pcm.length / 16000).toFixed(1)}s of audio${reuse ? ', reused live transcript' : ''}) -> handed to Claude`);
       const ok = !NOISE.test(heard);

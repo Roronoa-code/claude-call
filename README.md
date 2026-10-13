@@ -24,6 +24,7 @@ Fallbacks: Kokoro for the voice, small Whisper on the CPU for hearing, and the p
 - `node voice/server_check.mjs`: checks the voice server's speed and audio.
 
 **Open issues (from the first real call on the S25, 2026-10-13; recording `Downloads\Screen_Recording_20261013_141027.mp4`)**
+Status: the fixes for the giant bubble, the empty caption and the Whisper vocabulary hint are written but untested (see `CODEX-HANDOFF.md` section 3b). The rest are still open.
 - Call screen (`call-ui/`):
   - After an interrupt, the whole long line, including the unspoken words, becomes a giant Claude bubble that pushes the user's live bubble behind the status line. The bubble should keep only the spoken words, be capped, and scroll so the user's bubble stays visible.
   - Clawd vanishes for a frame or two during caption↔bubble moves.

@@ -85,8 +85,12 @@
 
     // ---- the user's voice: mic on the phone, live transcripts and the final one from Whisper on the PC ----
     const audioCtx = () => { if (!ctx) ctx = new AudioContext(); ctx.resume(); return ctx; };
+    // On the earpiece Claude's voice hardly reaches the mic, so echo cancelling only risks eating quiet speech
+    // (the phone's call mode already mutes the mic while Claude plays); on the loudspeaker it is needed.
+    const micOpts = loud => ({ echoCancellation: loud, noiseSuppression: true, autoGainControl: true });
+    let onSpeaker = false;
     async function startMic() {
-      micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: micOpts(!app || onSpeaker) });
       const c = audioCtx(); rate = c.sampleRate;
       micNode = c.createScriptProcessor(FRAME, 1, 1);
       c.createMediaStreamSource(micStream).connect(micNode); micNode.connect(c.destination);
@@ -386,7 +390,11 @@
         } else if (mode === 'idle' && !line) listen();
         return muted;
       },
-      setSpeaker(on) { app?.setSpeaker(on); return !!on; },
+      setSpeaker(on) {
+        app?.setSpeaker(on); onSpeaker = !!on;
+        micStream?.getAudioTracks()[0]?.applyConstraints(micOpts(onSpeaker)).catch(() => {});
+        return !!on;
+      },
       get hasSpeaker() { return !!app; },
       get speaker() { return !!app?.isSpeaker(); },
       get muted() { return muted; },

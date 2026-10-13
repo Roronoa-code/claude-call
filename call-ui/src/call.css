@@ -103,7 +103,8 @@ input:focus { outline: none; }
 .d-head { position: absolute; z-index: 5; top: 40px; left: 24px; right: 24px; height: 52px; display: flex; flex-direction: column; justify-content: center; }
 .d-head strong { font-size: 18px; line-height: 24px; }
 .d-time { display: block; height: 20px; font-size: 14px; line-height: 20px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.d-stage { position: absolute; z-index: 5; top: 96px; left: 0; right: 0; height: 470px; }
+/* Its own layer: on the S25 recording whole frames of the stage (Clawd + caption) went blank while the rest stayed. */
+.d-stage { position: absolute; z-index: 5; top: 96px; left: 0; right: 0; height: 470px; isolation: isolate; transform: translateZ(0); }
 .d-mascot { position: absolute; left: 0; top: 0; z-index: 2; transition: transform var(--open-ms) var(--spring); }
 .d-mascot .mascot { justify-content: flex-start; }
 .d-mascot-scale { transform-origin: 0 100%; transition: transform var(--open-ms) var(--spring); }
@@ -117,6 +118,7 @@ input:focus { outline: none; }
 .d-label.rest, .d-label.dim { color: var(--muted); }
 .d-label.hold { color: #c9b6ff; }
 .d-caps:not(.on) .d-label { opacity: 0; transition: opacity 60ms linear; }
+.d-label.pre { visibility: hidden; }
 .d-text[data-flown], .d-caps.fresh .swap-item.out { visibility: hidden; }
 .d-text { display: block; transform-origin: 0 0; font-size: 30px; line-height: 1.28; font-weight: 500; letter-spacing: -.012em; text-wrap: pretty; }
 .d-text.long { font-size: 24px; }
@@ -131,6 +133,10 @@ input:focus { outline: none; }
 .d-thread.on > :not(.flier) { animation: rowIn 340ms var(--ease-out) 220ms both; }
 .d-bubble { margin: 0; max-width: 82%; padding: 10px 14px; border-radius: 20px; font-size: 16.5px; line-height: 1.45; text-wrap: pretty; transform-origin: 0 0; }
 .d-bubble.claude { align-self: flex-start; background: #202227; border-top-left-radius: 6px; }
+/* In the thread, a long line never pushes your bubble away: words Claude never said are dropped, and the rest scrolls. */
+.d-thread .d-bubble.claude { max-height: 190px; overflow-y: auto; flex-shrink: 0; scrollbar-width: none; }
+.d-thread .d-bubble.claude .w.unsaid { display: none; }
+.d-thread .d-bubble.me { flex-shrink: 0; }
 .d-bubble.me { align-self: flex-end; background: var(--me); color: #fff; border-bottom-right-radius: 6px; overflow: hidden; }
 .d-bubble.dots { padding: 13px 18px; }
 .d-dots { display: flex; gap: 6px; height: 20px; align-items: center; }

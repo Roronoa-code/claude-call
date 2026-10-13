@@ -79,6 +79,10 @@ asr_proc = AutoProcessor.from_pretrained(ASR)
 asr = WhisperForConditionalGeneration.from_pretrained(ASR, torch_dtype=torch.float16).to("cuda:0").eval()
 
 
+# Words Whisper keeps mishearing (e.g. "call screen" -> "cold screen"); always part of the prompt.
+VOCAB = "Claude, Clawd, Codex, call screen, Discord, ntfy, Whisper, widget."
+
+
 def hear(pcm: np.ndarray, context: str) -> str:
     long = len(pcm) > 30 * 16000  # over 30 s: Whisper's long-form mode instead of cutting the end off
     inputs = asr_proc(pcm, sampling_rate=16000, return_tensors="pt",
@@ -86,6 +90,7 @@ def hear(pcm: np.ndarray, context: str) -> str:
     kw = dict(language="en", task="transcribe", max_new_tokens=220)
     if long:
         kw.update(attention_mask=inputs.attention_mask.to("cuda:0"), return_timestamps=True)
+    context = (VOCAB + " " + context.strip()[-500:]).strip() if context.strip() else VOCAB
     if context.strip():
         kw["prompt_ids"] = torch.tensor(asr_proc.get_prompt_ids(context.strip()[-600:])).to("cuda:0")
     with gpu_lock, torch.inference_mode():

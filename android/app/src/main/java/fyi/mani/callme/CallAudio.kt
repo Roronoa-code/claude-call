@@ -36,7 +36,8 @@ class CallAudio(context: Context, private val web: WebView, private val origin: 
 
     // The WebView's microphone switches the call to the loudspeaker when it opens; put our choice back.
     private val routeWatch = AudioManager.OnCommunicationDeviceChangedListener { d ->
-        val builtIn = d?.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER || d?.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
+        // Also when the system cleared the device (null): that is how the earpiece quietly became the speaker once.
+        val builtIn = d == null || d.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER || d.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
         if (started && builtIn && d?.type != wanted()) main.post { route() }
     }
 
@@ -51,6 +52,7 @@ class CallAudio(context: Context, private val web: WebView, private val origin: 
     }
 
     private fun route() {
+        if (audio.mode != AudioManager.MODE_IN_COMMUNICATION) audio.mode = AudioManager.MODE_IN_COMMUNICATION // the system may reset it
         audio.availableCommunicationDevices.firstOrNull { it.type == wanted() }?.let { audio.setCommunicationDevice(it) }
         if (speaker) { if (proximity.isHeld) proximity.release() } else if (!proximity.isHeld) proximity.acquire()
     }

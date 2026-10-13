@@ -97,6 +97,8 @@ export default function CallD({ sim, statusBar = null }) {
     first.current = false;
   }, [thread]);
 
+  useLayoutEffect(() => { if (bubble.current) bubble.current.scrollTop = bubble.current.scrollHeight; }); // long line: show its latest words
+
   const send = e => { e.preventDefault(); sim.sendTyped(draft); setDraft(''); setTyping(false); };
   const mascotAt = perch ? `translate(${perch.x}px, ${perch.y - 88}px)` : 'translate(24px, 20px)';
 
@@ -233,7 +235,8 @@ function caption(v, now) {
     case 'connecting': return { key: 'con', label: 'Connecting', text: 'One moment…', tone: 'dim' };
     case 'talking': {
       const m = v.msgs.find(x => x.live) || lastClaude;
-      return { key: `c${m.id}-${part(m)}`, label: 'Claude', text: <Spoken msg={m} part={part(m)} />, size: size(m) };
+      // Until its first word is heard the label stays invisible (same size, so nothing shifts).
+      return { key: `c${m.id}-${part(m)}`, label: 'Claude', text: <Spoken msg={m} part={part(m)} />, size: size(m), tone: m.spoken[0] === 0 && m.spoken[1] === 0 ? 'pre' : '' };
     }
     case 'hold':
       return { key: 'hold', orb: 'searching', label: `On hold · ${clock(now - v.holdStart)}`, text: `${v.holdLabel}.`, tone: 'hold' };
