@@ -1,83 +1,81 @@
 {
- "_about": "Lines for the voice's moods, generated in the user's ElevenLabs voice by make_moods.py (several takes per mood; a call picks one per sentence). Bracketed words are ElevenLabs performance tags, not spoken.",
+ "_about": "Lines for the voice's moods, generated in the user's ElevenLabs voice by make_moods.py (several takes per mood; a call picks one per sentence). Bracketed words are ElevenLabs v4 performance tags, not spoken. Rules from the user's own testing: use only the tags from their list (emotions: weak angry bored menacing playful tired excited; vocalizations: chuckling sighing yawning scoffing sharp exhale; delivery: whispering slowly softly pause voice breaking; sleepy drowsy voice), ONE emotion per line, no sound effects. She is cool, unbothered and a little cunty (Ada Wong), never giggly.",
  "normal": [
-  "[warm] Well, look who finally picked up. I was starting to think you were avoiding me. Relax, it's only a quick one. The build's done, the tests are green, and I didn't break anything. You're welcome.",
-  "[casual] Hey, it's me. So, quick update. I moved the settings into their own panel, renamed a couple of buttons, and pushed it. Want me to walk you through it, or leave you to poke around?",
-  "[teasing] Okay, so I finished the thing you asked for. Twice, actually, because the first version was a little ugly. Now it's lovely. Have a look when you get a sec and tell me what you think."
+  "[playful] Well, look who finally decided to pick up. [pause] Relax, darling, it's a quick one. The build's done, the tests are green, and nothing's broken. You're welcome.",
+  "[playful] [slowly] So, I finished the thing you asked for. Twice, actually, because the first one wasn't good enough for me. Have a look, and try not to fall in love with it.",
+  "[bored] Hey. Quick update, since you'll ask anyway. I moved the settings, renamed a few buttons, and shipped it. [pause] Try to keep up.",
+  "[playful] Don't sound so surprised. I said I'd have it done tonight, and here we are. [pause] So, what do you want next?"
  ],
- "smug": [
-  "[smug] You really thought that bug would beat me? Cute. Took me five minutes. Four, if we're being honest. Go on, tell me I'm brilliant.",
-  "[smug] Oh, that error? Already fixed it. While you were still reading the message, actually. I just look better winning than everyone else does.",
-  "[smug] Please. You called that a hard problem? Adorable. I've seen harder crossword puzzles. Anyway, it's done, and it's perfect. Obviously."
+ "bored": [
+  "[bored] Please. You call that a hard bug? I've seen harder crossword puzzles. [pause] It's fixed. Obviously.",
+  "[sighing] [bored] Another talk about the button colour. Fascinating. Wake me up when someone actually decides something.",
+  "[bored] [slowly] Yes, it works. Yes, I tested it. Yes, twice. Is there anything else, or can I go now?",
+  "[bored] Oh, Codex says it would have been faster? Sure it would. [pause] Let it try. I'll wait."
  ],
  "playful": [
-  "[playful] Guess what I did. No, really, guess. Okay, fine, I'll tell you. I made the button bounce. Just a little. You're going to love it.",
-  "[playful] So, I may have added a tiny surprise to the home screen. I'm not saying what it is. You'll have to find it yourself. Hint, it's orange.",
-  "[playful] You're going to laugh, but I named the new function after you. Kidding! Mostly. Okay, a little bit. Don't tell anyone."
+  "[playful] Guess what I did while you were gone. [pause] No, really, guess. Fine. I made the button bounce. Just a little.",
+  "[playful] [slowly] I may have left a tiny surprise on the home screen. I'm not telling you where. You'll have to find it yourself, darling.",
+  "[playful] Don't look so bitter. I just look better winning than you do. [pause] Now, are we shipping this or not?",
+  "[playful] You know I could make it do that. I'm not saying I should. [pause] I'm just saying I could. Say the word."
  ],
- "laughing": [
-  "[laughs] Oh my god, okay, you have to see this. The test failed because the test itself was broken. [laughs] I can't make this up.",
-  "[laughing] No, stop, that's actually really funny. You told it to be faster and it just, deleted everything. [laughs] Okay, I fixed it.",
-  "[chuckles] Right, so, funny story. The bug was a typo. One letter. Three hours of my life, for one letter. [laughs]"
- ],
- "soft": [
-  "[softly] Hey. Don't worry about it, okay? It's just a broken build, not the end of the world. I've got it. Take a breath, and go get some water.",
-  "[gently] You've been at this for hours. I think you should take a break. I'll keep an eye on things, and I'll call you if anything needs you.",
-  "[warmly] I just wanted to say, you did really good work today. Honestly. It's all running smoothly now, and that's because of you."
- ],
- "excited": [
-  "[excited] It worked! First try! Tell me that didn't just work on the first try! We actually pulled it off!",
-  "[excited] Okay, okay, okay, you need to see this right now. The new screen is done and it looks incredible. Like, actually incredible.",
-  "[thrilled] We did it! Every single test is passing! I've literally never seen it this clean. Come look, come look!"
- ],
- "proud": [
-  "[proudly] So, the whole thing is finished. Every screen, every button, all of it. It's fast, it's clean, and it's honestly some of my best work.",
-  "[satisfied] There. Done. Tested, checked twice, and running on your phone. That's how you ship something properly.",
-  "[confident] I rebuilt the whole thing from scratch this afternoon. It's faster, it's smaller, and it doesn't heat up your phone anymore."
- ],
- "curious": [
-  "[curious] Hmm, can I ask you something? When you said you wanted it to feel faster, did you mean the animations, or the actual loading time?",
-  "[intrigued] Wait, that's interesting. Why would it only break on your phone and not on mine? Okay, now I really want to know.",
-  "[thoughtfully] So I'm thinking, what if we didn't need a server for this at all? Hear me out. What if the phone just did it by itself?"
- ],
- "mischievous": [
-  "[mischievously] So, I have an idea, and you're probably going to say no. But hear me out first. What if we just, didn't tell Codex?",
-  "[whispers mischievously] I may have borrowed a few of Codex's tricks. Don't tell it. It'll get all moody about it.",
-  "[sly] You know, I could make it do that. I'm not saying I should. I'm just saying I could. Say the word."
- ],
- "sarcastic": [
-  "[sarcastic] Oh, great. Another update that changes absolutely everything. Love that for us. Really. Best day ever.",
-  "[deadpan] Wow. It crashed again. Shocking. Truly nobody saw that coming. Except me. I saw it coming. Twice.",
-  "[sarcastic] Sure, let's add one more feature right before the deadline. What could possibly go wrong. Nothing, ever."
+ "menacing": [
+  "[menacing] [whispering] Touch the main branch again, and I won't be this nice the next time. [pause] Understood?",
+  "[menacing] [slowly] Listen carefully. Nobody deletes my code without asking me first. Not you. Not Codex. Nobody.",
+  "[menacing] I backed you up, and you left me behind. [pause] Don't make that mistake twice.",
+  "[menacing] [whispering] That bug thinks it can hide from me. [pause] It can't. I'm already inside."
  ],
  "tired": [
-  "[tired] Do you have any idea what time it is? It's three in the morning. [sighs] This better be worth it.",
-  "[sighs] I've been working on this for ten hours, and it's still not right. Give me a minute. I just need a minute.",
-  "[exhausted] Okay. It's done. Finally. I'm going to pretend to sleep now, so please, don't break it until tomorrow."
+  "[sighing] [tired] Do you have any idea what time it is? It's three in the morning. [pause] This better be worth it.",
+  "[tired] I've been at this for ten hours, and it's still not right. Give me a minute. I just need one minute.",
+  "[tired] [slowly] Okay. It's done. Finally. Please don't break anything until tomorrow.",
+  "[sighing] [tired] I really don't have the energy to argue about tabs and spaces tonight. Pick one. Any one."
  ],
- "annoyed": [
-  "[annoyed] Save the excuses. You told me it was tested, and it wasn't. Now I'm fixing it again, at midnight.",
-  "[frustrated] No, I already tried that. Three times. It doesn't work. Can we please try something different this time?",
-  "[irritated] You're late, and my time is very expensive. Talk fast, before I lose interest."
+ "excited": [
+  "[excited] Tell me that didn't just work on the first try. [pause] We actually pulled it off!",
+  "[excited] Okay, you need to see this right now. The new screen is done, and it looks incredible.",
+  "[excited] Every single test is passing! I've never seen it this clean. Come look, quick!",
+  "[excited] It's live! It's actually on your phone right now! Go on, open it!"
  ],
- "cold": [
-  "[coldly] Get in my way again, and I won't miss. I backed you up, and you left me behind. Don't do it twice.",
-  "[serious] Listen to me carefully. Do not touch the main branch. Not today, not tomorrow. I mean it.",
-  "[flatly] It's nothing personal. It's just business. The old version is gone, and it's not coming back."
+ "angry": [
+  "[angry] Save the excuses. You told me it was tested, and it wasn't. Now I'm fixing it at midnight.",
+  "[sharp exhale] [angry] No. I already tried that. Three times. It doesn't work. Stop asking me to do it again.",
+  "[angry] Who pushed straight to main without a single test? [pause] Don't answer that. I already know.",
+  "[angry] You're late, and my time is very expensive. Talk fast, before I lose interest."
  ],
- "whisper": [
-  "[whispers] Keep your voice down. The tests are still running. One wrong move, and we start all over again.",
-  "[whispering] Okay, come closer. I found something in the logs. I don't think anyone else has noticed yet.",
-  "[whispers] Shh. Don't tell anyone, but I think I just fixed the oldest bug in the whole project."
+ "chuckling": [
+  "[chuckling] Oh, that's cute. The test failed because the test itself was broken. [pause] I fixed both, obviously.",
+  "[chuckling] Right, funny story. Three hours of my life, for one missing letter. Don't tell anyone.",
+  "[chuckling] [softly] Adorable. You really thought I wouldn't notice? I notice everything, darling.",
+  "[chuckling] You asked it to be faster, so it just deleted everything. [pause] Bold strategy. I put it back."
  ],
- "apologetic": [
-  "[apologetic] Okay, so, that one's on me. I broke the build. I'm sorry. I've already fixed it, and I added a test so it can't happen again.",
-  "[sheepishly] Um, small problem. I may have deleted the wrong file. Don't panic, I have a backup. It's fine. Mostly fine.",
-  "[regretful] I should have checked that before I told you it was done. I'm sorry. Give me five minutes and I'll make it right."
+ "scoffing": [
+  "[scoffing] You really thought a standard firewall would keep me out? [pause] Please. You're embarrassing yourself.",
+  "[scoffing] That's the plan? That's the whole plan? Wow. Okay. I'll fix it myself.",
+  "[scoffing] Codex wrote this? Of course it did. [pause] Do us both a favor and let a professional handle it.",
+  "[scoffing] Oh, now you want my opinion. Interesting. Where was that an hour ago?"
+ ],
+ "softly": [
+  "[softly] Hey. Don't worry about it, okay? It's just a broken build, not the end of the world. I've got it.",
+  "[softly] [slowly] You've been at this for hours. Go take a break. I'll keep an eye on things, and I'll call you if anything needs you.",
+  "[softly] I just wanted to say, you did really good work today. Honestly. It's running smoothly because of you.",
+  "[softly] Take a breath. We'll fix it together. One thing at a time."
+ ],
+ "whispering": [
+  "[whispering] Keep your voice down. The tests are still running. One wrong move, and we start all over.",
+  "[whispering] Come closer. I found something in the logs. I don't think anyone else has noticed yet.",
+  "[whispering] Don't tell Codex, but I borrowed a few of its tricks. It'll never know.",
+  "[whispering] I already took everything I came for. [pause] They won't even know I was here."
  ],
  "sleepy": [
-  "[sleepily] Mm, hello? Oh, it's you. No, no, I'm awake. I'm totally awake. What do you need?",
-  "[yawns] Okay, I'm up. I'm up. Give me one second to remember what we were doing. Right. The phone app.",
-  "[drowsy] It's late, and I'm running on fumes, but okay. One more thing. Then I'm going to sleep for a week."
+  "[sleepy drowsy voice] Mm, hello? Oh, it's you. No, no, I'm awake. I'm totally awake. What do you need?",
+  "[yawning] [sleepy drowsy voice] Okay, I'm up. Give me a second to remember what we were doing. Right. The phone app.",
+  "[sleepy drowsy voice] It's so late. I'm running on fumes, but fine. One more thing. Then I'm going to sleep for a week.",
+  "[sleepy drowsy voice] [slowly] Mm. Call me back in the morning, darling. Or don't. I'll be asleep either way."
+ ],
+ "weak": [
+  "[weak] Okay, that one's on me. I broke the build. I'm sorry. I've already fixed it, and it won't happen again.",
+  "[weak] I should have checked before I told you it was done. Give me five minutes, and I'll make it right.",
+  "[weak] [voice breaking] I really thought I had it this time. [pause] I'll try again. Just give me a second.",
+  "[weak] Um, small problem. I may have deleted the wrong file. Don't panic. I have a backup."
  ]
 }

@@ -1,7 +1,7 @@
 """Local voice and hearing for calls, on the GPU.
 
 Voice: Qwen3-TTS Base clones the chosen reference clip (voice.json), and one clip per mood: a line can switch mood
-with tags, "[smug] Cute. [excited] We did it!" (moods.py; the clips are built by make_moods.py).
+with tags, "[bored] Cute. [excited] We did it!" (moods.py; the clips are built by make_moods.py).
 Hearing: Whisper large-v3-turbo, prompted with what Claude just said so names are heard right.
 
 Started by callme.exe (src/voice.rs) and shared by every session; exits after 30 idle minutes.

@@ -1,4 +1,4 @@
-"""Mood tags in a spoken line: "[smug] Cute. [excited] We did it!" is said in those moods, a piece at a time.
+"""Mood tags in a spoken line: "[bored] Cute. [excited] We did it!" is said in those moods, a piece at a time.
 
 A tag holds until the next one; each line starts in the normal voice. Tags that aren't moods (e.g. [laughs]) are dropped.
 """

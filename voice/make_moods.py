@@ -8,9 +8,12 @@ Each take is transcribed with the local Whisper (voice server on :47811) so the 
 Generated takes are kept in voice/moods and never generated twice (they cost ElevenLabs credits).
   python make_moods.py
 """
+import difflib
+import hashlib
 import io
 import json
 import os
+import re
 import subprocess
 import urllib.request
 from pathlib import Path
@@ -23,13 +26,14 @@ LINES, MOODS_DIR = HERE / "lines", HERE / "moods"
 VOICE_NAME = "American woman"
 MODEL = "eleven_v4"  # performs the [bracketed] tags; the user's samples were made with it
 SR = 24000
+TAG = re.compile(r"\[[^\]]*\]")
 SETTINGS = {"stability": 0.5, "similarity_boost": 0.75, "speed": 1.0}  # as the user's own samples (sp100 s50 sb75)
 # The user's own sample lines, joined into one take per mood.
 FROM_SAMPLES = {
-    "smug": ["sample2-01d", "sample2-02", "sample3-00", "sample3-01d", "sample3-02", "sample3-06e", "sample3-06f"],
+    "normal": ["sample2-01d", "sample2-02", "sample3-00", "sample3-01d", "sample3-02", "sample3-06e", "sample3-06f"],
     "tired": ["sample2-00", "sample2-01b", "sample2-04e", "sample2-05b", "sample3-03", "sample3-06a"],
-    "cold": ["sample2-05d", "sample2-05e", "sample2-05f", "sample3-04"],
-    "whisper": ["sample2-03", "sample2-04a", "sample2-04b"],
+    "menacing": ["sample2-05d", "sample2-05e", "sample2-05f", "sample3-04"],
+    "whispering": ["sample2-03", "sample2-04a", "sample2-04b"],
     "excited": ["sample2-05h"],
 }
 
@@ -50,7 +54,7 @@ def hear(audio):
 
 
 def generated(mood, i, line, voice_id):
-    path = MOODS_DIR / f"{mood}-{i + 1}.wav"
+    path = MOODS_DIR / f"{mood}-{i + 1}-{hashlib.sha1(line.encode()).hexdigest()[:6]}.wav"  # a changed line is made again
     if not path.exists():
         pcm = api(f"/v1/text-to-speech/{voice_id}?output_format=pcm_24000", {"text": line, "model_id": MODEL, "voice_settings": SETTINGS}, raw=True)
         sf.write(path, np.frombuffer(pcm, dtype="<i2").astype(np.float32) / 32768, SR, subtype="PCM_16")
@@ -75,7 +79,14 @@ def main():
         voice_id = next(v["voice_id"] for v in api("/v2/voices?page_size=100")["voices"] if v["name"].strip().lower() == VOICE_NAME.lower())
         for mood, lines in json.loads((HERE / "mood_lines.json").read_text(encoding="utf-8")).items():
             if not mood.startswith("_"):
-                takes.setdefault(mood, []).extend(generated(mood, i, line, voice_id) for i, line in enumerate(lines))
+                for i, line in enumerate(lines):
+                    path = generated(mood, i, line, voice_id)
+                    takes.setdefault(mood, []).append(path)
+                    texts[path] = hear(sf.read(path, dtype="float32")[0])
+                    said = " ".join(TAG.sub(" ", line).split())
+                    match = difflib.SequenceMatcher(None, said.lower(), texts[path].lower()).ratio()
+                    if match < 0.85:  # the take skipped, added or misread words: check it by ear, or change the line
+                        print(f"  CHECK {path.name} ({match:.2f}): heard {texts[path]!r}")
         sub = api("/v1/user/subscription")
         print(f"ElevenLabs credits left: {sub['character_limit'] - sub['character_count']}")
     voice = json.loads((HERE / "voice.json").read_text(encoding="utf-8"))
