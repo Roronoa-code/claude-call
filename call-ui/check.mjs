@@ -23,6 +23,22 @@ try {
   });
   await page.goto('https://callme.invalid/');
   await page.waitForFunction(() => window.__call && document.querySelector('.d-mascot'));
+  const glow = await page.evaluate(() => {
+    const beam = document.querySelector('[data-voice-beam]');
+    const screen = document.querySelector('.screen');
+    // A value updated on every animation frame must stay inside the glow's subtree.
+    beam.style.setProperty('--glow-cascade-check', 'changed');
+    return {
+      isolated: ['.d-mascot', '.d-stage', '.a-controls'].every(selector =>
+        getComputedStyle(document.querySelector(selector)).getPropertyValue('--glow-cascade-check') === ''),
+      bounds: [beam, screen].map(el => {
+        const { x, y, width, height } = el.getBoundingClientRect();
+        return { x, y, width, height };
+      }),
+    };
+  });
+  assert.ok(glow.isolated, 'per-frame glow styles must not cascade through foreground content');
+  assert.deepEqual(glow.bounds[0], glow.bounds[1], 'glow must retain the screen bounds');
   await page.evaluate(() => {
     window.originalMascot = document.querySelector('.d-mascot');
     window.originalControls = document.querySelector('.a-controls');
@@ -89,8 +105,21 @@ try {
     }
     await page.evaluate(() => events.status('Hearing you…'));
   }
+  await page.setViewportSize({ width: 412, height: 892 });
+  await page.getByRole('button', { name: 'Mute', exact: true }).click();
+  await page.getByRole('button', { name: 'Unmute', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Speaker', exact: true }).click();
+  assert.equal(await page.getByRole('button', { name: 'Speaker', exact: true }).getAttribute('aria-pressed'), 'true');
+  await page.getByRole('button', { name: 'Captions', exact: true }).click();
+  await page.getByRole('button', { name: 'Close transcript', exact: true }).click();
+  await page.getByRole('button', { name: 'Type', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Type a reply', exact: true }).fill('Offline layout check');
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.evaluate(() => events.ended());
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('.d-stage')).opacity === '0');
+  assert.equal(await page.locator('[data-voice-beam]').evaluate(el => getComputedStyle(el).opacity), '1', 'closing must retain the glow while foreground fades');
   assert.deepEqual(errors, []);
-  console.log('PASS: first interrupt render, scroll retention, long replies at three sizes, persistent mascot/controls (offline Edge)');
+  console.log('PASS: first interrupt render, scrolling, long replies, persistent content, isolated glow, controls and closing (offline Edge)');
 } finally {
   await browser.close();
 }

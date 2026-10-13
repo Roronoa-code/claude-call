@@ -103,8 +103,12 @@ export default function CallD({ sim, statusBar = null }) {
   const mascotAt = perch ? `translate(${perch.x}px, ${perch.y - 88}px)` : 'translate(24px, 20px)';
 
   return (
-    <VoiceBeam type="mobile" level={sim.level} paused={ended}>
       <div className={`screen d ${v.closed ? 'closed' : ''} ${thread ? 'threaded' : ''}`} ref={root} data-phase={v.phase}>
+        {/* The glow's per-frame CSS variables must not cascade through the foreground. */}
+        <VoiceBeam className="d-glow" type="mobile" level={sim.level} paused={ended}
+          style={{ position: 'absolute', inset: 0, zIndex: 0, borderRadius: 'inherit', pointerEvents: 'none' }}>
+          <div aria-hidden="true" style={{ height: '100%', borderRadius: 'inherit' }} />
+        </VoiceBeam>
         {statusBar}
         <header className="d-head">
           <strong>Claude</strong>
@@ -180,7 +184,6 @@ export default function CallD({ sim, statusBar = null }) {
           </div>
         </div>
       </div>
-    </VoiceBeam>
   );
 }
 

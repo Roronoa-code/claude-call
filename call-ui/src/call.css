@@ -160,7 +160,7 @@ input:focus { outline: none; }
    Here the screen is whatever the phone gives the page: everything below the header is placed
    from the bottom (above the gesture bar), the header from the top (below the status bar). */
 :root { --sat: max(env(safe-area-inset-top), 36px); --sab: max(env(safe-area-inset-bottom), 24px); }
-#root > div { position: fixed; inset: 0; } /* the voice glow's wrapper fills the screen */
+#root > div { position: fixed; inset: 0; } /* the call screen fills the window */
 .screen.d { position: absolute; inset: 0; width: auto; height: auto; border-radius: 0; background: var(--bg); overflow: hidden; }
 .d-head { top: calc(var(--sat) + 4px); }
 .d-stage { top: calc(var(--sat) + 60px); bottom: calc(var(--sab) + 302px); height: auto; }
@@ -169,7 +169,7 @@ input:focus { outline: none; }
 .a-type { top: auto; bottom: calc(var(--sab) + 162px); }
 .d-transcript { top: calc(var(--sat) + 8px); height: auto; bottom: calc(var(--sab) + 162px); }
 /* The phone fades the screen out itself when the call ends. */
-.screen.d.closed > * { opacity: 0; transition: opacity 500ms var(--close-ease); }
+.screen.d.closed > :not(.d-glow) { opacity: 0; transition: opacity 500ms var(--close-ease); }
 
 /* Labels and status stay crisp above the voice glow (its layers are z-index 1-4), with a soft dark halo
    so they stay readable even where the glow is brightest. */

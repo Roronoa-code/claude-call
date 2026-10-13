@@ -20,7 +20,7 @@ Fallbacks: Kokoro for the voice, small Whisper on the CPU for hearing, and the p
 
 **Checks**
 - `node speech-check.mjs`: offline checks of audio packet ordering and final transcript reuse. No sockets, models, microphone or notifications.
-- `cd call-ui; npm run build; node check.mjs`: offline screen checks in headless Edge with a fake engine and all requests intercepted. Covers interrupted captions, scrolling and long replies at three viewport heights; no phone or call service involved.
+- `cd call-ui; npm run build; node check.mjs`: offline screen checks in headless Edge with a fake engine and all requests intercepted. Covers interrupted captions, scrolling, long replies at three viewport heights, glow isolation, controls and closing; no phone or call service involved.
 - `node test-call.mjs`: a whole call against the real call page in headless Edge with a fake mic (`phone-sim.mjs`, started by the test). Private test topic, no tunnel, its own status file: it never rings the real phone. Prints the latencies. `node test-call.mjs fallback` checks the no-GPU voices.
 - `node asr-check.mjs`: checks that context fixes misheard names.
 - `node voice/server_check.mjs`: checks the voice server's speed and audio.
@@ -29,8 +29,8 @@ Fallbacks: Kokoro for the voice, small Whisper on the CPU for hearing, and the p
 Status: Codex continued on 2026-10-13 with **no phone operations or call-service restarts**, because the user is expecting a call. Offline checks pass for the first interrupted-caption render, manual scrolling, long reply layout and speech handover packet handling. The server now retains late audio packets during final transcription (fixing a three-second timeout path), rejects missing audio, and avoids replacing a long reply with only its last 28 seconds. Real-call timing remains unmeasured. The page was rebuilt. See `CODEX-HANDOFF.md` section 3c for deployment and remaining checks. Stage/control flicker and quiet earpiece interrupts remain unverified on the S25.
 - Call screen (`call-ui/`):
   - After an interrupt, the whole long line, including the unspoken words, becomes a giant Claude bubble that pushes the user's live bubble behind the status line. The bubble should keep only the spoken words, be capped, and scroll so the user's bubble stays visible.
-  - Clawd vanishes for a frame or two during caption↔bubble moves.
-  - The control row disappeared for a frame at turn end.
+  - Clawd vanishes during steady speech and transitions. Review of all 809 original recording frames confirmed partial and whole-stage losses. The glow now runs separately so its frame-by-frame style changes do not cascade through the foreground; desktop rendering work decreased, but the S25 result remains unverified.
+  - The control row disappears repeatedly: 26 frames in 14 episodes in that same recording. The glow separation covers controls too. See handoff section 3d for evidence and limitations.
   - An empty "Claude" caption showed before a line's first words.
 - Turn handover took 3.3 s even when reusing the live transcript; it should be about 0.3 s.
 - On the earpiece, Samsung's call mode mutes the mic while Claude plays (rms ~0), so quiet interrupts can't be detected. A normal-volume interrupt worked once.

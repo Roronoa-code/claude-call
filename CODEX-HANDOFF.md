@@ -85,14 +85,31 @@ Remaining: the S25 stage/control flicker's cause is still unlocated; continuousl
 
 Delivery: `page.html` was rebuilt and will be read by an existing call server on the next page load. The `server.mjs` fixes require a newly started CallMe MCP server process; no existing server was restarted. No Android source changed, so this batch needs no APK update.
 
+## 3d. Full-frame flicker review, 2026-10-13
+
+The user supplied `Screen_Recording_20261013_141027(1).mp4` and requested frame-by-frame review. It is byte-identical to the original recording (SHA-256 `47a17d228b45df5cf4c8d296087266eb8d79b45f5e476477707401503e053f29`), so it does not show the newer fixes. All **809 original frames** over 26.703 seconds were extracted with their original timestamps, pixel-screened and reviewed on contact sheets; flagged controls were also reviewed as enlarged crops. No frame-rate resampling was used.
+
+This corrects the earlier 10fps review in section 3b:
+- **The controls do disappear:** 26 frames in 14 episodes, including frames 87–88 at 2.156–2.224s and 229–231 at 5.411–5.478s. This is not confined to one turn ending.
+- Clawd disappears independently during steady speech as well as during transitions. Orange-pixel screening flags 90 frames across 57 episodes. The whole stage is blank in 13 frames, but other failures remove only parts of the stage or controls.
+- Some missing regions have abrupt rectangular edges, including parts of the glow. This supports investigating rendering/compositing, but the recording alone does not identify the responsible layer or establish whether recording contributes.
+
+**Change:** `CallD` now puts VoiceBeam in an absolute background sibling of the foreground. Its per-frame inherited CSS variables previously cascaded through Clawd, captions and controls. Separating them reduced style-recalculation time from 340/372ms to 181/178ms in alternating two-second desktop samples. This is a measured rendering-cost reduction, **not a confirmed fix for S25 flicker**. The existing stage isolation guard remains. The closing selector excludes the background glow, preserving the prior foreground fade.
+
+**Verification:** rebuilt `page.html`; extended `call-ui/check.mjs` passes with all traffic intercepted and engine mocked. It checks glow bounds and cascade isolation, existing caption/layout cases, mute/speaker/captions/typing interactions, and closing. Both the actual screen and the shared design-preview layout retain their foreground geometry; preview screen and glow retain 412x892 bounds and 40px rounding. Frozen before/after images have identical header/mascot/caption/control pixels; minor lower-glow/corner differences remain, so this is not full-image pixel identity.
+
+A separate **pre-separation** desktop replay inspected 1,287 screencast deliveries (1,266 distinct images) over 15.51s without losing mascot/control pixels. It did not reproduce the phone bug; do not use it as proof of a fix. All helper browsers closed. No phone, microphone, voice models or call services were used.
+
+Local evidence is in `D:\Outputs\CallMe\recording-20261013\` (frames, timestamps, metrics, contact sheets, four-frame evidence strips and second-opinion comparisons), with the offline replay in `D:\Outputs\CallMe\offline-flicker-probe\`. Recording/screenshots were not added to Git. Phone confirmation remains deferred under the user's no-phone-test boundary. No APK update is needed for this page-only change.
+
 ## 4. Open issues (the work left). Recording: `C:\Users\abdul\Downloads\Screen_Recording_20261013_141027.mp4`
 
 All came from the first real call on the S25. Items 1 to 4 are call-screen (`call-ui/`); no app rebuild needed for those.
 
 1. **Giant bubble after an interrupt.** After the user cuts in, the whole long line, including the words never spoken, becomes one giant Claude bubble that pushes the user's live bubble behind the status line.
    Fix: keep only the *spoken* words in the bubble (the engine already reports `spoken` with a cut index), cap the bubble height, and scroll so the user's bubble always stays visible.
-2. **Clawd vanishes for a frame or two** during caption-to-bubble moves. Keep the mascot mounted and continuous across those transitions.
-3. **Control row disappears for a frame** at turn end. Source review and offline checks show it stays mounted; the phone-specific cause is still unlocated.
+2. **Clawd vanishes for a frame or two**, including during steady speech. The full-frame review and glow separation are documented in section 3d; the S25 result remains unverified.
+3. **Control row disappears repeatedly.** The full-frame review found 26 missing-control frames in 14 episodes. Source/offline checks show it stays mounted; glow style updates no longer cascade through it. The phone-specific cause and result remain unconfirmed.
 4. **Empty "Claude" caption** flashes before a line's first words. Don't render the caption until there is text.
 5. **Turn handover takes 3.3 s** even when it reuses the live transcript; target about **0.3 s**. Trace from "user stopped" (engine) to `/speech` sent to the agent receiving the text to the next line arriving. `timing.log` has marks; `node test-call.mjs` prints "you stopped -> turn sent X ms, transcript back Y ms". Find the first stage that waits longer than it needs to (likely a final `/stt` request being awaited when the last live partial is already complete).
 6. **Quiet interrupts fail on the earpiece.** Samsung's call mode mutes the mic (rms about 0) while Claude is playing, so only loud speech gets through (one normal-volume interrupt worked). Needs a real-device experiment: try a different `AudioSource` (e.g. `VOICE_COMMUNICATION` vs `MIC`), mic gain, or different audio mode/route during playback. This needs the phone, not the simulator.
