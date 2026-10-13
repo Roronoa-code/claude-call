@@ -13,7 +13,6 @@ Work in `B:\Projects\CallMe` if the laptop has a B: drive, otherwise `C:\Project
 gh repo clone Roronoa-code/claude-call <folder>
 cd <folder>; npm install; cargo build --release; copy target\release\callme.exe bin\
 ```
-elease\callme.exe bin\n```
 Download `cloudflared-windows-amd64.exe` from the cloudflare/cloudflared GitHub releases into `bin/cloudflared.exe`.
 
 ## 3. Private settings (not in git: ask the user, or copy them from the PC)
