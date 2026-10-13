@@ -11,7 +11,9 @@ Work in `B:\Projects\CallMe` if the laptop has a B: drive, otherwise `C:\Project
 ## 2. Code
 ```
 gh repo clone Roronoa-code/claude-call <folder>
-cd <folder>; npm install; cargo build --release; copy targetelease\callme.exe bin\n```
+cd <folder>; npm install; cargo build --release; copy target\release\callme.exe bin\
+```
+elease\callme.exe bin\n```
 Download `cloudflared-windows-amd64.exe` from the cloudflare/cloudflared GitHub releases into `bin/cloudflared.exe`.
 
 ## 3. Private settings (not in git: ask the user, or copy them from the PC)
@@ -19,7 +21,7 @@ Download `cloudflared-windows-amd64.exe` from the cloudflare/cloudflared GitHub 
 - `android/app/src/main/res/values/topic.xml`: the same channel. Copy `topic.example.xml.txt` and fill it in. The app won't build without it.
 - ElevenLabs: the user's API key and voice ID. Register the server with them:
   ```
-  claude mcp add --scope user callme -e ELEVENLABS_API_KEY=<key> -e ELEVENLABS_VOICE_ID=<voice id> -- <folder>in\callme.exe
+  claude mcp add --scope user callme -e ELEVENLABS_API_KEY=<key> -e ELEVENLABS_VOICE_ID=<voice id> -- <folder>\bin\callme.exe
   ```
   Never commit the key.
 
