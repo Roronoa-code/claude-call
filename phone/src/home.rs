@@ -1,8 +1,9 @@
 //! The home screen: whether calls can reach this phone, how agents may reach you, a test ring, the widget and the
-//! private channel. The Android parts (permissions, settings, widgets, ringing) are MainActivity.kt's methods.
+//! private channel (settings.rs, widget.rs, ring.rs).
 use crate::{
-    Home, HomeScreen, Px, android,
+    Home, HomeScreen, Px, android, jx,
     mascot::{Mascot, Phase},
+    ring, service, settings,
 };
 use slint::{ComponentHandle, ModelRc, VecModel};
 use std::{
@@ -13,12 +14,16 @@ use std::{
 
 fn refresh(ui: &HomeScreen) -> f32 {
     let home = ui.global::<Home>();
-    let missing = android::call_str("missing");
-    home.set_ready(missing.is_empty());
-    home.set_missing(format!("Still needed: {missing}").into());
-    home.set_mode(android::call_str("mode").into());
-    home.set_topic(android::call_str("topic").into());
-    home.set_can_pin(android::call_bool("canPinWidgets"));
+    let read = android::with(|env, act| {
+        Ok((settings::missing(env, act)?, settings::mode(env, act)?, settings::topic(env, act)?, settings::can_pin(env, act)?))
+    });
+    if let Some((missing, mode, topic, can_pin)) = read {
+        home.set_ready(missing.is_empty());
+        home.set_missing(format!("Still needed: {missing}").into());
+        home.set_mode(mode.into());
+        home.set_topic(topic.into());
+        home.set_can_pin(can_pin);
+    }
     match android::insets() {
         Some((top, bottom, density)) => {
             home.set_sat((top / density).max(36.0));
@@ -38,13 +43,27 @@ pub fn run(_app: android_activity::AndroidApp) {
             if let Some(ui) = ui.upgrade() {
                 ui.global::<Home>().set_mode(m.clone()); // at once; the phone and PC follow
             }
-            android::call_with_str("setMode", &m);
+            android::with(|env, act| settings::choose(env, act, &m));
         }
     });
-    home.on_set_up(|| android::call("setUp"));
-    home.on_test_ring(|| android::call("testRing"));
-    home.on_pin(|wide| android::call_with_bool("pinWidget", wide));
-    home.on_save_topic(|t| android::call_with_str("saveTopic", &t));
+    home.on_set_up(|| {
+        android::with(settings::set_up);
+    });
+    home.on_test_ring(|| {
+        android::with(|env, act| {
+            let app = jx::app(env, act)?;
+            ring::ring(env, &app, ring::TEST_LINK, "Test ring")
+        });
+    });
+    home.on_pin(|wide| {
+        android::with(|env, act| settings::pin(env, act, wide));
+    });
+    home.on_save_topic(|t| {
+        android::with(|env, act| {
+            settings::set_topic(env, act, &t)?;
+            service::restart(env, act)
+        });
+    });
     let editing = Rc::new(Cell::new(false));
     home.on_editing({
         let editing = editing.clone();

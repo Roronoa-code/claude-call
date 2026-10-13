@@ -67,14 +67,22 @@ export component SwapText {
     in property <color> color: T.fg2;
     in property <TextHorizontalAlignment> align: left;
     in property <int> weight: 400;
+    // Set: only a new key swaps; other text changes (a ticking clock) just update the shown line.
+    in property <string> key;
     property <string> a;
     property <string> b;
     property <int> pa: 1; // 0 below, 1 shown, 2 above
     property <int> pb: 0;
-    init => { a = text; }
-    changed text => {
+    property <string> shown-key;
+    init => { a = text; shown-key = key; }
+    function swap() {
+        shown-key = key;
         if (pa == 1) { b = text; pb = 0; pb = 1; pa = 2; } else { a = text; pa = 0; pa = 1; pb = 2; }
     }
+    changed text => {
+        if (key == "") { swap(); } else if (key == shown-key) { if (pa == 1) { a = text; } else { b = text; } }
+    }
+    changed key => { swap(); }
     for slot in [0, 1]: Text {
         property <int> p: slot == 0 ? root.pa : root.pb;
         width: parent.width;

@@ -53,6 +53,7 @@ const first = call('call_user', 'Hi, it is Claude. This is a quick test of the n
 while (!link) await sleep(200);
 await sleep(9000);
 shot('1-talking');
+report.push(`ongoing-call notification: ${/channel=ongoing_calls/.test(String(adb('shell', 'dumpsys', 'notification')))}`);
 const replied = reply('Looks good so far.', 3000);
 say('REPLY 1', await first);
 await replied;

@@ -12,6 +12,7 @@ export component CallScreen inherits Window {
     in property <string> phase: "incoming"; // incoming connecting talking listening hearing thinking hold ended
     in property <string> agent: "Claude"; // who is calling: Claude or Codex
     in property <string> time-text: "Calling you";
+    in property <string> time-key: "Calling you"; // the header line animates only when this changes
     in property <string> status;
     in property <Cap> cap: { key: 0, label: "Calling now", text: "Claude would like to talk.", lit: "Claude would like to talk.", size: 0, tone: "", orb: false };
     in property <string> bubble-text; // Claude's line in the thread
@@ -25,6 +26,9 @@ export component CallScreen inherits Window {
     in property <length> perch-x: 24px; // where the mascot's box sits in the stage
     in property <length> perch-y: 20px;
     in property <length> mascot-h: 80px;
+    in property <int> null-frame; // Codex's pet: which frame of null.png (row * 6 + column)
+    in property <float> null-fade: 1;
+    in property <length> null-dy;
     in property <float> level; // whoever is talking, 0..1
     in property <float> me-level;
     in property <float> t; // seconds, advanced by Rust only while something moves
@@ -79,7 +83,7 @@ export component CallScreen inherits Window {
             width: parent.width - 48px;
             height: 52px;
             Text { x: 0; y: 2px; text: root.agent; font-size: 18px; font-weight: 700; color: T.fg; }
-            SwapText { y: 28px; width: parent.width; height: 20px; text: root.time-text; font-size: 14px; color: T.muted; }
+            SwapText { y: 28px; width: parent.width; height: 20px; text: root.time-text; key: root.time-key; font-size: 14px; color: T.muted; }
         }
 
         // ---- The stage: Clawd, the big caption, and the thread while you talk and Claude thinks ----
@@ -237,6 +241,26 @@ export component CallScreen inherits Window {
                     height: p.h;
                     background: p.c;
                     opacity: p.o;
+                }
+                // Null, for calls from Codex: on the same footing as Clawd, about as tall. Its frames are made at the
+                // exact size they are shown (ui/null_atlas.py), so they are drawn pixel for pixel: big, and small when
+                // perched (the one step between is the big frames at 3/4).
+                if root.agent == "Codex": Image {
+                    property <float> u: root.mascot-h / 20px;
+                    property <bool> small: u < 2.5;
+                    property <float> k: small || u > 3.5 ? 1 : 0.75;
+                    property <int> cw: small ? 144 : 252;
+                    property <int> ch: small ? 208 : 364;
+                    source: small ? @image-url("null-small.png") : @image-url("null.png");
+                    source-clip-x: Math.mod(root.null-frame, 6) * cw;
+                    source-clip-y: floor(root.null-frame / 6) * ch;
+                    source-clip-width: cw;
+                    source-clip-height: ch;
+                    width: cw * 1phx * k;
+                    height: ch * 1phx * k;
+                    x: 200px + 18px * u - (small ? 72 : 126) * 1phx * k;
+                    y: 600px - 6px + root.null-dy - (small ? 198 : 346) * 1phx * k;
+                    opacity: root.null-fade;
                 }
                 TouchArea {
                     x: 200px;

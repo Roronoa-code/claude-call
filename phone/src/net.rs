@@ -1,44 +1,35 @@
-//! The app's own networking, called from its Kotlin shell (fyi.mani.callme.Native): the always-on listener for
-//! Claude's calls and contact-mode changes on the private ntfy topic, hanging up, and the contact mode itself.
-use jni::{
-    JNIEnv,
-    objects::{JClass, JObject, JString, JValue},
-    sys::jstring,
-};
+//! The app's own networking: the always-on listener for Claude's calls and contact-mode changes on the private ntfy
+//! topic, hanging up, and publishing / reading the contact mode.
+use crate::settings::MODES;
+use jni::{JNIEnv, objects::JObject};
 use serde_json::Value;
 use std::{
     sync::{
         LazyLock,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicU64, Ordering},
     },
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::Duration,
 };
 
 static RT: LazyLock<tokio::runtime::Runtime> =
     LazyLock::new(|| tokio::runtime::Builder::new_multi_thread().worker_threads(1).enable_all().build().expect("runtime"));
 static HTTP: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
-static STOP: AtomicBool = AtomicBool::new(false);
-const MODES: [&str; 4] = ["call", "text", "both", "none"];
+/// The listener generation that should be running; `stop` moves it on, which ends the current one.
+pub static GEN: AtomicU64 = AtomicU64::new(0);
 
-fn string(env: &mut JNIEnv, s: &JString) -> String {
-    env.get_string(s).map(Into::into).unwrap_or_default()
+pub fn stop() {
+    GEN.fetch_add(1, Ordering::Relaxed);
 }
 
-fn now_ms() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64
-}
-
-/// Listens until `stop`: rings for fresh calls (ring.rs) and passes contact-mode changes on (`Native.onMode`).
+/// Listens until `stop`: rings for fresh calls (ring.rs) and stores contact-mode changes (settings.rs).
 /// Reconnects with backoff; after a drop it catches up on what it missed.
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_fyi_mani_callme_Native_listen(mut env: JNIEnv, class: JClass, ctx: JObject, topic: JString) {
-    let topic = string(&mut env, &topic);
-    STOP.store(false, Ordering::Relaxed);
+pub fn listen(env: &mut JNIEnv, ctx: &JObject, topic: String, generation: u64) {
+    let alive = move || GEN.load(Ordering::Relaxed) == generation;
     let (tx, rx) = std::sync::mpsc::channel::<Value>();
-    // The network runs on the runtime; the Java callbacks run here, on the service's own thread.
+    // The network runs on the runtime; the Java calls run here, on the listener's own thread.
     let task = RT.spawn(async move {
         let (mut last_id, mut backoff) = (None::<String>, 2u64);
-        while !STOP.load(Ordering::Relaxed) {
+        while alive() {
             let since = last_id.clone().unwrap_or_else(|| "75s".into());
             let r = HTTP.get(format!("https://ntfy.sh/{topic}/json?since={since}")).timeout(Duration::from_secs(24 * 3600)).send().await;
             if let Ok(r) = r.and_then(|r| r.error_for_status()) {
@@ -63,51 +54,37 @@ pub extern "system" fn Java_fyi_mani_callme_Native_listen(mut env: JNIEnv, class
                         }
                         line.clear();
                     }
-                    if STOP.load(Ordering::Relaxed) {
+                    if !alive() {
                         return;
                     }
                 }
             }
-            if STOP.load(Ordering::Relaxed) {
+            if !alive() {
                 return;
             }
             tokio::time::sleep(Duration::from_secs(backoff)).await;
             backoff = (backoff * 2).min(60);
         }
     });
-    while !STOP.load(Ordering::Relaxed) {
+    while alive() {
         let Ok(msg) = rx.recv_timeout(Duration::from_secs(1)) else { continue };
-        let at = msg["time"].as_u64().unwrap_or(0) * 1000;
+        let at = msg["time"].as_i64().unwrap_or(0) * 1000;
         let text = msg["message"].as_str().unwrap_or("").trim().to_string();
         let link = msg["click"].as_str().unwrap_or("").to_string();
-        let res = match msg["title"].as_str() {
-            Some("Contact mode") if MODES.contains(&text.as_str()) => env.new_string(&text).and_then(|m| {
-                let sig = "(Landroid/content/Context;Ljava/lang/String;J)V";
-                env.call_static_method(&class, "onMode", sig, &[JValue::Object(&ctx), JValue::Object(&m), JValue::Long(at as i64)]).map(drop)
-            }),
+        crate::jx::ok(env, |env| match msg["title"].as_str() {
+            Some("Contact mode") => crate::settings::received(env, ctx, &text, at),
             // Claude keeps a call open ~75 s; anything older has already given up.
-            Some("Claude is calling") if now_ms().saturating_sub(at) < 75_000 && link.starts_with("https://") => {
-                crate::ring::ring(&mut env, &ctx, &link, &text)
+            Some("Claude is calling") if crate::jx::now_ms() - at < 75_000 && link.starts_with("https://") => {
+                crate::ring::ring(env, ctx, &link, &text)
             }
-            _ => continue,
-        };
-        if res.is_err() && env.exception_check().unwrap_or(false) {
-            let _ = env.exception_clear();
-        }
+            _ => Ok(()),
+        });
     }
     task.abort();
 }
 
-/// Ends `listen` (within a second).
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_fyi_mani_callme_Native_stop(_env: JNIEnv, _class: JClass) {
-    STOP.store(true, Ordering::Relaxed);
-}
-
 /// Tells Claude the call was declined or hung up, so it stops waiting (in the background).
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_fyi_mani_callme_Native_hangUp(mut env: JNIEnv, _class: JClass, link: JString) {
-    let link = string(&mut env, &link);
+pub fn hang_up(link: &str) {
     if let Some((base, query)) = link.split_once("/?").filter(|_| link.starts_with("https://")) {
         let url = format!("{base}/decline?{query}");
         RT.spawn(async move {
@@ -117,47 +94,22 @@ pub extern "system" fn Java_fyi_mani_callme_Native_hangUp(mut env: JNIEnv, _clas
 }
 
 /// Publishes the contact mode chosen on the phone, so the PC agents follow it (in the background).
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_fyi_mani_callme_Native_publishMode(mut env: JNIEnv, _class: JClass, topic: JString, mode: JString) {
-    let (topic, mode) = (string(&mut env, &topic), string(&mut env, &mode));
+pub fn publish_mode(topic: String, mode: String) {
     RT.spawn(async move {
         let req = HTTP.post(format!("https://ntfy.sh/{topic}")).header("Title", "Contact mode").header("Priority", "1").body(mode);
         let _ = req.timeout(Duration::from_secs(10)).send().await;
     });
 }
 
-/// The latest contact mode set from anywhere in the last 12 h, as "mode atMs", or null. Blocks: call off the UI thread.
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_fyi_mani_callme_Native_latestMode(mut env: JNIEnv, _class: JClass, topic: JString) -> jstring {
-    let topic = string(&mut env, &topic);
-    let latest = RT.block_on(async {
+/// The latest contact mode set from anywhere in the last 12 h, and when (ms). Blocks: call off the UI thread.
+pub fn latest_mode(topic: &str) -> Option<(String, i64)> {
+    RT.block_on(async {
         let r = HTTP.get(format!("https://ntfy.sh/{topic}/json?poll=1&since=12h")).timeout(Duration::from_secs(8)).send().await.ok()?;
         let text = r.text().await.ok()?;
         text.lines()
             .filter_map(|l| serde_json::from_str::<Value>(l).ok())
             .filter(|m| m["title"] == "Contact mode" && MODES.contains(&m["message"].as_str().unwrap_or("").trim()))
             .last()
-            .map(|m| format!("{} {}", m["message"].as_str().unwrap_or("").trim(), m["time"].as_u64().unwrap_or(0) * 1000))
-    });
-    match latest.and_then(|s| env.new_string(s).ok()) {
-        Some(s) => s.into_raw(),
-        None => std::ptr::null_mut(),
-    }
-}
-
-/// Rings for a call (also the home screen's test ring).
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_fyi_mani_callme_Native_ring(mut env: JNIEnv, _class: JClass, ctx: JObject, link: JString, reason: JString) {
-    let (link, reason) = (string(&mut env, &link), string(&mut env, &reason));
-    if crate::ring::ring(&mut env, &ctx, &link, &reason).is_err() && env.exception_check().unwrap_or(false) {
-        let _ = env.exception_clear();
-    }
-}
-
-/// Stops ringing (answered, declined, or the call screen was touched).
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_fyi_mani_callme_Native_stopRinging(mut env: JNIEnv, _class: JClass, ctx: JObject, handled: jni::sys::jboolean) {
-    if crate::ring::stop(&mut env, &ctx, handled != 0).is_err() && env.exception_check().unwrap_or(false) {
-        let _ = env.exception_clear();
-    }
+            .map(|m| (m["message"].as_str().unwrap_or("").trim().to_string(), m["time"].as_i64().unwrap_or(0) * 1000))
+    })
 }

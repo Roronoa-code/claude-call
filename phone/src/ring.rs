@@ -5,12 +5,13 @@ use jni::{
     errors::Result,
     objects::{GlobalRef, JObject, JValue},
 };
+use crate::jx::{intent, pending, put, s, service};
 use std::{collections::HashSet, sync::Mutex, time::Duration};
 
 const CHANNEL: &str = "calls";
 const NOTIFICATION_ID: i32 = 2;
 const RING_FOR: Duration = Duration::from_secs(60);
-const FLAGS: i32 = 0x0400_0000 | 0x0800_0000; // PendingIntent.FLAG_IMMUTABLE | FLAG_UPDATE_CURRENT
+pub const TEST_LINK: &str = "test:ring";
 
 #[derive(Default)]
 struct State {
@@ -21,49 +22,22 @@ struct State {
 }
 static STATE: Mutex<Option<State>> = Mutex::new(None);
 
-fn s<'a>(env: &mut JNIEnv<'a>, text: &str) -> Result<JObject<'a>> {
-    Ok(env.new_string(text)?.into())
-}
-
-/// An Intent for one of the app's own classes.
-fn intent<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, class: &str) -> Result<JObject<'a>> {
-    let cls = env.find_class(class)?;
-    env.new_object("android/content/Intent", "(Landroid/content/Context;Ljava/lang/Class;)V", &[JValue::Object(ctx), JValue::Object(&cls)])
-}
-
-fn put<'a>(env: &mut JNIEnv<'a>, i: &JObject, key: &str, value: JValue) -> Result<()> {
-    let k = s(env, key)?;
-    let sig = match value {
-        JValue::Bool(_) => "(Ljava/lang/String;Z)Landroid/content/Intent;",
-        _ => "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
-    };
-    env.call_method(i, "putExtra", sig, &[JValue::Object(&k), value])?;
-    Ok(())
-}
-
 /// The call screen, answered or not, as a PendingIntent.
 pub fn call_screen<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, link: &str, answer: bool, code: i32) -> Result<JObject<'a>> {
-    let i = intent(env, ctx, "fyi/mani/callme/CallActivity")?;
+    let i = intent(env, ctx, "CallActivity")?;
     env.call_method(&i, "addFlags", "(I)Landroid/content/Intent;", &[JValue::Int(0x1000_0000)])?; // NEW_TASK
     let l = s(env, link)?;
     put(env, &i, "link", JValue::Object(&l))?;
     put(env, &i, "answer", JValue::Bool(answer as u8))?;
-    let sig = "(Landroid/content/Context;ILandroid/content/Intent;I)Landroid/app/PendingIntent;";
-    env.call_static_method("android/app/PendingIntent", "getActivity", sig, &[JValue::Object(ctx), JValue::Int(code), JValue::Object(&i), JValue::Int(FLAGS)])?.l()
+    pending(env, ctx, "getActivity", code, &i)
 }
 
 /// "Decline" / "End call": tells Claude and closes the call (DeclineReceiver).
 pub fn hang_up<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, link: &str, code: i32) -> Result<JObject<'a>> {
-    let i = intent(env, ctx, "fyi/mani/callme/DeclineReceiver")?;
+    let i = intent(env, ctx, "DeclineReceiver")?;
     let l = s(env, link)?;
     put(env, &i, "link", JValue::Object(&l))?;
-    let sig = "(Landroid/content/Context;ILandroid/content/Intent;I)Landroid/app/PendingIntent;";
-    env.call_static_method("android/app/PendingIntent", "getBroadcast", sig, &[JValue::Object(ctx), JValue::Int(code), JValue::Object(&i), JValue::Int(FLAGS)])?.l()
-}
-
-pub fn service<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, name: &str) -> Result<JObject<'a>> {
-    let n = s(env, name)?;
-    env.call_method(ctx, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;", &[JValue::Object(&n)])?.l()
+    pending(env, ctx, "getBroadcast", code, &i)
 }
 
 pub fn channel(env: &mut JNIEnv, nm: &JObject, id: &str, name: &str, importance: i32, silent: bool) -> Result<()> {

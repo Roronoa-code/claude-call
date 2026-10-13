@@ -5,6 +5,7 @@ use jni::{
     JNIEnv, JavaVM,
     objects::{GlobalRef, JObject, JValue},
 };
+use crate::jx::service;
 use std::sync::{Mutex, OnceLock};
 
 struct Ctx {
@@ -25,7 +26,7 @@ pub fn init(app: &android_activity::AndroidApp) {
 }
 
 /// Runs `f` with a JNI env on this thread; errors (and pending Java exceptions) are logged and dropped.
-fn with<R>(f: impl FnOnce(&mut JNIEnv, &JObject) -> jni::errors::Result<R>) -> Option<R> {
+pub fn with<R>(f: impl FnOnce(&mut JNIEnv, &JObject) -> jni::errors::Result<R>) -> Option<R> {
     let ctx = CTX.get()?;
     let mut env = ctx.vm.attach_current_thread_permanently().ok()?;
     match f(&mut env, ctx.activity.as_obj()) {
@@ -65,11 +66,6 @@ pub fn intent() -> (Option<String>, bool) {
         Ok((link, answer))
     })
     .unwrap_or((None, false))
-}
-
-fn service<'a>(env: &mut JNIEnv<'a>, act: &JObject, name: &str) -> jni::errors::Result<JObject<'a>> {
-    let n = env.new_string(name)?;
-    env.call_method(act, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;", &[JValue::Object(&n)])?.l()
 }
 
 const EARPIECE: i32 = 1;
@@ -152,9 +148,9 @@ pub fn insets() -> Option<(f32, f32, f32)> {
     .flatten()
 }
 
-/// The app's own call hooks (CallActivity.kt): the ongoing-call notification, and closing the screen.
+/// The call connected: stop ringing, show the ongoing-call notification.
 pub fn call_began() {
-    with(|env, act| env.call_method(act, "callBegan", "()V", &[]).map(drop));
+    with(|env, act| crate::service::call_began(env, act));
 }
 pub fn finish() {
     with(|env, act| env.call_method(act, "finish", "()V", &[]).map(drop));
@@ -202,28 +198,4 @@ pub fn activity_name() -> String {
         Ok(env.get_string(&name.into())?.into())
     })
     .unwrap_or_default()
-}
-
-// The home screen's Android calls (MainActivity.kt).
-pub fn call(method: &str) {
-    with(|env, act| env.call_method(act, method, "()V", &[]).map(drop));
-}
-pub fn call_str(method: &str) -> String {
-    with(|env, act| {
-        let s = env.call_method(act, method, "()Ljava/lang/String;", &[])?.l()?;
-        Ok(if s.is_null() { String::new() } else { env.get_string(&s.into())?.into() })
-    })
-    .unwrap_or_default()
-}
-pub fn call_with_str(method: &str, arg: &str) {
-    with(|env, act| {
-        let a = env.new_string(arg)?;
-        env.call_method(act, method, "(Ljava/lang/String;)V", &[JValue::Object(&a)]).map(drop)
-    });
-}
-pub fn call_bool(method: &str) -> bool {
-    with(|env, act| env.call_method(act, method, "()Z", &[])?.z()).unwrap_or(false)
-}
-pub fn call_with_bool(method: &str, arg: bool) {
-    with(|env, act| env.call_method(act, method, "(Z)V", &[JValue::Bool(arg as u8)]).map(drop));
 }

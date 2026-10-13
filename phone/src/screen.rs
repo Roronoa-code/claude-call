@@ -3,6 +3,7 @@ use crate::{
     Cap, CallScreen, Msg as UiMsg, Px, android,
     engine::Engine,
     mascot::{Mascot, Phase},
+    null::Null,
     view::{self, Msg, View, Voice, clock},
 };
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
@@ -25,6 +26,7 @@ struct Frame {
     held: Held,
     cap: Option<Cap>,
     mascot: Mascot,
+    null: Null, // Codex's pet, for calls from Codex
     perch: (f64, f64, f64), // where the mascot's box bottom-left is easing to: x, bottom, start time
     from: (f64, f64),
     u: f64,
@@ -189,7 +191,16 @@ fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activi
     let box_h = 20.0 * u;
     let shift = 2.0 * ((sink as f64) * (box_h + 14.0) / 2.0).round() - lift;
     let fade = f.mascot.fade();
-    let pixels: Vec<Px> = cells
+    let codex = agent == "Codex";
+    if codex {
+        let n = f.null.frame((now / 1000.0) as f32, phase);
+        if ui.get_null_frame() != n {
+            ui.set_null_frame(n);
+        }
+        ui.set_null_fade(fade);
+        ui.set_null_dy((shift + lift) as f32); // ducks behind the line at the end, like Clawd; no Clawd hops
+    }
+    let pixels: Vec<Px> = if codex { &[][..] } else { &cells[..] }
         .iter()
         .map(|c| Px {
             x: (c.x as f64 * u) as f32,
@@ -213,6 +224,8 @@ fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activi
     if ui.get_phase() != phase_name.as_str() {
         ui.set_phase(phase_name.into());
     }
+    let key = time.split(" · ").next().unwrap_or_default().to_string();
+    set_if(ui.get_time_key(), key, |t| ui.set_time_key(t));
     set_if(ui.get_time_text(), time, |t| ui.set_time_text(t));
     set_if(ui.get_status(), status, |t| ui.set_status(t));
     set_if(ui.get_agent(), agent, |t| ui.set_agent(t));
@@ -328,6 +341,7 @@ pub fn run(app: android_activity::AndroidApp) {
         held: Held::default(),
         cap: None,
         mascot: Mascot::new((now / 1000.0) as f32),
+        null: Null::default(),
         perch: (24.0, 108.0, -1e9),
         from: (24.0, 108.0),
         u: 4.0,
@@ -345,7 +359,9 @@ pub fn run(app: android_activity::AndroidApp) {
         let (f, e) = (frame.clone(), e.clone());
         move || {
             let now = (e.now() / 1000.0) as f32;
-            f.borrow_mut().mascot.poke(now);
+            let mut f = f.borrow_mut();
+            f.mascot.poke(now);
+            f.null.poke(now);
         }
     });
     // 30 frames a second is plenty for pixel art and captions; properties that didn't change cost nothing.
