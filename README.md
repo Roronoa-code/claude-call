@@ -23,4 +23,15 @@ Fallbacks: Kokoro for the voice, small Whisper on the CPU for hearing, and the p
 - `node asr-check.mjs`: checks that context fixes misheard names.
 - `node voice/server_check.mjs`: checks the voice server's speed and audio.
 
+**Open issues (from the first real call on the S25, 2026-10-13; recording `Downloads\Screen_Recording_20261013_141027.mp4`)**
+- Call screen (`call-ui/`):
+  - After an interrupt, the whole long line, including the unspoken words, becomes a giant Claude bubble that pushes the user's live bubble behind the status line. The bubble should keep only the spoken words, be capped, and scroll so the user's bubble stays visible.
+  - Clawd vanishes for a frame or two during caption↔bubble moves.
+  - The control row disappeared for a frame at turn end.
+  - An empty "Claude" caption showed before a line's first words.
+- Turn handover took 3.3 s even when reusing the live transcript; it should be about 0.3 s.
+- On the earpiece, Samsung's call mode mutes the mic while Claude plays (rms ~0), so quiet interrupts can't be detected. A normal-volume interrupt worked once.
+- The route flipped earpiece→speaker by itself once.
+- Mishearing: "call screen" was heard as "cold screen". Add a fixed vocabulary hint (Claude, Clawd, Codex, call screen…) to Whisper's prompt.
+
 **Android app:** `android/` (Kotlin, no libraries). Build with `gradlew assembleRelease`, then install with `adb install -r ClaudeCall.apk`.
