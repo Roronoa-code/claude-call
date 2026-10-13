@@ -23,6 +23,8 @@ static RUNNING: AtomicU64 = AtomicU64::new(u64::MAX);
 
 const SPECIAL_USE: i32 = 0x4000_0000; // ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
 const MICROPHONE: i32 = 0x80;
+const READY_ID: i32 = 1; // "Ready for Claude's calls"
+const CALL_ID: i32 = 3; // the ongoing call (2 is the ringing)
 
 pub fn active_link() -> Option<String> {
     ACTIVE.lock().unwrap().as_ref().map(|a| a.0.clone())
@@ -124,8 +126,13 @@ fn notification<'a>(env: &mut JNIEnv<'a>, svc: &JObject) -> Result<(JObject<'a>,
 
 /// ListenService.onStartCommand: the notification, and the listener if it isn't running.
 pub fn foreground(env: &mut JNIEnv, svc: &JObject) -> Result<()> {
+    // The ongoing call has its own notification id: Android 16 keeps a promoted call card when the same id is
+    // updated to the plain "ready" one, so the call card is removed by id instead.
     let (n, types) = notification(env, svc)?;
-    env.call_method(svc, "startForeground", "(ILandroid/app/Notification;I)V", &[JValue::Int(1), JValue::Object(&n), JValue::Int(types)])?;
+    let (id, other) = if active_link().is_some() { (CALL_ID, READY_ID) } else { (READY_ID, CALL_ID) };
+    env.call_method(svc, "startForeground", "(ILandroid/app/Notification;I)V", &[JValue::Int(id), JValue::Object(&n), JValue::Int(types)])?;
+    let nm = service(env, svc, "notification")?;
+    env.call_method(&nm, "cancel", "(I)V", &[JValue::Int(other)])?;
     let generation = net::GEN.load(Ordering::Relaxed);
     if RUNNING.swap(generation, Ordering::Relaxed) != generation {
         let (vm, ctx) = (env.get_java_vm()?, jx::app(env, svc)?);
