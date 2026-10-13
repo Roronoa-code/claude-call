@@ -24,6 +24,7 @@ struct Buf {
     cushion: usize, // ~250 ms
     ending: bool,   // the whole line is here: play out what is left
     gaps: u32,      // times it ran dry mid-line
+    paused: bool,   // a sudden sound while she talks: hold the voice until it is known to be words (or not)
 }
 
 /// Claude's voice. Samples are pushed as they arrive; `stop` silences at once.
@@ -52,11 +53,12 @@ impl Player {
                 b.primed = true;
             }
             let mut n = 0;
+            let play = b.primed && !b.paused;
             for s in out.iter_mut() {
-                *s = if b.primed { b.data.pop_front().map(|v| { n += 1; v }).unwrap_or(0) } else { 0 };
+                *s = if play { b.data.pop_front().map(|v| { n += 1; v }).unwrap_or(0) } else { 0 };
             }
             b.played += n;
-            if b.primed && b.data.is_empty() && !b.ending {
+            if play && b.data.is_empty() && !b.ending {
                 b.primed = false; // ran dry before the line ended: build the cushion up again
                 b.gaps += 1;
             }
@@ -132,7 +134,16 @@ impl Player {
     pub fn stop(&self) {
         let mut b = self.buf.lock().unwrap();
         b.data.clear();
-        b.primed = false;
+        (b.primed, b.paused) = (false, false);
+    }
+
+    /// Holds the voice where it is (true) or carries on (false).
+    pub fn pause(&self, on: bool) {
+        self.buf.lock().unwrap().paused = on;
+    }
+
+    pub fn paused(&self) -> bool {
+        self.buf.lock().unwrap().paused
     }
 
     pub fn close(&mut self) {

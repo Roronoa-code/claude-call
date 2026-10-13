@@ -457,6 +457,9 @@ async fn handle(req: Request) -> Result<Response, String> {
             let ok = !voice::is_noise(&heard);
             if ok {
                 deliver(if interrupted { format!("(interrupting you) {heard}") } else { heard.clone() });
+            } else if interrupted {
+                // Cut off by a noise, not words: without this the agent would wait for a reply that never comes.
+                deliver("(you were cut off by a noise, not words: carry on from where you were)".into());
             }
             call().turns_in_flight -= 1;
             json_res(json!({ "text": if ok { heard } else { String::new() } }))

@@ -207,10 +207,15 @@ impl Engine {
         if s.barge.is_none() {
             s.echo = if rms < s.echo { s.echo * 0.9 + rms * 0.1 } else { s.echo * 0.99 + rms * 0.01 };
         }
-        // Clearly loud speech stops Claude at once (not in a line's first moments, while the echo is still being learnt).
+        // A clearly loud sound holds Claude's voice at once (not in a line's first moments, while the echo is still
+        // being learnt); only words stop her. A cough, typing or a bang just pauses her, and she carries on.
         s.loud_run = if rms > high { s.loud_run + 1 } else { 0 };
-        if s.loud_run >= 4 && s.line.as_ref().is_some_and(|l| l.started && now - l.start_at > 800.0) {
-            return self.interrupt(s, "loud", now);
+        if s.loud_run >= 4 && !s.player.paused() && s.line.as_ref().is_some_and(|l| l.started && now - l.start_at > 800.0) {
+            s.player.pause(true);
+            if s.barge.is_none() {
+                s.barge = Some(Self::new_utt(s, now));
+            }
+            self.dbg(s, "paused for a loud sound");
         }
         s.hot.push_back(rms > low);
         if s.hot.len() > 7 {
@@ -236,6 +241,7 @@ impl Engine {
                 s.utts.remove(&id);
             }
             s.barge = None;
+            s.player.pause(false);
             self.dbg(s, "barge dropped");
             return;
         }

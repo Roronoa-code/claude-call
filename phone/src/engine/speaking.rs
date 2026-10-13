@@ -106,7 +106,7 @@ impl Engine {
 
     /// Waits for the queued voice to finish playing (or the line to be cut).
     pub(super) async fn drain(&self) {
-        let until = {
+        let mut until = {
             let mut s = self.lock();
             let gaps = s.player.end_line(); // everything is here: play out the rest
             if gaps > 0 {
@@ -119,6 +119,9 @@ impl Engine {
             {
                 let s = self.lock();
                 let (_, waiting) = s.player.position();
+                if s.player.paused() {
+                    until += 20.0; // held for a sudden sound: that time doesn't count
+                }
                 if waiting == 0 || s.line.as_ref().is_none_or(|l| l.cut) || self.now() > until {
                     return;
                 }

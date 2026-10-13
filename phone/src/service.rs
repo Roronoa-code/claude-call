@@ -251,9 +251,22 @@ pub fn declined(env: &mut JNIEnv, ctx: &JObject, intent: &JObject) -> Result<()>
     Ok(())
 }
 
+/// The active call, unless its screen is already closing: the home screen comes back before the call screen is gone,
+/// and bringing the call back then reopened it and replayed the goodbye.
+fn live_link(env: &mut JNIEnv) -> Result<Option<String>> {
+    let Some(link) = active_link() else { return Ok(None) };
+    let screen = SCREEN.lock().unwrap().as_ref().filter(|s| s.1 == link).map(|s| s.0.clone());
+    if let Some(act) = screen {
+        if env.call_method(act.as_obj(), "isFinishing", "()Z", &[])?.z()? {
+            return Ok(None);
+        }
+    }
+    Ok(Some(link))
+}
+
 /// The home screen opened: during a call the app icon brings the call back instead.
 pub fn home_opened(env: &mut JNIEnv, act: &JObject) -> Result<()> {
-    let Some(link) = active_link() else { return Ok(()) };
+    let Some(link) = live_link(env)? else { return Ok(()) };
     let i = ring::call_intent(env, act, &link, true)?;
     jx::start_activity(env, act, &i)?;
     env.call_method(act, "finish", "()V", &[])?;
@@ -263,7 +276,7 @@ pub fn home_opened(env: &mut JNIEnv, act: &JObject) -> Result<()> {
 /// The home screen came to the front (the app icon brings an open one back without a new intent): during a call that
 /// means the call; otherwise listen if setup is done, and pick up a mode changed elsewhere.
 pub fn home_resumed(env: &mut JNIEnv, act: &JObject) -> Result<()> {
-    if active_link().is_some() {
+    if live_link(env)?.is_some() {
         return home_opened(env, act);
     }
     if settings::missing(env, act)?.is_empty() {

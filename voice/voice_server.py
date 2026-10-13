@@ -43,15 +43,26 @@ def clone(ref: dict):
     return p, ref["text"]
 
 
-# Several takes per mood (make_moods.py); "" is the normal voice. Each sentence is said from a take picked at random,
-# so the voice keeps varying instead of repeating one delivery.
+# Several takes per mood (make_moods.py); "" is the normal voice. One take per mood is picked at random for each call
+# and kept for it, so her tone stays steady within a call (a new take every sentence sounded jumpy) and varies between calls.
 moods = voice.get("moods", {})
 voices = {"": [clone(voice)] + [clone(t) for t in moods.get("normal", [])],
           **{mood: [clone(t) for t in takes] for mood, takes in moods.items() if mood != "normal"}}
 
 
+chosen: dict[str, tuple] = {}
+last_spoke = 0.0
+NEW_CALL_S = 10 * 60  # after this long without a word, the next line starts a new call: fresh takes
+
+
 def take(mood: str):
-    return random.choice(voices[mood])
+    global last_spoke
+    if time.time() - last_spoke > NEW_CALL_S:
+        chosen.clear()
+    last_spoke = time.time()
+    if mood not in chosen:
+        chosen[mood] = random.choice(voices[mood])
+    return chosen[mood]
 
 # One voice at a time (the CUDA graphs hold a single generation's state), and one GPU job at a time.
 # Streaming takes the GPU per chunk, so hearing (live captions, interrupts) slips in between voice chunks.
