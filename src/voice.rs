@@ -185,6 +185,33 @@ fn iso_ms(s: &str) -> u64 {
     humantime::parse_rfc3339_weak(s).ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_millis() as u64)
 }
 
+/// The last 12 hours of messages on the ntfy topic (what ntfy keeps), one JSON object per line.
+async fn ntfy_recent() -> Option<String> {
+    let r = HTTP
+        .get(format!("https://ntfy.sh/{}/json?poll=1&since=12h", cfg().topic))
+        .timeout(Duration::from_secs(4))
+        .send()
+        .await
+        .ok()?;
+    r.text().await.ok()
+}
+
+/// The phone app's Call button publishes "Call request"; one from the last 5 minutes means the user asked for this call.
+fn call_requested_in(lines: &str, now_secs: u64) -> bool {
+    lines
+        .lines()
+        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+        .any(|m| m["event"] == "message" && m["title"] == "Call request" && m["time"].as_u64().is_some_and(|t| t + 300 >= now_secs))
+}
+
+pub async fn call_requested() -> bool {
+    if cfg().test_status {
+        return false; // tests never read the real topic
+    }
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    ntfy_recent().await.is_some_and(|t| call_requested_in(&t, now))
+}
+
 /// The phone app publishes its setting on the ntfy topic (title "Contact mode"); take it if it's newer than the file.
 pub async fn contact_mode() -> String {
     let file = read_status();
@@ -193,14 +220,9 @@ pub async fn contact_mode() -> String {
         return mode;
     }
     let poll = async {
-        let r = HTTP
-            .get(format!("https://ntfy.sh/{}/json?poll=1&since=12h", cfg().topic))
-            .timeout(Duration::from_secs(4))
-            .send()
-            .await
-            .ok()?;
-        let text = r.text().await.ok()?;
-        text.lines()
+        ntfy_recent()
+            .await?
+            .lines()
             .filter_map(|l| serde_json::from_str::<Value>(l).ok())
             .filter(|m| m["event"] == "message" && m["title"] == "Contact mode")
             .filter(|m| MODES.contains(&m["message"].as_str().unwrap_or("").trim()))
@@ -257,5 +279,14 @@ mod tests {
         assert_eq!((&w[0..4], &w[8..16], w.len()), (&b"RIFF"[..], &b"WAVEfmt "[..], 48));
         assert_eq!(u32::from_le_bytes(w[24..28].try_into().unwrap()), 24_000);
         assert_eq!(&w[36..40], b"data");
+    }
+
+    #[test]
+    fn call_request_freshness() {
+        let at = |title: &str, time: u64| format!("{{\"event\":\"message\",\"time\":{time},\"title\":\"{title}\",\"message\":\"claude\"}}\n");
+        let now = 1_000_000;
+        assert!(super::call_requested_in(&(at("Contact mode", now) + &at("Call request", now - 299)), now));
+        assert!(!super::call_requested_in(&at("Call request", now - 301), now));
+        assert!(!super::call_requested_in(&(at("Contact mode", now) + "{\"event\":\"keepalive\",\"time\":1000000}\nnot json\n"), now));
     }
 }

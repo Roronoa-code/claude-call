@@ -38,7 +38,8 @@ fn tools() -> Value {
 
 async fn call_user(message: String, reason: Option<String>) -> Result<String, String> {
     let mode = voice::contact_mode().await;
-    if mode != "call" && mode != "both" {
+    // A recent Call request from the phone means the user asked for this call, whatever the mode says.
+    if mode != "call" && mode != "both" && !voice::call_requested().await {
         let next = if mode == "text" { " Message them on Discord instead (ask_discord)." } else { " Do not contact them; carry on with work that does not need them, and leave the question for when they are back." };
         return Ok(format!("Not called: the user's contact mode is \"{mode}\" (calls not allowed).{next}"));
     }

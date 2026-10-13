@@ -14,9 +14,12 @@ export global Home {
     in property <length> sat: 36px;
     in property <length> sab: 24px;
     in property <length> kb; // the keyboard's height while the channel is being edited
+    in-out property <string> caller: "claude"; // who the Call button asks for: claude or codex (tap Clawd or Null)
+    in property <bool> requested; // a call was just asked for; it rings within a minute or so
     callback set-mode(string);
     callback set-up();
     callback test-ring();
+    callback call(string);
     callback pin(bool);
     callback save-topic(string);
     callback editing(bool);

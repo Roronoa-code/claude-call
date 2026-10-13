@@ -93,12 +93,22 @@ pub fn hang_up(link: &str) {
     }
 }
 
-/// Publishes the contact mode chosen on the phone, so the PC agents follow it (in the background).
-pub fn publish_mode(topic: String, mode: String) {
+/// Posts on the private channel for the PC (in the background).
+fn publish(topic: String, title: &'static str, body: String) {
     RT.spawn(async move {
-        let req = HTTP.post(format!("https://ntfy.sh/{topic}")).header("Title", "Contact mode").header("Priority", "1").body(mode);
+        let req = HTTP.post(format!("https://ntfy.sh/{topic}")).header("Title", title).header("Priority", "1").body(body);
         let _ = req.timeout(Duration::from_secs(10)).send().await;
     });
+}
+
+/// The contact mode chosen on the phone, so the PC agents follow it.
+pub fn publish_mode(topic: String, mode: String) {
+    publish(topic, "Contact mode", mode);
+}
+
+/// The Call button: asks the PC to start gent ("claude" or "codex"), which then calls the phone.
+pub fn request_call(topic: String, agent: String) {
+    publish(topic, "Call request", agent);
 }
 
 /// The latest contact mode set from anywhere in the last 12 h, and when (ms). Blocks: call off the UI thread.

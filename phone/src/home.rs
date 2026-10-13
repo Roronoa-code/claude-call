@@ -52,6 +52,20 @@ pub fn run(_app: android_activity::AndroidApp) {
             ring::ring(env, &app, ring::TEST_LINK, "Test ring")
         });
     });
+    // The Call button: "Calling you…" until the call rings (or a minute and a half passes).
+    let requested_at = Rc::new(Cell::new(None::<Instant>));
+    home.on_call({
+        let (ui, requested_at) = (ui.as_weak(), requested_at.clone());
+        move |agent| {
+            if let Some(topic) = android::with(|env, act| settings::topic(env, act)) {
+                crate::net::request_call(topic, agent.to_string());
+                requested_at.set(Some(Instant::now()));
+                if let Some(ui) = ui.upgrade() {
+                    ui.global::<Home>().set_requested(true);
+                }
+            }
+        }
+    });
     home.on_pin(|wide| {
         android::with(|env, act| settings::pin(env, act, wide));
     });
@@ -85,6 +99,10 @@ pub fn run(_app: android_activity::AndroidApp) {
             if last_refresh.elapsed() > Duration::from_secs(1) {
                 last_refresh = Instant::now();
                 refresh(&ui);
+            }
+            if requested_at.get().is_some_and(|t| t.elapsed() > Duration::from_secs(90) || service::active_link().is_some()) {
+                requested_at.set(None);
+                home.set_requested(false);
             }
             // The channel sheet rides above the keyboard.
             let kb = if editing.get() { android::keyboard() } else { 0.0 };
