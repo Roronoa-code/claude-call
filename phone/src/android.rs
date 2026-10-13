@@ -6,13 +6,17 @@ use jni::{
     objects::{GlobalRef, JObject, JValue},
 };
 use crate::jx::service;
-use std::sync::{Mutex, OnceLock};
+use std::{cell::OnceCell, sync::Mutex};
 
 struct Ctx {
     vm: JavaVM,
     activity: GlobalRef,
 }
-static CTX: OnceLock<Ctx> = OnceLock::new();
+thread_local! {
+    /// This thread's screen. Each screen (home, call) runs on its own thread, and both can be open at once in the one
+    /// process the call listener keeps alive, so the activity is per thread, not per process.
+    static CTX: OnceCell<Ctx> = const { OnceCell::new() };
+}
 static WAKE: Mutex<Option<GlobalRef>> = Mutex::new(None);
 
 pub fn init(app: &android_activity::AndroidApp) {
@@ -22,14 +26,18 @@ pub fn init(app: &android_activity::AndroidApp) {
         let obj = unsafe { JObject::from_raw(app.activity_as_ptr().cast()) };
         env.new_global_ref(obj).expect("activity ref")
     };
-    let _ = CTX.set(Ctx { vm, activity });
+    CTX.with(|c| {
+        let _ = c.set(Ctx { vm, activity });
+    });
 }
 
-/// Runs `f` with a JNI env on this thread; errors (and pending Java exceptions) are logged and dropped.
+/// Runs `f` with a JNI env and this thread's activity; errors (and pending Java exceptions) are logged and dropped.
 pub fn with<R>(f: impl FnOnce(&mut JNIEnv, &JObject) -> jni::errors::Result<R>) -> Option<R> {
-    let ctx = CTX.get()?;
-    let mut env = ctx.vm.attach_current_thread_permanently().ok()?;
-    crate::jx::ok(&mut env, |env| f(env, ctx.activity.as_obj()))
+    CTX.with(|c| {
+        let ctx = c.get()?;
+        let mut env = ctx.vm.attach_current_thread_permanently().ok()?;
+        crate::jx::ok(&mut env, |env| f(env, ctx.activity.as_obj()))
+    })
 }
 
 pub fn log(msg: &str) {

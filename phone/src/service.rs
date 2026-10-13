@@ -253,8 +253,12 @@ pub fn home_opened(env: &mut JNIEnv, act: &JObject) -> Result<()> {
     Ok(())
 }
 
-/// The home screen came to the front: listen if setup is done, and pick up a mode changed elsewhere.
+/// The home screen came to the front (the app icon brings an open one back without a new intent): during a call that
+/// means the call; otherwise listen if setup is done, and pick up a mode changed elsewhere.
 pub fn home_resumed(env: &mut JNIEnv, act: &JObject) -> Result<()> {
+    if active_link().is_some() {
+        return home_opened(env, act);
+    }
     if settings::missing(env, act)?.is_empty() {
         start(env, act)?;
     }

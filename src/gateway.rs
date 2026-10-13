@@ -8,12 +8,11 @@
 //!     POST /register {token, port}   servers repeat it every minute; entries lapse after 3 minutes
 //!   Public (127.0.0.1:47809, what the tunnel points at): everything else.
 //! Log: gateway.log
-use crate::{call::PORT, cfg, dir, now_iso, voice::HTTP};
+use crate::{call::PORT, cfg, dir, voice::HTTP};
 use axum::{body::Body, extract::Request, http::StatusCode, response::IntoResponse};
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
-    io::Write,
     sync::{LazyLock, Mutex},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };

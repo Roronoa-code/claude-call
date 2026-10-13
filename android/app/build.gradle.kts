@@ -13,10 +13,7 @@ android {
         targetSdk = 37
         versionCode = 1
         versionName = "1.0.0"
-        testInstrumentationRunner = "fyi.mani.callme.CallCheck"
     }
-
-    testBuildType = "release" // the check app is signed like the real one
 
     buildTypes {
         release {

@@ -1,9 +1,8 @@
 //! Real-phone check of the call screen, without ringing: places a call on a private test topic (nobody listens to it),
-//! opens it on the phone through the app's CallCheck instrumentation, answers with typed replies, and saves
+//! opens it on the phone over adb (answered, no ringing), answers with typed replies, and saves
 //! screenshots, screen recordings and CPU readings to D:/Outputs/CallMe.
 //!   cargo run --release --example phone_check -- [adb serial]      (CALLME_AGENT=Codex: a call from Codex)
-//! Needs: callme built (cargo build --release), the app and its check APK installed
-//! (gradlew installRelease installReleaseAndroidTest).
+//! Needs: callme built (cargo build --release) and the app installed.
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
@@ -65,7 +64,7 @@ impl Check {
     fn tap(&self, x: f32, y: f32, what: &str) {
         let focus = self.adb(&["shell", "dumpsys", "window"]);
         let focus = focus.lines().find(|l| l.contains("mCurrentFocus=")).unwrap_or("");
-        assert!(focus.contains("fyi.mani.callme"), "call screen not in front; not tapping {what}");
+        assert!(focus.contains("fyi.mani.callme/fyi.mani.callme.CallActivity"), "call screen not in front; not tapping {what}");
         self.adb(&["shell", "input", "tap", &(x.round() as i32).to_string(), &(y.round() as i32).to_string()]);
         self.say(format!("tap {what}"));
     }
@@ -117,8 +116,9 @@ async fn main() {
     std::fs::create_dir_all(&c.out).unwrap();
     let now_ms = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
     let exe = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/release/callme.exe");
+    let topic = format!("claude-check-{now_ms}");
     let mut child = tokio::process::Command::new(exe)
-        .env("CALLME_TOPIC", format!("claude-check-{now_ms}"))
+        .env("CALLME_TOPIC", &topic)
         .env("CALLME_STATUS", std::env::temp_dir().join(format!("callme-check-{now_ms}.json")))
         .env("CALLME_DEBUG", "1")
         .stdin(Stdio::piped())
@@ -128,20 +128,15 @@ async fn main() {
         .spawn()
         .expect("callme.exe (cargo build --release first)");
 
-    // The call link appears on callme's log: open the call screen on the phone with it.
+    // The call link appears on callme's log.
     let link = Arc::new(Mutex::new(None::<String>));
-    let instrument = Arc::new(Mutex::new(None::<std::process::Child>));
     let mut err = BufReader::new(child.stderr.take().unwrap()).lines();
     tokio::spawn({
-        let (link, instrument, c) = (link.clone(), instrument.clone(), c.clone());
+        let link = link.clone();
         async move {
             while let Ok(Some(line)) = err.next_line().await {
-                let Some(l) = line.split("call link ").nth(1).and_then(|s| s.split_whitespace().next()) else { continue };
-                if link.lock().unwrap().is_none() {
-                    *link.lock().unwrap() = Some(l.to_string());
-                    c.say("opening the call screen on the phone");
-                    let cmd = format!("am instrument -w -e link '{l}' fyi.mani.callme.test/fyi.mani.callme.CallCheck");
-                    *instrument.lock().unwrap() = Some(c.adb_cmd(&["shell", &cmd]).stdout(Stdio::null()).spawn().expect("adb"));
+                if let Some(l) = line.split("call link ").nth(1).and_then(|s| s.split_whitespace().next()) {
+                    link.lock().unwrap().get_or_insert(l.to_string());
                 }
             }
         }
@@ -174,6 +169,13 @@ async fn main() {
         }
         sleep(Duration::from_millis(200)).await;
     };
+    // Open the call screen when the call rings (on the test topic, which no phone listens to), answered at once:
+    // only adb and the app itself may open it.
+    while !reqwest::get(format!("https://ntfy.sh/{topic}/json?poll=1&since=all")).await.unwrap().text().await.unwrap().contains("Claude is calling") {
+        sleep(Duration::from_millis(500)).await;
+    }
+    c.say("ringing: opening the call screen on the phone");
+    c.adb(&["shell", &format!("am start -n fyi.mani.callme/.CallActivity --es link '{link}' --ez answer true")]);
     sleep(Duration::from_secs(9)).await;
     c.shot("1-talking");
     report.push(format!("ongoing-call notification: {}", c.adb(&["shell", "dumpsys", "notification"]).contains("channel=ongoing_calls")));
@@ -213,6 +215,14 @@ async fn main() {
     }
     report.push(format!("cpu on hold: {}%", idle.join(", ")));
 
+    // Home, then the app icon: during a call it brings the call back (the app opening its own call screen).
+    c.adb(&["shell", "input", "keyevent", "KEYCODE_HOME"]);
+    sleep(Duration::from_secs(1)).await;
+    c.adb(&["shell", "am", "start", "-n", "fyi.mani.callme/.MainActivity"]);
+    sleep(Duration::from_secs(2)).await;
+    let back = c.adb(&["shell", "dumpsys", "window"]).lines().any(|l| l.contains("mCurrentFocus=") && l.contains("CallActivity"));
+    report.push(format!("app icon returns to the call: {back}"));
+
     // The two sheets, tapped like a person would, on a recording: Captions (the transcript) and Type (the keyboard).
     let size = c.adb(&["shell", "wm", "size"]);
     let (w, h) = size.rsplit(' ').next().unwrap().trim().split_once('x').map(|(w, h)| (w.parse::<f32>().unwrap(), h.parse::<f32>().unwrap())).unwrap();
@@ -249,20 +259,17 @@ async fn main() {
     let back = spawn_call("continue_call", "Okay, I am back. The main Claude says yes.");
     reply(&link, "Also make the button blue.").await;
     c.say(format!("REPLY 3 {}", back.await.unwrap()));
-    let bye = spawn_call("end_call", "Okay, all done. Bye!");
-    sleep(Duration::from_millis(2500)).await;
-    c.shot("5-ending");
-    bye.await.unwrap();
-    let inst = instrument.lock().unwrap().take();
-    if let Some(mut i) = inst {
-        let _ = i.wait();
-    }
-    // The check ends by stopping the app (Android does that after instrumentation): start its call listener again.
-    c.adb(&["shell", "am", "start", "-n", "fyi.mani.callme/.MainActivity"]);
+    // The user hangs up (the red button beside Done talking) while the agent waits for an answer.
+    let last = spawn_call("continue_call", "Anything else before I go?");
+    sleep(Duration::from_secs(5)).await;
+    c.shot("5-hang-up");
+    c.tap(w * 0.6719, h * 0.8558, "Hang up");
+    c.say(format!("REPLY 4 {}", last.await.unwrap()));
     sleep(Duration::from_secs(3)).await;
-    c.adb(&["shell", "am", "start", "-a", "android.intent.action.MAIN", "-c", "android.intent.category.HOME"]);
+    let closed = !c.adb(&["shell", "dumpsys", "activity", "activities"]).lines().any(|l| l.contains("Hist") && l.contains("fyi.mani.callme/.CallActivity"));
+    report.push(format!("call screen closed: {closed}"));
     let listening = c.adb(&["shell", "dumpsys", "activity", "services", "fyi.mani.callme"]).contains("ListenService");
-    c.say(format!("call listener restarted: {listening}"));
+    c.say(format!("call screen closed: {closed}; call listener still running: {listening}"));
     std::fs::write(c.out.join("report.txt"), report.join("\n") + "\n").unwrap();
     c.say(format!("saved to {}", c.out.display()));
 }

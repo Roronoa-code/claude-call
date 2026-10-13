@@ -24,6 +24,7 @@ const EARLY_MS: f64 = 700.0; // ...or this much, when the live transcript reads 
 const PARTIAL_MS: f64 = 900.0; // live caption refresh while talking
 const PAUSE_MS: f64 = 250.0; // a pause this long asks for a fresh caption at once (for the early end of turn)
 const MAX_MS: f64 = 90_000.0;
+const LOST_MS: f64 = 30_000.0; // the call ends after this long without reaching the PC
 // Talking over Claude: the bar is relative to the measured echo of Claude's own voice, and quieter speech is
 // confirmed by real words from Whisper.
 const BARGE_MIN: f32 = 0.006;
@@ -168,16 +169,23 @@ impl Engine {
     }
 
     async fn run(self: Arc<Self>) {
-        let (mut v, mut last_seq) = (-1i64, None::<u64>);
+        let (mut v, mut last_seq, mut lost_since) = (-1i64, None::<u64>, None::<f64>);
         loop {
             if self.lock().ended {
                 return;
             }
             let Some(mut st) = self.get_state(v).await else {
+                // The PC side is gone (its session ended, or the PC is off): give up after a while instead of
+                // showing "Reconnecting…" forever.
+                if self.now() - *lost_since.get_or_insert(self.now()) > LOST_MS {
+                    self.end();
+                    return;
+                }
                 self.lock().view.status("Reconnecting…");
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 continue;
             };
+            lost_since = None;
             v = st["v"].as_i64().unwrap_or(-1);
             self.note_state(&st);
             if st["say"].as_str().unwrap_or("").is_empty() {

@@ -31,9 +31,12 @@
             <meta-data android:name="android.app.lib_name" android:value="callme_phone" />
         </activity>
 
+        <!-- Other apps can't open the call screen: only this app (its notifications) and adb, which holds DUMP
+             (the phone check, examples/phone_check.rs). -->
         <activity
             android:name=".CallActivity"
-            android:exported="false"
+            android:exported="true"
+            android:permission="android.permission.DUMP"
             android:launchMode="singleTask"
             android:taskAffinity="fyi.mani.callme.call"
             android:showWhenLocked="true"

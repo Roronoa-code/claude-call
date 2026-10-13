@@ -312,6 +312,11 @@ pub fn run(app: android_activity::AndroidApp) {
         let e = e.clone();
         move || e.done_talking()
     });
+    // Ends here; closing the screen tells the PC (service::call_closed).
+    ui.on_hang_up({
+        let e = e.clone();
+        move || e.hang_up()
+    });
     ui.on_toggle_mute({
         let e = e.clone();
         move || e.toggle_mute()

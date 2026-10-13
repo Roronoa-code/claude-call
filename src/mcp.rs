@@ -89,7 +89,10 @@ async fn tool(name: &str, args: &Value) -> Result<String, String> {
         "continue_call" => {
             say(message()?, false, false).await;
             let t = wait_for_reply(REPLY_WAIT_MS).await;
-            Ok(t.map_or("No reply from the user (they may have hung up).".into(), |t| format!("User said: {t}")))
+            if call().declined {
+                return Ok("The user hung up.".into());
+            }
+            Ok(t.map_or("No reply from the user in time.".into(), |t| format!("User said: {t}")))
         }
         "get_contact_mode" => Ok(format!("Contact mode: {}. {}", voice::contact_mode().await, voice::read_status())),
         "set_contact_mode" => {

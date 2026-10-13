@@ -43,6 +43,7 @@ export component CallScreen inherits Window {
     // ---- To Rust ----
     callback answer();
     callback done-talking();
+    callback hang-up();
     callback toggle-mute();
     callback toggle-speaker();
     callback send(string);
@@ -312,14 +313,14 @@ export component CallScreen inherits Window {
                     }
                 }
             }
-            // The big button: Answer while ringing, then Done talking.
+            // The big buttons: Answer while ringing, then Done talking; beside it, red, Decline / Hang up.
             Rectangle {
                 y: 118px;
                 width: parent.width;
                 height: 104px;
                 big := Rectangle {
                     property <bool> live: root.incoming || root.can-finish;
-                    x: (parent.width - 76px) / 2;
+                    x: parent.width / 2 - 76px - 28px;
                     y: 0;
                     width: 76px;
                     height: 76px;
@@ -361,9 +362,56 @@ export component CallScreen inherits Window {
                         }
                     }
                 }
+                hang := Rectangle {
+                    x: parent.width / 2 + 28px;
+                    y: 0;
+                    width: 76px;
+                    height: 76px;
+                    opacity: root.ended ? 0 : 1;
+                    animate opacity { duration: 200ms; easing: T.out; }
+                    Rectangle {
+                        border-radius: 38px;
+                        background: endTouch.pressed ? #c23a3f : #e5484d;
+                        transform-origin: { x: 38px, y: 38px };
+                        transform-scale: endTouch.pressed ? 0.94 : 1;
+                        animate background { duration: 200ms; easing: T.out; }
+                        animate transform-scale { duration: 160ms; easing: T.out; }
+                        Icon {
+                            d: Icons.phone;
+                            width: 30px;
+                            height: 30px;
+                            x: 23px;
+                            y: 23px;
+                            stroke: white;
+                            transform-origin: { x: 15px, y: 15px };
+                            transform-rotation: 135deg; // the handset put down
+                        }
+                        endTouch := TouchArea {
+                            enabled: !root.ended;
+                            clicked => { root.hang-up(); }
+                        }
+                    }
+                }
                 Rectangle {
+                    x: hang.x - 40px;
                     y: 84px;
-                    width: parent.width;
+                    width: 156px;
+                    height: 20px;
+                    opacity: hang.opacity;
+                    HorizontalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: endLabel.preferred-width + 14px;
+                            border-radius: 9px;
+                            background: #111214a0;
+                            endLabel := Text { text: root.incoming ? "Decline" : "Hang up"; font-size: 14px; color: #e8e9ec; horizontal-alignment: center; vertical-alignment: center; }
+                        }
+                    }
+                }
+                Rectangle {
+                    x: big.x - 40px;
+                    y: 84px;
+                    width: 156px;
                     height: 20px;
                     HorizontalLayout {
                         alignment: center;
