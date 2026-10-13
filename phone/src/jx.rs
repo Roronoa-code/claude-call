@@ -36,6 +36,12 @@ pub fn ok<R>(env: &mut JNIEnv, f: impl FnOnce(&mut JNIEnv) -> Result<R>) -> Opti
     }
 }
 
+/// A method call whose result isn't needed (builder setters, RemoteViews calls).
+pub fn call(env: &mut JNIEnv, o: &JObject, method: &str, sig: &str, args: &[JValue]) -> Result<()> {
+    env.call_method(o, method, sig, args)?;
+    Ok(())
+}
+
 pub fn sdk(env: &mut JNIEnv) -> Result<i32> {
     env.get_static_field("android/os/Build$VERSION", "SDK_INT", "I")?.i()
 }

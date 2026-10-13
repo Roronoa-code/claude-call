@@ -4,7 +4,6 @@ use crate::{jx, net, ring, service, widget};
 use jni::{
     JNIEnv,
     objects::{JClass, JObject},
-    sys::jboolean,
 };
 
 macro_rules! export {
@@ -27,15 +26,10 @@ export!(Java_fyi_mani_callme_Native_permissionsAnswered, |env, act| service::per
 export!(Java_fyi_mani_callme_Native_declined, |env, ctx, intent| service::declined(env, &ctx, &intent));
 export!(Java_fyi_mani_callme_Native_modeTapped, |env, ctx, intent| widget::tapped(env, &ctx, &intent));
 export!(Java_fyi_mani_callme_Native_widgets, |env, ctx| widget::update_all(env, &ctx));
+export!(Java_fyi_mani_callme_Native_stopRinging, |env, ctx| ring::stop(env, &ctx, true));
 
 /// ListenService stopped: the listener ends within a second.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_fyi_mani_callme_Native_stop(_env: JNIEnv, _class: JClass) {
     net::stop();
-}
-
-/// Any touch on the call screen silences the ringing.
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_fyi_mani_callme_Native_stopRinging(mut env: JNIEnv, _class: JClass, ctx: JObject, handled: jboolean) {
-    jx::ok(&mut env, |env| ring::stop(env, &ctx, handled != 0));
 }

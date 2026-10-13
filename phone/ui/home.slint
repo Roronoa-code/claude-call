@@ -1,33 +1,7 @@
 // The home screen ("stage"): Clawd and Null on a soft light in the middle, how agents can reach you as one sliding control,
 // and the call screen's round buttons along the bottom. Widget and Channel grow out of their buttons.
-import { T, Icon, Icons, Morph } from "parts.slint";
+import { T, Icon, Icons, Morph, Round } from "parts.slint";
 import { Home, Clawd, Null, SetupCard } from "home_parts.slint";
-
-component Round {
-    in property <string> icon;
-    in property <string> label;
-    in property <bool> pressed;
-    callback clicked;
-    VerticalLayout {
-        spacing: 6px;
-        HorizontalLayout {
-            alignment: center;
-            Rectangle {
-                width: 64px;
-                height: 64px;
-                border-radius: 32px;
-                background: root.pressed ? T.btn-on : T.btn;
-                transform-origin: { x: 32px, y: 32px };
-                transform-scale: touch.pressed ? 0.93 : 1;
-                animate background { duration: 200ms; easing: T.out; }
-                animate transform-scale { duration: 160ms; easing: T.out; }
-                Icon { d: root.icon; x: 20px; y: 20px; stroke: root.pressed ? #111 : T.fg; }
-                touch := TouchArea { clicked => { root.clicked(); } }
-            }
-        }
-        Text { text: root.label; font-size: 13px; color: T.fg2; horizontal-alignment: center; }
-    }
-}
 
 // A choice in a sheet: icon, title and a line under it.
 component Choice {
@@ -169,11 +143,12 @@ export component HomeScreen inherits Window {
         y: root.row-y;
         width: parent.width - 40px;
         height: 88px;
-        Round { icon: Icons.bell; label: "Test ring"; clicked => { Home.test-ring(); } }
-        if Home.can-pin: Round { icon: Icons.grid; label: "Widget"; pressed: root.widgets; clicked => { root.widgets = !root.widgets; root.channel = false; } }
+        Round { icon: Icons.bell; label: "Test ring"; label-color: T.fg2; clicked => { Home.test-ring(); } }
+        if Home.can-pin: Round { icon: Icons.grid; label: "Widget"; label-color: T.fg2; pressed: root.widgets; clicked => { root.widgets = !root.widgets; root.channel = false; } }
         Round {
             icon: Icons.hash;
             label: "Channel";
+            label-color: T.fg2;
             pressed: root.channel;
             clicked => {
                 root.draft = Home.topic;
@@ -186,7 +161,7 @@ export component HomeScreen inherits Window {
 
     // A tap outside an open sheet closes it.
     if root.widgets || root.channel: TouchArea {
-        clicked => { root.widgets = false; root.channel = false; Home.editing(false); input.clear-focus(); }
+        clicked => { root.widgets = false; root.channel = false; Home.editing(false); }
     }
 
     Morph {
@@ -228,14 +203,23 @@ export component HomeScreen inherits Window {
                 height: 52px;
                 border-radius: 14px;
                 background: #26282d;
-                input := TextInput {
+                // The field only exists while the sheet is open, so nothing can focus it (and bring up the keyboard)
+                // while it's closed; a plain copy of the text shows as the sheet folds away.
+                if root.channel: TextInput {
                     x: 14px;
                     width: parent.width - 28px;
                     text <=> root.draft;
-                    enabled: root.channel; // closed, it can't take focus (and bring up the keyboard on its own)
                     font-size: 15px;
                     color: T.fg;
                     single-line: true;
+                    vertical-alignment: center;
+                }
+                if !root.channel: Text {
+                    x: 14px;
+                    width: parent.width - 28px;
+                    text: root.draft;
+                    font-size: 15px;
+                    color: T.fg;
                     vertical-alignment: center;
                 }
             }
@@ -255,7 +239,6 @@ export component HomeScreen inherits Window {
                             Home.save-topic(root.draft);
                             root.channel = false;
                             Home.editing(false);
-                            input.clear-focus();
                         }
                     }
                 }

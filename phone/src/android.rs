@@ -1,6 +1,6 @@
 //! The few Android framework calls the call screen needs, made from Rust through JNI: the call link it was opened
-//! with, call audio routing (earpiece / loudspeaker), the screen switching off at the ear, the system bar insets,
-//! and closing the screen.
+//! with, call audio routing (earpiece / loudspeaker), the screen switching off at the ear, the system bar and
+//! keyboard insets, and closing the screen.
 use jni::{
     JNIEnv, JavaVM,
     objects::{GlobalRef, JObject, JValue},
@@ -29,17 +29,7 @@ pub fn init(app: &android_activity::AndroidApp) {
 pub fn with<R>(f: impl FnOnce(&mut JNIEnv, &JObject) -> jni::errors::Result<R>) -> Option<R> {
     let ctx = CTX.get()?;
     let mut env = ctx.vm.attach_current_thread_permanently().ok()?;
-    match f(&mut env, ctx.activity.as_obj()) {
-        Ok(r) => Some(r),
-        Err(e) => {
-            if env.exception_check().unwrap_or(false) {
-                let _ = env.exception_describe();
-                let _ = env.exception_clear();
-            }
-            log(&format!("jni: {e}"));
-            None
-        }
-    }
+    crate::jx::ok(&mut env, |env| f(env, ctx.activity.as_obj()))
 }
 
 pub fn log(msg: &str) {
@@ -58,12 +48,7 @@ unsafe extern "C" {
 pub fn intent() -> (Option<String>, bool) {
     with(|env, act| {
         let intent = env.call_method(act, "getIntent", "()Landroid/content/Intent;", &[])?.l()?;
-        let key = env.new_string("link")?;
-        let link = env.call_method(&intent, "getStringExtra", "(Ljava/lang/String;)Ljava/lang/String;", &[JValue::Object(&key)])?.l()?;
-        let link = if link.is_null() { None } else { Some(env.get_string(&link.into())?.into()) };
-        let key = env.new_string("answer")?;
-        let answer = env.call_method(&intent, "getBooleanExtra", "(Ljava/lang/String;Z)Z", &[JValue::Object(&key), JValue::Bool(0)])?.z()?;
-        Ok((link, answer))
+        Ok((crate::jx::extra(env, &intent, "link")?, crate::jx::extra_bool(env, &intent, "answer")?))
     })
     .unwrap_or((None, false))
 }
@@ -127,8 +112,8 @@ pub fn release() {
     });
 }
 
-/// Status bar and gesture bar heights, in px (None until the window is attached).
-pub fn insets() -> Option<(f32, f32, f32)> {
+/// The window's insets of 	ypes (WindowInsets.Type bits) as (top, bottom) in dp; None until the window is attached.
+fn window_insets(types: i32) -> Option<(f32, f32)> {
     with(|env, act| {
         let win = env.call_method(act, "getWindow", "()Landroid/view/Window;", &[])?.l()?;
         let decor = env.call_method(&win, "getDecorView", "()Landroid/view/View;", &[])?.l()?;
@@ -136,18 +121,23 @@ pub fn insets() -> Option<(f32, f32, f32)> {
         if ins.is_null() {
             return Ok(None);
         }
-        let types = 1 | 2; // WindowInsets.Type.statusBars() | navigationBars()
         let i = env.call_method(&ins, "getInsets", "(I)Landroid/graphics/Insets;", &[JValue::Int(types)])?.l()?;
-        let top = env.get_field(&i, "top", "I")?.i()? as f32;
-        let bottom = env.get_field(&i, "bottom", "I")?.i()? as f32;
-        let res = env.call_method(act, "getResources", "()Landroid/content/res/Resources;", &[])?.l()?;
-        let dm = env.call_method(&res, "getDisplayMetrics", "()Landroid/util/DisplayMetrics;", &[])?.l()?;
-        let density = env.get_field(&dm, "density", "F")?.f()?;
-        Ok(Some((top, bottom, density)))
+        let (top, bottom) = (env.get_field(&i, "top", "I")?.i()? as f32, env.get_field(&i, "bottom", "I")?.i()? as f32);
+        let d = crate::jx::density(env, act)?;
+        Ok(Some((top / d, bottom / d)))
     })
     .flatten()
 }
 
+/// Room for the status bar and the gesture bar, in dp.
+pub fn insets() -> Option<(f32, f32)> {
+    window_insets(1 | 2).map(|(top, bottom)| (top.max(36.0), bottom.max(24.0))) // statusBars() | navigationBars()
+}
+
+/// How far the on-screen keyboard reaches up from the bottom edge, in whole dp (0 when hidden).
+pub fn keyboard() -> f32 {
+    window_insets(8).map_or(0.0, |(_, bottom)| bottom.round()) // Type.ime()
+}
 /// The call connected: stop ringing, show the ongoing-call notification.
 pub fn call_began() {
     with(|env, act| crate::service::call_began(env, act));
@@ -173,21 +163,6 @@ pub fn set_frame_rate(window: *mut std::ffi::c_void, fps: f32) -> bool {
         let f: extern "C" fn(*mut c_void, f32, i8) -> i32 = std::mem::transmute(f);
         f(window, fps, 0) == 0
     }
-}
-
-/// How far the on-screen keyboard reaches up from the bottom edge, in px (0 when hidden).
-pub fn keyboard() -> f32 {
-    with(|env, act| {
-        let win = env.call_method(act, "getWindow", "()Landroid/view/Window;", &[])?.l()?;
-        let decor = env.call_method(&win, "getDecorView", "()Landroid/view/View;", &[])?.l()?;
-        let ins = env.call_method(&decor, "getRootWindowInsets", "()Landroid/view/WindowInsets;", &[])?.l()?;
-        if ins.is_null() {
-            return Ok(0.0);
-        }
-        let i = env.call_method(&ins, "getInsets", "(I)Landroid/graphics/Insets;", &[JValue::Int(8)])?.l()?; // Type.ime()
-        Ok(env.get_field(&i, "bottom", "I")?.i()? as f32)
-    })
-    .unwrap_or(0.0)
 }
 
 /// The activity's class: which screen this is (the call screen or the home screen).

@@ -45,8 +45,7 @@ async fn call_user(message: String, reason: Option<String>) -> Result<String, St
     // Get the voice, hearing and first line ready *before* ringing, so the user never waits after answering.
     let (base, _) = tokio::join!(gateway::ensure_tunnel(), voice::load_qwen());
     // Unique per call: the phone app ignores links it has already answered or declined.
-    let millis = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
-    let link = format!("{}/?t={}&call={millis}", base?, cfg().token);
+    let link = format!("{}/?t={}&call={}", base?, cfg().token, gateway::now_ms());
     log(format!("call link {link}"));
     {
         let mut c = call();

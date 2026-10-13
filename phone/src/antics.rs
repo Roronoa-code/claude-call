@@ -31,7 +31,6 @@ pub struct Delta {
     pub eye_dx: f32,
     pub eye_dy: f32,
     pub lean: f32,
-    pub sink: f32,
     pub pop: f32,
     pub turn: f32,
     pub flip: f32,

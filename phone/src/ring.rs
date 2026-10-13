@@ -22,13 +22,19 @@ struct State {
 }
 static STATE: Mutex<Option<State>> = Mutex::new(None);
 
-/// The call screen, answered or not, as a PendingIntent.
-pub fn call_screen<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, link: &str, answer: bool, code: i32) -> Result<JObject<'a>> {
+/// The call screen for link, answered or not.
+pub fn call_intent<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, link: &str, answer: bool) -> Result<JObject<'a>> {
     let i = intent(env, ctx, "CallActivity")?;
     env.call_method(&i, "addFlags", "(I)Landroid/content/Intent;", &[JValue::Int(0x1000_0000)])?; // NEW_TASK
     let l = s(env, link)?;
     put(env, &i, "link", JValue::Object(&l))?;
     put(env, &i, "answer", JValue::Bool(answer as u8))?;
+    Ok(i)
+}
+
+/// The call screen, answered or not, as a PendingIntent.
+pub fn call_screen<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, link: &str, answer: bool, code: i32) -> Result<JObject<'a>> {
+    let i = call_intent(env, ctx, link, answer)?;
     pending(env, ctx, "getActivity", code, &i)
 }
 
@@ -58,8 +64,14 @@ pub fn set_text(env: &mut JNIEnv, b: &JObject, method: &str, text: &str) -> Resu
     Ok(())
 }
 
-pub fn call_icon(env: &mut JNIEnv) -> Result<i32> {
-    env.get_static_field("android/R$drawable", "sym_action_call", "I")?.i()
+/// An ongoing notification on channel, with the call icon.
+pub fn builder<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, channel: &str) -> Result<JObject<'a>> {
+    let ch = s(env, channel)?;
+    let b = env.new_object("android/app/Notification$Builder", "(Landroid/content/Context;Ljava/lang/String;)V", &[JValue::Object(ctx), JValue::Object(&ch)])?;
+    let icon = env.get_static_field("android/R$drawable", "sym_action_call", "I")?.i()?;
+    env.call_method(&b, "setSmallIcon", "(I)Landroid/app/Notification$Builder;", &[JValue::Int(icon)])?;
+    env.call_method(&b, "setOngoing", "(Z)Landroid/app/Notification$Builder;", &[JValue::Bool(1)])?;
+    Ok(b)
 }
 
 pub fn person<'a>(env: &mut JNIEnv<'a>, name: &str) -> Result<JObject<'a>> {
@@ -87,17 +99,13 @@ pub fn ring(env: &mut JNIEnv, ctx: &JObject, link: &str, reason: &str) -> Result
     let full = call_screen(env, ctx, link, false, 1)?;
     let answer = call_screen(env, ctx, link, true, 2)?;
     let decline = hang_up(env, ctx, link, 3)?;
-    let ch = s(env, CHANNEL)?;
-    let b = env.new_object("android/app/Notification$Builder", "(Landroid/content/Context;Ljava/lang/String;)V", &[JValue::Object(ctx), JValue::Object(&ch)])?;
-    let icon = call_icon(env)?;
-    env.call_method(&b, "setSmallIcon", "(I)Landroid/app/Notification$Builder;", &[JValue::Int(icon)])?;
+    let b = builder(env, ctx, CHANNEL)?;
     set_text(env, &b, "setContentTitle", "Claude is calling")?;
     set_text(env, &b, "setContentText", reason)?;
     let cat = s(env, "call")?;
     env.call_method(&b, "setCategory", "(Ljava/lang/String;)Landroid/app/Notification$Builder;", &[JValue::Object(&cat)])?;
     env.call_method(&b, "setFullScreenIntent", "(Landroid/app/PendingIntent;Z)Landroid/app/Notification$Builder;", &[JValue::Object(&full), JValue::Bool(1)])?;
     env.call_method(&b, "setContentIntent", "(Landroid/app/PendingIntent;)Landroid/app/Notification$Builder;", &[JValue::Object(&answer)])?; // tapping answers
-    env.call_method(&b, "setOngoing", "(Z)Landroid/app/Notification$Builder;", &[JValue::Bool(1)])?;
     env.call_method(&b, "setTimeoutAfter", "(J)Landroid/app/Notification$Builder;", &[JValue::Long(RING_FOR.as_millis() as i64)])?;
     let who = person(env, "Claude")?;
     let sig = "(Landroid/app/Person;Landroid/app/PendingIntent;Landroid/app/PendingIntent;)Landroid/app/Notification$CallStyle;";

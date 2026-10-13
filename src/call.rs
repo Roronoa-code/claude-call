@@ -9,7 +9,6 @@ use axum::{
     http::{Method, StatusCode, header},
     response::{IntoResponse, Response},
 };
-use futures_util::StreamExt;
 use serde_json::json;
 use std::{
     collections::HashMap,
@@ -120,7 +119,7 @@ pub async fn say(text: String, end: bool, hold: bool) {
 /// Main path: the cloned voice streamed as it is made (first sound ~0.2 s after the line is ready), one stream per
 /// line so the voice stays even. False if the GPU voice is unavailable.
 async fn stream_line(seq: u64, text: &str, first: &mut Option<oneshot::Sender<()>>) -> bool {
-    let Some(r) = voice::gpu("/tts_stream", text.as_bytes().to_vec(), None).await else { return false };
+    let Some(mut r) = voice::gpu("/tts_stream", text.as_bytes().to_vec(), None).await else { return false };
     if call().seq != seq {
         return true;
     }
@@ -134,10 +133,10 @@ async fn stream_line(seq: u64, text: &str, first: &mut Option<oneshot::Sender<()
     }
     mark("first voice chunk ready", false);
     fire(first);
-    let mut body = r.bytes_stream();
-    while let Some(chunk) = body.next().await {
-        match chunk {
-            Ok(b) => {
+    loop {
+        match r.chunk().await {
+            Ok(None) => break,
+            Ok(Some(b)) => {
                 let n = {
                     let mut d = st.data.lock().unwrap();
                     d.extend_from_slice(&b);
@@ -287,11 +286,7 @@ fn json_res(v: serde_json::Value) -> Response {
 
 async fn handle(req: Request) -> Result<Response, String> {
     let path = req.uri().path().to_string();
-    let query: HashMap<String, String> = req
-        .uri()
-        .query()
-        .map(|q| q.split('&').filter_map(|kv| kv.split_once('=')).map(|(k, v)| (k.into(), urlencoding::decode(v).map_or(v.into(), |s| s.into_owned()))).collect())
-        .unwrap_or_default();
+    let query = axum::extract::Query::<HashMap<String, String>>::try_from_uri(req.uri()).map(|q| q.0).unwrap_or_default();
     let q = |k: &str| query.get(k).map(String::as_str);
     let num = |k: &str| q(k).and_then(|v| v.parse::<u64>().ok());
     if q("t") != Some(cfg().token.as_str()) {

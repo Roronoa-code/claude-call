@@ -38,15 +38,10 @@ struct Frame {
     finished: bool,
     rate_set: bool,
     last_route: f64,
-    density: f32,
 }
 
 fn hash(s: &str) -> i32 {
     s.bytes().fold(0x811c9dc5u32, |h, b| (h ^ b as u32).wrapping_mul(0x0100_0193)) as i32
-}
-
-fn word_count(t: &str) -> usize {
-    view::words(t).len()
 }
 
 /// The big caption: Claude talking, listening, on hold and the end of the call.
@@ -55,7 +50,7 @@ fn caption(v: &View, now: f64) -> Cap {
     let part = |m: &Msg| m.spoken.0.min(m.parts.len().saturating_sub(1));
     // Long sentences get a smaller caption so they always fit above the controls.
     let size = |m: &Msg| {
-        let n = m.parts.get(part(m)).map_or(0, |p| word_count(p));
+        let n = m.parts.get(part(m)).map_or(0, |p| view::words(p).len());
         if n > 30 { 2 } else if n > 18 { 1 } else { 0 }
     };
     let plain = |key: &str, label: String, text: &str, tone: &str, orb: bool| Cap {
@@ -105,10 +100,9 @@ fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activi
     if now - f.last_route > 1000.0 {
         f.last_route = now;
         e.keep_route();
-        if let Some((top, bottom, density)) = android::insets() {
-            f.density = density;
-            ui.set_sat((top / density).max(36.0));
-            ui.set_sab((bottom / density).max(24.0));
+        if let Some((top, bottom)) = android::insets() {
+            ui.set_sat(top);
+            ui.set_sab(bottom);
         }
     }
     let claude_level = e.claude_level();
@@ -172,24 +166,20 @@ fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activi
     let perched = thread && bubble.is_some();
     if perched != f.thread_was {
         f.thread_was = perched;
-        let cur = mascot_box(f, now);
-        f.from = cur;
+        f.from = mascot_box(f, now);
         f.perch = if perched { (30.0, 60.0, now) } else { (24.0, 108.0, now) };
         f.u_from = (f.u, now);
     }
-    let k = ease_out((now - f.perch.2) / 500.0);
-    let (bx, bottom) = (f.from.0 + (f.perch.0 - f.from.0) * k, f.from.1 + (f.perch.1 - f.from.1) * k);
+    let (bx, bottom) = mascot_box(f, now);
     // Pixel art only ever shows at whole pixels per cell: 4, then 3, then 2 (or back).
     let target_u = if perched { 2.0 } else { 4.0 };
     let steps = ((now - f.u_from.1) / 100.0).floor().min(2.0);
     f.u = if f.u_from.0 == target_u { target_u } else { f.u_from.0 + (target_u - f.u_from.0).signum() * steps };
     let u = f.u;
     let cells = f.mascot.frame((now / 1000.0) as f32, phase, muted, if phase == Phase::Talking { claude_level } else { 0.0 }, me_level);
-    let (hop, sink) = f.mascot.lift((now / 1000.0) as f32);
     let fit = (22.0 / (9.0 * u)).min(1.0);
-    let lift = 2.0 * ((hop as f64) * u * fit / 2.0).round();
+    let shift = -2.0 * ((f.mascot.lift((now / 1000.0) as f32) as f64) * u * fit / 2.0).round();
     let box_h = 20.0 * u;
-    let shift = 2.0 * ((sink as f64) * (box_h + 14.0) / 2.0).round() - lift;
     let fade = f.mascot.fade();
     let codex = agent == "Codex";
     if codex {
@@ -198,7 +188,6 @@ fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activi
             ui.set_null_frame(n);
         }
         ui.set_null_fade(fade);
-        ui.set_null_dy((shift + lift) as f32); // ducks behind the line at the end, like Clawd; no Clawd hops
     }
     let pixels: Vec<Px> = if codex { &[][..] } else { &cells[..] }
         .iter()
@@ -335,7 +324,6 @@ pub fn run(app: android_activity::AndroidApp) {
         let e = e.clone();
         move |t| e.send_typed(&t)
     });
-    ui.on_typing_changed(|_| {});
     let now = e.now();
     let frame = Rc::new(std::cell::RefCell::new(Frame {
         held: Held::default(),
@@ -353,7 +341,6 @@ pub fn run(app: android_activity::AndroidApp) {
         finished: false,
         rate_set: false,
         last_route: -1e9,
-        density: 0.0,
     }));
     ui.on_poke({
         let (f, e) = (frame.clone(), e.clone());
@@ -377,16 +364,15 @@ pub fn run(app: android_activity::AndroidApp) {
     // The keyboard, every frame while typing: the reply field rides up with it as it slides in.
     let keys = slint::Timer::default();
     keys.start(slint::TimerMode::Repeated, Duration::from_millis(16), {
-        let (ui, f) = (ui.as_weak(), frame.clone());
+        let ui = ui.as_weak();
         let mut had = false;
         move || {
             let Some(ui) = ui.upgrade() else { return };
-            let density = f.borrow().density;
-            if density == 0.0 || (!ui.get_typing() && ui.get_kb() == 0.0) {
+            if !ui.get_typing() && ui.get_kb() == 0.0 {
                 had = false;
                 return;
             }
-            let kb = (android::keyboard() / density).round();
+            let kb = android::keyboard();
             if ui.get_kb() != kb {
                 ui.set_kb(kb);
             }

@@ -56,7 +56,7 @@ pub async fn gpu(route: &str, body: Vec<u8>, context: Option<&str>) -> Option<re
         }
         let mut req = HTTP.post(format!("{QWEN}{route}")).body(body.clone());
         if let Some(c) = context {
-            req = req.header("x-context", urlencoding::encode(c).into_owned());
+            req = req.query(&[("context", c)]);
         }
         match req.send().await {
             Ok(r) if r.status().is_success() => return Some(r),
@@ -91,15 +91,7 @@ pub async fn hear_quick(pcm: &[f32], context: &str) -> Option<String> {
     if !qwen_up().await {
         return None;
     }
-    let r = HTTP
-        .post(format!("{QWEN}/stt"))
-        .header("x-context", urlencoding::encode(context).into_owned())
-        .body(f32_bytes(pcm))
-        .send()
-        .await
-        .ok()
-        .filter(|r| r.status().is_success())?;
-    Some(r.text().await.ok()?.trim().to_string())
+    Some(gpu("/stt", f32_bytes(pcm), Some(context)).await?.text().await.ok()?.trim().to_string())
 }
 
 /// Whisper invents these on near-silence.

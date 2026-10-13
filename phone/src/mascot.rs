@@ -54,10 +54,6 @@ struct Extra {
     sleepy: bool,
 }
 
-fn clamp(v: f32, a: f32, b: f32) -> f32 {
-    v.max(a).min(b)
-}
-
 /// Base pose for each call state. `t`: seconds; `te`: seconds in this state; lv_c / lv_m: Claude's and your level.
 fn targets(phase: Phase, muted: bool, t: f32, te: f32, lv_c: f32, lv_m: f32) -> (Pose, Extra) {
     use std::f32::consts::PI;
@@ -87,7 +83,7 @@ fn targets(phase: Phase, muted: bool, t: f32, te: f32, lv_c: f32, lv_m: f32) -> 
             // a dance in time with Claude's voice: stomps
             let beat = (t * 5.0).floor() as i32 % 2 == 1;
             p.hop = lv_c * 3.0 * if beat { 1.0 } else { 0.35 };
-            p.squash = if beat { clamp(2.4 * lv_c, 0.0, 2.0) } else { -lv_c * 1.2 };
+            p.squash = if beat { (2.4 * lv_c).clamp(0.0, 2.0) } else { -lv_c * 1.2 };
             if lv_c > 0.18 {
                 e.legs = Some(if beat { [true, false, true, false] } else { [false, true, false, true] });
             }
@@ -242,7 +238,7 @@ impl Mascot {
             self.next_idle = now + 4.0 + self.rand() * 2.0;
         }
         self.antics.retain(|a| now - a.start < a.antic.dur() && !a.cut_at.is_some_and(|c| now - c > 0.2));
-        let dt = clamp(now - self.prev, 0.0, 0.05);
+        let dt = (now - self.prev).clamp(0.0, 0.05);
         self.prev = now;
         self.lv_c += (lv_claude - self.lv_c) * (1.0 - (-dt * 18.0).exp());
         self.lv_m += (lv_me - self.lv_m) * (1.0 - (-dt * 18.0).exp());
@@ -268,10 +264,9 @@ impl Mascot {
         out
     }
 
-    /// Lift of the whole box in grid units (positive = up), and how far it has sunk (0..1).
-    pub fn lift(&self, now: f32) -> (f32, f32) {
-        let d = self.deltas(now);
-        ((self.p.hop + d.hop).max(-2.0), d.sink)
+    /// Lift of the whole box in grid units (positive = up).
+    pub fn lift(&self, now: f32) -> f32 {
+        (self.p.hop + self.deltas(now).hop).max(-2.0)
     }
 
     pub fn fade(&self) -> f32 {
@@ -294,7 +289,6 @@ impl Mascot {
             d.eye_dx += f.eye_dx * w;
             d.eye_dy += f.eye_dy * w;
             d.lean += f.lean * w;
-            d.sink += f.sink * w;
             if w > lead {
                 // turns, flips, arms and legs come from the strongest antic
                 lead = w;
@@ -364,14 +358,14 @@ fn clawd(p: &Pose, d: &Delta, _e: &Extra, out: &mut Vec<Cell>) {
     use std::f32::consts::PI;
     // Upside down at the top of a flip: plain Clawd mirrored row for row (legs up, eyes low).
     let flipped = d.flip > 0.3 && d.flip < 0.7;
-    let s = if flipped { 0.0 } else { clamp((p.squash + d.squash).round(), -2.0, 2.0) };
+    let s = if flipped { 0.0 } else { (p.squash + d.squash).round().clamp(-2.0, 2.0) };
     let turn = d.turn % 1.0;
     let f0 = (2.0 * PI * turn).cos().abs();
     let side = (2.0 * PI * turn).sin();
     // Turning: full, three-quarter and side-on frames (no bare edge-on sliver).
     let f = if f0 > 0.85 { 1.0 } else if f0 > 0.5 { 0.66 } else { 0.36 };
     let dx = d.dx.round();
-    let lean = if f < 1.0 { 0.0 } else { clamp(p.lean + d.lean, 0.0, 1.0).round() };
+    let lean = if f < 1.0 { 0.0 } else { (p.lean + d.lean).clamp(0.0, 1.0).round() };
     let half = ((12.0 + s) * f).round().max(2.0);
     let x0 = 18.0 - half + dx;
     let wd = 2.0 * half;
@@ -401,8 +395,8 @@ fn clawd(p: &Pose, d: &Delta, _e: &Extra, out: &mut Vec<Cell>) {
     // Eyes: happy (closed), popped (wide), or open as far as eye_open says, looking around.
     let ew = if d.pop > 0.5 { 3.0 } else { 2.0 };
     let h = if d.happy { 1.0 } else if d.pop > 0.5 { 3.0 } else if p.eye_open < 0.35 { 1.0 } else if p.eye_open > 1.25 { 3.0 } else { 2.0 };
-    let look = clamp((p.eye_dx + d.eye_dx).round(), -1.0, 1.0) + lean;
-    let ey = clamp((p.eye_dy + d.eye_dy).round(), -1.0, 1.0);
+    let look = (p.eye_dx + d.eye_dx).round().clamp(-1.0, 1.0) + lean;
+    let ey = (p.eye_dy + d.eye_dy).round().clamp(-1.0, 1.0);
     // Eyes always keep a row of head above them, so they never notch the top edge.
     let base = if d.happy { 2.0 } else if h == 1.0 { 3.0 } else if h == 3.0 { 1.0 } else { 2.0 };
     let top = (s + 1.0).max(base + if d.happy { 0.0 } else { ey });

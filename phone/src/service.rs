@@ -42,20 +42,6 @@ pub fn restart(env: &mut JNIEnv, ctx: &JObject) -> Result<()> {
     start(env, ctx)
 }
 
-fn builder<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, channel: &str) -> Result<JObject<'a>> {
-    let ch = s(env, channel)?;
-    let b = env.new_object("android/app/Notification$Builder", "(Landroid/content/Context;Ljava/lang/String;)V", &[JValue::Object(ctx), JValue::Object(&ch)])?;
-    let icon = ring::call_icon(env)?;
-    env.call_method(&b, "setSmallIcon", "(I)Landroid/app/Notification$Builder;", &[JValue::Int(icon)])?;
-    env.call_method(&b, "setOngoing", "(Z)Landroid/app/Notification$Builder;", &[JValue::Bool(1)])?;
-    Ok(b)
-}
-
-fn set(env: &mut JNIEnv, b: &JObject, method: &str, sig: &str, v: JValue) -> Result<()> {
-    env.call_method(b, method, sig, &[v])?;
-    Ok(())
-}
-
 fn end_action<'a>(env: &mut JNIEnv<'a>, end: &JObject) -> Result<JObject<'a>> {
     let (none, t) = (JObject::null(), s(env, "End call")?);
     let ab = env.new_object(
@@ -83,39 +69,39 @@ fn notification<'a>(env: &mut JNIEnv<'a>, svc: &JObject) -> Result<(JObject<'a>,
     let mut types = if sdk >= 34 { SPECIAL_USE } else { 0 };
     let active = ACTIVE.lock().unwrap().clone();
     let Some((link, at)) = active else {
-        let b = builder(env, svc, "listening")?;
+        let b = ring::builder(env, svc, "listening")?;
         ring::set_text(env, &b, "setContentTitle", "Ready for Claude's calls")?;
         let home = jx::intent(env, svc, "MainActivity")?;
         let open = jx::pending(env, svc, "getActivity", 0, &home)?;
-        set(env, &b, "setContentIntent", "(Landroid/app/PendingIntent;)Landroid/app/Notification$Builder;", JValue::Object(&open))?;
+        jx::call(env, &b, "setContentIntent", "(Landroid/app/PendingIntent;)Landroid/app/Notification$Builder;", &[JValue::Object(&open)])?;
         return Ok((env.call_method(&b, "build", "()Landroid/app/Notification;", &[])?.l()?, types));
     };
     ring::channel(env, &nm, "ongoing_calls", "Ongoing Claude call", 2, false)?; // IMPORTANCE_LOW
     let open = ring::call_screen(env, svc, &link, true, 4)?;
     let end = ring::hang_up(env, svc, &link, 5)?;
-    let b = builder(env, svc, "ongoing_calls")?;
+    let b = ring::builder(env, svc, "ongoing_calls")?;
     ring::set_text(env, &b, "setContentTitle", "On call with Claude")?;
     ring::set_text(env, &b, "setContentText", "Tap to return to the call")?;
-    set(env, &b, "setContentIntent", "(Landroid/app/PendingIntent;)Landroid/app/Notification$Builder;", JValue::Object(&open))?;
+    jx::call(env, &b, "setContentIntent", "(Landroid/app/PendingIntent;)Landroid/app/Notification$Builder;", &[JValue::Object(&open)])?;
     let cat = s(env, "call")?;
-    set(env, &b, "setCategory", "(Ljava/lang/String;)Landroid/app/Notification$Builder;", JValue::Object(&cat))?;
-    set(env, &b, "setOnlyAlertOnce", "(Z)Landroid/app/Notification$Builder;", JValue::Bool(1))?;
-    set(env, &b, "setWhen", "(J)Landroid/app/Notification$Builder;", JValue::Long(at))?;
-    set(env, &b, "setShowWhen", "(Z)Landroid/app/Notification$Builder;", JValue::Bool(1))?;
-    set(env, &b, "setUsesChronometer", "(Z)Landroid/app/Notification$Builder;", JValue::Bool(1))?;
+    jx::call(env, &b, "setCategory", "(Ljava/lang/String;)Landroid/app/Notification$Builder;", &[JValue::Object(&cat)])?;
+    jx::call(env, &b, "setOnlyAlertOnce", "(Z)Landroid/app/Notification$Builder;", &[JValue::Bool(1)])?;
+    jx::call(env, &b, "setWhen", "(J)Landroid/app/Notification$Builder;", &[JValue::Long(at)])?;
+    jx::call(env, &b, "setShowWhen", "(Z)Landroid/app/Notification$Builder;", &[JValue::Bool(1)])?;
+    jx::call(env, &b, "setUsesChronometer", "(Z)Landroid/app/Notification$Builder;", &[JValue::Bool(1)])?;
     let style_sig = "(Landroid/app/Notification$Style;)Landroid/app/Notification$Builder;";
     if sdk >= 31 {
         let who = ring::person(env, "Claude")?;
         let sig = "(Landroid/app/Person;Landroid/app/PendingIntent;)Landroid/app/Notification$CallStyle;";
         let style = env.call_static_method("android/app/Notification$CallStyle", "forOngoingCall", sig, &[JValue::Object(&who), JValue::Object(&end)])?.l()?;
-        set(env, &b, "setStyle", style_sig, JValue::Object(&style))?;
+        jx::call(env, &b, "setStyle", style_sig, &[JValue::Object(&style)])?;
     } else {
         let a = end_action(env, &end)?;
-        set(env, &b, "addAction", "(Landroid/app/Notification$Action;)Landroid/app/Notification$Builder;", JValue::Object(&a))?;
+        jx::call(env, &b, "addAction", "(Landroid/app/Notification$Action;)Landroid/app/Notification$Builder;", &[JValue::Object(&a)])?;
     }
     let promote = can_promote(env);
     if promote {
-        set(env, &b, "setRequestPromotedOngoing", "(Z)Landroid/app/Notification$Builder;", JValue::Bool(1))?;
+        jx::call(env, &b, "setRequestPromotedOngoing", "(Z)Landroid/app/Notification$Builder;", &[JValue::Bool(1)])?;
     }
     let mut n = env.call_method(&b, "build", "()Landroid/app/Notification;", &[])?.l()?;
     if promote && !env.call_method(&n, "hasPromotableCharacteristics", "()Z", &[])?.z()? {
@@ -123,10 +109,10 @@ fn notification<'a>(env: &mut JNIEnv<'a>, svc: &JObject) -> Result<(JObject<'a>,
         let big = env.new_object("android/app/Notification$BigTextStyle", "()V", &[])?;
         let t = s(env, "Tap to return to the call")?;
         env.call_method(&big, "bigText", "(Ljava/lang/CharSequence;)Landroid/app/Notification$BigTextStyle;", &[JValue::Object(&t)])?;
-        set(env, &b, "setStyle", style_sig, JValue::Object(&big))?;
+        jx::call(env, &b, "setStyle", style_sig, &[JValue::Object(&big)])?;
         let a = end_action(env, &end)?;
         let actions = env.new_object_array(1, "android/app/Notification$Action", &a)?;
-        set(env, &b, "setActions", "([Landroid/app/Notification$Action;)Landroid/app/Notification$Builder;", JValue::Object(&actions))?;
+        jx::call(env, &b, "setActions", "([Landroid/app/Notification$Action;)Landroid/app/Notification$Builder;", &[JValue::Object(&actions)])?;
         n = env.call_method(&b, "build", "()Landroid/app/Notification;", &[])?.l()?;
     }
     // Only an answered call asks for the microphone; setup and boot stay listener-only.
@@ -261,11 +247,7 @@ pub fn declined(env: &mut JNIEnv, ctx: &JObject, intent: &JObject) -> Result<()>
 /// The home screen opened: during a call the app icon brings the call back instead.
 pub fn home_opened(env: &mut JNIEnv, act: &JObject) -> Result<()> {
     let Some(link) = active_link() else { return Ok(()) };
-    let i = jx::intent(env, act, "CallActivity")?;
-    env.call_method(&i, "addFlags", "(I)Landroid/content/Intent;", &[JValue::Int(0x1000_0000)])?; // NEW_TASK
-    let l = s(env, &link)?;
-    jx::put(env, &i, "link", JValue::Object(&l))?;
-    jx::put(env, &i, "answer", JValue::Bool(1))?;
+    let i = ring::call_intent(env, act, &link, true)?;
     jx::start_activity(env, act, &i)?;
     env.call_method(act, "finish", "()V", &[])?;
     Ok(())

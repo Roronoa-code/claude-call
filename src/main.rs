@@ -54,7 +54,12 @@ pub fn log(msg: impl AsRef<str>) {
 }
 
 pub fn log_line(line: &str) {
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(dir().join("timing.log")) {
+    append_log("timing.log", line);
+}
+
+/// Appends a timestamped line to a log file in the project folder.
+pub fn append_log(file: &str, line: &str) {
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(dir().join(file)) {
         let _ = writeln!(f, "{} {line}", now_iso());
     }
 }

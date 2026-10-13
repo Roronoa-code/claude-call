@@ -22,7 +22,7 @@ object Native {
     @JvmStatic external fun foreground(service: Service)
     @JvmStatic external fun stop()
     @JvmStatic external fun start(context: Context)
-    @JvmStatic external fun stopRinging(context: Context, handled: Boolean)
+    @JvmStatic external fun stopRinging(context: Context)
     @JvmStatic external fun callOpened(activity: Activity, intent: Intent)
     @JvmStatic external fun callBack(activity: Activity)
     @JvmStatic external fun callClosed(activity: Activity)
@@ -52,7 +52,7 @@ class CallActivity : NativeActivity() {
         }
     }
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); Native.callOpened(this, intent) }
-    override fun onUserInteraction() { super.onUserInteraction(); Native.stopRinging(this, true) }
+    override fun onUserInteraction() { super.onUserInteraction(); Native.stopRinging(this) }
     @Deprecated("Used on Android 12 and earlier")
     override fun onBackPressed() = Native.callBack(this)
     override fun onDestroy() { Native.callClosed(this); super.onDestroy() }

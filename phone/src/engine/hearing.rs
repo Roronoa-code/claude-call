@@ -105,7 +105,7 @@ impl Engine {
         let me = self.clone();
         RT.spawn(async move {
             let t0 = me.now();
-            let r: Option<Value> = async { me.http.post(url).body(body).send().await.ok()?.json().await.ok() }.await;
+            let r: Option<Value> = async { HTTP.post(url).body(body).send().await.ok()?.json().await.ok() }.await;
             let mut s = me.lock();
             let now = me.now();
             let text = r.as_ref().and_then(|r| r["text"].as_str()).map(String::from);
@@ -255,7 +255,6 @@ impl Engine {
         s.hot.clear();
         s.loud_run = 0;
         self.start_talking(s, id, true, now);
-        s.view.cut_in = true;
         let msg = format!("interrupt ({reason})");
         self.dbg(s, &msg);
     }
@@ -271,7 +270,7 @@ impl Engine {
         let (uid, text) = (u.id.clone(), u.partial.as_ref().map(|p| p.0.clone()).unwrap_or_default());
         s.last_turn = Some(uid.clone());
         s.view.partial(&uid, &text);
-        s.view.status("Hearing you…", now);
+        s.view.status("Hearing you…");
         s.view.can_finish = true;
     }
 
@@ -279,14 +278,13 @@ impl Engine {
         if s.ended {
             return;
         }
-        let now = self.now();
         if s.muted || s.mic.is_none() {
             s.mode = Mode::Idle;
-            s.view.status(if s.mic.is_some() { "Mic muted, type a reply" } else { "Type your reply" }, now);
+            s.view.status(if s.mic.is_some() { "Mic muted, type a reply" } else { "Type your reply" });
             return;
         }
         s.mode = Mode::Listen;
-        s.view.status("Listening… take your time", now);
+        s.view.status("Listening… take your time");
     }
 
     pub(super) fn drop_utterance(s: &mut Inner) {
@@ -311,7 +309,7 @@ impl Engine {
         let was_cut = s.cut_in;
         Self::drop_utterance(s);
         s.cut_in = false;
-        s.view.status("Got it…", now);
+        s.view.status("Got it…");
         let Some(mut u) = s.utts.remove(&id) else { return };
         let msg = format!("turn end ({why}) after {quiet}ms quiet, caption \"{}\"", u.partial.as_ref().map_or("", |p| p.0.as_str()));
         self.dbg(s, &msg);
@@ -332,7 +330,7 @@ impl Engine {
                 if me.lock().ended {
                     None
                 } else {
-                    async { me.http.post(url).body(body).timeout(Duration::from_millis(MAX_MS as u64)).send().await.ok()?.json().await.ok() }.await
+                    async { HTTP.post(url).body(body).timeout(Duration::from_millis(MAX_MS as u64)).send().await.ok()?.json().await.ok() }.await
                 }
             };
             let mut s = me.lock();
@@ -348,7 +346,7 @@ impl Engine {
                     s.view.heard(&uid, &text, false);
                     if mine && !s.muted && s.mode == Mode::Idle && s.line.is_none() {
                         if !text.is_empty() {
-                            s.view.status("Claude is thinking…", me.now());
+                            s.view.status("Claude is thinking…");
                         } else {
                             me.listen(s);
                         }
@@ -356,7 +354,7 @@ impl Engine {
                 }
                 None => {
                     if mine && s.mode != Mode::Talk && s.mode != Mode::Claude {
-                        s.view.status("Could not send audio, type instead", me.now());
+                        s.view.status("Could not send audio, type instead");
                     }
                 }
             }

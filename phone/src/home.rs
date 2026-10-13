@@ -8,12 +8,12 @@ use crate::{
 };
 use slint::{ComponentHandle, ModelRc, VecModel};
 use std::{
-    cell::{Cell, RefCell},
+    cell::Cell,
     rc::Rc,
     time::{Duration, Instant},
 };
 
-fn refresh(ui: &HomeScreen) -> f32 {
+fn refresh(ui: &HomeScreen) {
     let home = ui.global::<Home>();
     let read = android::with(|env, act| {
         Ok((settings::missing(env, act)?, settings::mode(env, act)?, settings::topic(env, act)?, settings::can_pin(env, act)?))
@@ -25,13 +25,9 @@ fn refresh(ui: &HomeScreen) -> f32 {
         home.set_topic(topic.into());
         home.set_can_pin(can_pin);
     }
-    match android::insets() {
-        Some((top, bottom, density)) => {
-            home.set_sat((top / density).max(36.0));
-            home.set_sab((bottom / density).max(24.0));
-            density
-        }
-        None => 0.0,
+    if let Some((top, bottom)) = android::insets() {
+        home.set_sat(top);
+        home.set_sab(bottom);
     }
 }
 
@@ -70,31 +66,28 @@ pub fn run(_app: android_activity::AndroidApp) {
         let editing = editing.clone();
         move |on| editing.set(on)
     });
-    let mut density = refresh(&ui);
+    refresh(&ui);
 
     // Clawd idles on the home screen (asleep while it is quiet) and Null idles beside it (at its laptop while it is
     // quiet: they keep working); only what changed is drawn.
     let start = Instant::now();
-    let mascot = Rc::new(RefCell::new(Mascot::new(0.0)));
+    let mut mascot = Mascot::new(0.0);
     let mut null = Null::default();
     let mut last: Vec<Px> = vec![];
     let mut last_refresh = Instant::now();
     let timer = slint::Timer::default();
     timer.start(slint::TimerMode::Repeated, Duration::from_millis(33), {
-        let (ui, mascot) = (ui.as_weak(), mascot.clone());
+        let ui = ui.as_weak();
         move || {
             let Some(ui) = ui.upgrade() else { return };
             let home = ui.global::<Home>();
             // Permissions granted in Settings, or a mode changed elsewhere, show up within a second.
             if last_refresh.elapsed() > Duration::from_secs(1) {
                 last_refresh = Instant::now();
-                let d = refresh(&ui);
-                if d > 0.0 {
-                    density = d;
-                }
+                refresh(&ui);
             }
             // The channel sheet rides above the keyboard.
-            let kb = if editing.get() && density > 0.0 { (android::keyboard() / density).round() } else { 0.0 };
+            let kb = if editing.get() { android::keyboard() } else { 0.0 };
             if home.get_kb() != kb {
                 home.set_kb(kb);
             }
@@ -104,7 +97,7 @@ pub fn run(_app: android_activity::AndroidApp) {
             if home.get_null_frame() != n {
                 home.set_null_frame(n);
             }
-            let cells = mascot.borrow_mut().frame(now, phase, false, 0.0, 0.0);
+            let cells = mascot.frame(now, phase, false, 0.0, 0.0);
             let px: Vec<Px> = cells
                 .iter()
                 .map(|c| Px {

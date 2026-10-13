@@ -1,8 +1,9 @@
 //! The live call: Claude's voice in, the user's voice out (live captions, end of turn, talking over Claude),
-//! all against the PC's call server (same HTTP API the web page used). The screen reads `View`.
+//! all against the PC's call server. The screen reads `View`.
 use crate::{
     android,
     audio::{self, Mic, Player},
+    net::{HTTP, RT},
     view::View,
 };
 use serde_json::Value;
@@ -16,9 +17,6 @@ use tokio::sync::Notify;
 mod hearing;
 mod speaking;
 
-// One runtime for the app's life: an engine (and its tasks) can end inside it without tearing it down.
-static RT: std::sync::LazyLock<tokio::runtime::Runtime> =
-    std::sync::LazyLock::new(|| tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().expect("runtime"));
 
 const PREROLL_FRAMES: usize = 12; // ~500 ms kept from just before speech starts
 const SILENCE_MS: f64 = 1800.0; // end of turn after this much quiet...
@@ -75,7 +73,6 @@ pub struct Inner {
     pub mode: Mode,
     pub ended: bool,
     pub muted: bool,
-    pub speaker: bool,
     debug: bool,
     mic: Option<Mic>,
     noise_floor: f32,
@@ -104,7 +101,6 @@ pub struct Engine {
     s: Mutex<Inner>,
     base: String,
     token: String,
-    http: reqwest::Client,
     t0: Instant,
     line_stop: Notify,
     speech_order: tokio::sync::Mutex<()>,
@@ -120,7 +116,6 @@ impl Engine {
                 mode: Mode::Idle,
                 ended: false,
                 muted: false,
-                speaker: false,
                 debug: false,
                 mic: None,
                 noise_floor: 0.01,
@@ -146,7 +141,6 @@ impl Engine {
             }),
             base: base.to_string(),
             token,
-            http: reqwest::Client::new(),
             t0: Instant::now(),
             line_stop: Notify::new(),
             speech_order: tokio::sync::Mutex::new(()),
@@ -163,9 +157,8 @@ impl Engine {
         format!("{}/{path}?t={}", self.base, self.token)
     }
     fn post(&self, url: String, body: Vec<u8>) {
-        let http = self.http.clone();
         RT.spawn(async move {
-            let _ = http.post(url).body(body).send().await;
+            let _ = HTTP.post(url).body(body).send().await;
         });
     }
     fn dbg(&self, s: &mut Inner, msg: &str) {
@@ -181,16 +174,14 @@ impl Engine {
                 return;
             }
             let Some(mut st) = self.get_state(v).await else {
-                let now = self.now();
-                self.lock().view.status("Reconnecting…", now);
+                self.lock().view.status("Reconnecting…");
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 continue;
             };
             v = st["v"].as_i64().unwrap_or(-1);
             self.note_state(&st);
             if st["say"].as_str().unwrap_or("").is_empty() {
-                let now = self.now();
-                self.lock().view.status("Connecting…", now);
+                self.lock().view.status("Connecting…");
                 continue;
             }
             if st["seq"].as_u64() == last_seq {
@@ -282,7 +273,7 @@ impl Engine {
         s.ended = true;
         s.mode = Mode::Idle;
         let now = self.now();
-        s.view.status("Call ended", now);
+        s.view.status("Call ended");
         s.view.can_finish = false;
         s.mic = None; // release the mic
         s.player.close();
@@ -314,7 +305,7 @@ impl Engine {
                 s.dq.push(line);
                 s.dq.drain(..).collect::<Vec<_>>().join("\n")
             };
-            let _ = self.http.post(self.api("debug")).body(body).send().await;
+            let _ = HTTP.post(self.api("debug")).body(body).send().await;
         }
     }
 
@@ -332,7 +323,7 @@ impl Engine {
                 return;
             }
             s.view.answered(now);
-            s.view.status("Connected", now);
+            s.view.status("Connected");
         }
         android::route(false); // call audio (earpiece) from now on
         android::call_began();
@@ -368,7 +359,7 @@ impl Engine {
         let id = format!("typed-{}", now as u64);
         s.last_turn = Some(id.clone());
         s.view.heard(&id, &text, true);
-        s.view.status("Claude is thinking…", now);
+        s.view.status("Claude is thinking…");
         drop(s);
         self.post(self.api("reply"), text.into_bytes());
     }
@@ -383,8 +374,7 @@ impl Engine {
             let mic = self.open_mic();
             s = self.lock();
             if mic.is_none() {
-                let now = self.now();
-                s.view.status("Mic blocked, type a reply", now);
+                s.view.status("Mic blocked, type a reply");
                 return;
             }
             s.mic = mic;
@@ -392,7 +382,6 @@ impl Engine {
         let s = &mut *s;
         s.muted = !s.muted;
         s.view.muted = s.muted;
-        let now = self.now();
         if s.muted {
             if s.mode == Mode::Talk || s.mode == Mode::Listen {
                 Self::drop_utterance(s);
@@ -400,7 +389,7 @@ impl Engine {
             if let Some(b) = s.barge.take() {
                 s.utts.remove(&b);
             }
-            s.view.status("Mic muted, type a reply", now);
+            s.view.status("Mic muted, type a reply");
         } else if s.mode == Mode::Idle && s.line.is_none() {
             self.listen(s);
         }
@@ -412,9 +401,8 @@ impl Engine {
             if s.ended {
                 return;
             }
-            s.speaker = !s.speaker;
-            s.view.speaker = s.speaker;
-            s.speaker
+            s.view.speaker = !s.view.speaker;
+            s.view.speaker
         };
         android::route(on);
     }
@@ -423,7 +411,7 @@ impl Engine {
     pub fn keep_route(&self) {
         let s = self.lock();
         if s.view.phase != crate::mascot::Phase::Incoming && !s.ended {
-            let on = s.speaker;
+            let on = s.view.speaker;
             drop(s);
             android::route(on);
         }

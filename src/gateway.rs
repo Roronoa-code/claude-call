@@ -10,7 +10,6 @@
 //! Log: gateway.log
 use crate::{call::PORT, cfg, dir, now_iso, voice::HTTP};
 use axum::{body::Body, extract::Request, http::StatusCode, response::IntoResponse};
-use futures_util::TryStreamExt;
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
@@ -60,7 +59,7 @@ pub async fn register() {
     let _ = HTTP.post(format!("{CONTROL}/register")).body(body).timeout(Duration::from_secs(2)).send().await;
 }
 
-fn now_ms() -> u64 {
+pub fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64
 }
 
@@ -98,9 +97,7 @@ static TUNNEL: Mutex<(Option<String>, u64)> = Mutex::new((None, 0)); // url, bor
 static CHILD_PID: Mutex<Option<u32>> = Mutex::new(None);
 
 fn glog(msg: &str) {
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(dir().join("gateway.log")) {
-        let _ = writeln!(f, "{} {msg}", now_iso());
-    }
+    crate::append_log("gateway.log", msg);
 }
 
 fn kill_tunnel() {
@@ -201,7 +198,7 @@ async fn proxy(req: Request) -> axum::response::Response {
                     res = res.header(k, v);
                 }
             }
-            res.body(Body::from_stream(back.bytes_stream().map_err(std::io::Error::other))).unwrap()
+            res.body(Body::from_stream(back.bytes_stream())).unwrap()
         }
         Err(_) => StatusCode::BAD_GATEWAY.into_response(),
     }

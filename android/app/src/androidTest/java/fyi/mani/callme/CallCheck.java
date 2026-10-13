@@ -6,7 +6,7 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.os.SystemClock;
 
-/** Opens the call screen on a test call's link, answered, without ringing (phone-check.mjs drives the call). */
+/** Opens the call screen on a test call's link, answered, without ringing (examples/phone_check.rs drives the call). */
 public final class CallCheck extends Instrumentation {
     private String link;
 

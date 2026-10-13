@@ -1,7 +1,7 @@
 //! The "Aura" home-screen widget: four tiles for the contact mode, the chosen one lit in its colour; the wide one
 //! also says what the mode means and when it changed. RemoteViews over the XML layouts in res/layout.
 use crate::{
-    jx::{self, PKG, s},
+    jx::{self, PKG, call, s},
     settings,
 };
 use jni::{
@@ -83,12 +83,6 @@ fn views<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, opts: &JObject) -> Result<JObj
         add(env, &sz, &v)?;
     }
     env.new_object("android/widget/RemoteViews", "(Ljava/util/Map;)V", &[JValue::Object(&map)])
-}
-
-/// A widget-layout call on RemoteViews: setInt(view, method, value) and friends.
-fn call(env: &mut JNIEnv, v: &JObject, method: &str, sig: &str, args: &[JValue]) -> Result<()> {
-    env.call_method(v, method, sig, args)?;
-    Ok(())
 }
 
 fn text(env: &mut JNIEnv, v: &JObject, method: &str, id: i32, t: &str) -> Result<()> {

@@ -4,7 +4,7 @@ use super::*;
 
 impl Engine {
     pub(super) async fn get_state(&self, v: i64) -> Option<Value> {
-        let r = self.http.get(format!("{}&v={v}", self.api("state"))).timeout(Duration::from_secs(30)).send().await.ok()?;
+        let r = HTTP.get(format!("{}&v={v}", self.api("state"))).timeout(Duration::from_secs(30)).send().await.ok()?;
         r.json().await.ok()
     }
 
@@ -17,7 +17,7 @@ impl Engine {
         l.started = true;
         l.start_at = now;
         let (id, text) = (l.id, l.text.clone());
-        s.view.claude(id, &text, now);
+        s.view.claude(id, &text);
     }
 
     /// Where Claude's line has got to: the text revealed in step with the real audio position.
@@ -55,7 +55,7 @@ impl Engine {
             if self.lock().line.as_ref().is_none_or(|l| l.cut) {
                 return true;
             }
-            let req = self.http.get(format!("{url}&from={from}")).timeout(Duration::from_secs(60)).send();
+            let req = HTTP.get(format!("{url}&from={from}")).timeout(Duration::from_secs(60)).send();
             let r = tokio::select! {
                 r = req => r,
                 _ = self.line_stop.notified() => return true,
@@ -100,12 +100,12 @@ impl Engine {
                 break;
             }
         }
-        self.drain(total).await;
+        self.drain().await;
         true
     }
 
     /// Waits for the queued voice to finish playing (or the line to be cut).
-    pub(super) async fn drain(&self, _total: u64) {
+    pub(super) async fn drain(&self) {
         let until = {
             let mut s = self.lock();
             let gaps = s.player.end_line(); // everything is here: play out the rest
@@ -153,10 +153,9 @@ impl Engine {
                 return;
             }
             let url = format!("{}&seq={seq}&part={i}", self.api("audio"));
-            let audio = async { self.http.get(url).send().await.ok().filter(|r| r.status().is_success())?.bytes().await.ok() }.await;
+            let audio = async { HTTP.get(url).send().await.ok().filter(|r| r.status().is_success())?.bytes().await.ok() }.await;
             match audio.as_deref().and_then(audio::wav) {
                 Some((rate, samples)) => {
-                    let total = samples.len() as u64;
                     {
                         let mut s = self.lock();
                         let s = &mut *s;
@@ -168,7 +167,7 @@ impl Engine {
                         }
                         self.started(s);
                     }
-                    self.drain(total).await;
+                    self.drain().await;
                 }
                 None => {
                     // ponytail: no on-phone voice for a failed part; its caption shows for as long as it would take
@@ -195,8 +194,7 @@ impl Engine {
             s.mode = Mode::Claude;
             s.hot.clear();
             s.loud_run = 0;
-            let now = self.now();
-            s.view.status("Claude is talking…", now);
+            s.view.status("Claude is talking…");
         }
         // Ask for the stream straight away: the server holds it until the first sound is ready (409 = use parts).
         if !self.stream_line(seq).await && !self.cut() {

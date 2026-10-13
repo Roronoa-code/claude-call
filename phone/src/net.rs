@@ -11,9 +11,11 @@ use std::{
     time::Duration,
 };
 
-static RT: LazyLock<tokio::runtime::Runtime> =
-    LazyLock::new(|| tokio::runtime::Builder::new_multi_thread().worker_threads(1).enable_all().build().expect("runtime"));
-static HTTP: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
+/// One runtime and one HTTP client for the app's life (the listener and the call engine): a call can end inside it
+/// without tearing it down.
+pub static RT: LazyLock<tokio::runtime::Runtime> =
+    LazyLock::new(|| tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().expect("runtime"));
+pub static HTTP: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
 /// The listener generation that should be running; `stop` moves it on, which ends the current one.
 pub static GEN: AtomicU64 = AtomicU64::new(0);
 
@@ -32,14 +34,12 @@ pub fn listen(env: &mut JNIEnv, ctx: &JObject, topic: String, generation: u64) {
         while alive() {
             let since = last_id.clone().unwrap_or_else(|| "75s".into());
             let r = HTTP.get(format!("https://ntfy.sh/{topic}/json?since={since}")).timeout(Duration::from_secs(24 * 3600)).send().await;
-            if let Ok(r) = r.and_then(|r| r.error_for_status()) {
+            if let Ok(mut r) = r.and_then(|r| r.error_for_status()) {
                 crate::android::log("listening for calls");
                 backoff = 2;
-                let mut body = r.bytes_stream();
                 let mut line = Vec::new();
-                use futures_util::StreamExt;
                 // ntfy sends a keepalive every ~45 s: silence longer than a minute = a dead link.
-                while let Ok(Some(Ok(chunk))) = tokio::time::timeout(Duration::from_secs(60), body.next()).await {
+                while let Ok(Ok(Some(chunk))) = tokio::time::timeout(Duration::from_secs(60), r.chunk()).await {
                     for &b in chunk.iter() {
                         if b != b'\n' {
                             line.push(b);

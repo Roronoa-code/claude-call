@@ -3,12 +3,12 @@
 Voice: Qwen3-TTS Base clones the chosen reference clip (voice.json).
 Hearing: Whisper large-v3-turbo, prompted with what Claude just said so names are heard right.
 
-Started by server.mjs and shared by every Claude session; exits after 30 idle minutes.
+Started by callme.exe (src/voice.rs) and shared by every session; exits after 30 idle minutes.
 Usage: python voice_server.py <port>
 POST /tts         (body: UTF-8 text)                                  ->  audio/wav (whole line)
 POST /tts_stream  (body: UTF-8 text)                                  ->  16-bit mono PCM, streamed as it is made
                                                                           (header X-Sample-Rate; 500 if the first chunk fails)
-POST /stt         (body: 16 kHz mono float32 PCM; header X-Context)   ->  text/plain
+POST /stt?context=...  (body: 16 kHz mono float32 PCM)               ->  text/plain
 Prints "ready" once both models are loaded and warmed up (first run captures CUDA graphs).
 """
 import io
@@ -19,7 +19,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs
 
 import numpy as np
 import soundfile as sf
@@ -56,12 +56,12 @@ def speak(text: str) -> bytes:
     return buf.getvalue()
 
 
-def speak_stream(text: str, chunk: int = STREAM_CHUNK):
+def speak_stream(text: str):
     """Yields (sample_rate, int16 PCM bytes) pieces of one line as they are made."""
     with tts_lock:
         torch.manual_seed(1234)
         gen = model.generate_voice_clone_streaming(text=text, language="English", voice_clone_prompt=prompt,
-                                                   ref_text=voice["text"], chunk_size=chunk)
+                                                   ref_text=voice["text"], chunk_size=STREAM_CHUNK)
         slow, sr = Stretch(), 24000
         try:
             while True:
@@ -96,20 +96,19 @@ def hear(pcm: np.ndarray, context: str) -> str:
     kw = dict(language="en", task="transcribe", max_new_tokens=220)
     if long:
         kw.update(attention_mask=inputs.attention_mask.to("cuda:0"), return_timestamps=True)
-    context = (VOCAB + " " + context.strip()[-500:]).strip() if context.strip() else VOCAB
-    if context.strip():
-        kw["prompt_ids"] = torch.tensor(asr_proc.get_prompt_ids(context.strip()[-600:])).to("cuda:0")
+    context = (VOCAB + " " + context.strip()[-500:]).strip()
+    kw["prompt_ids"] = torch.tensor(asr_proc.get_prompt_ids(context[-600:])).to("cuda:0")
     with gpu_lock, torch.inference_mode():
         ids = asr.generate(inputs.input_features.to("cuda:0", torch.float16), **kw)
     text = asr_proc.batch_decode(ids, skip_special_tokens=True)[0].strip()
     # With a prompt, some versions echo it back first; drop it if so.
-    if context.strip() and text.startswith(context.strip()[-600:].strip()):
-        text = text[len(context.strip()[-600:].strip()):].strip()
+    if text.startswith(context[-600:].strip()):
+        text = text[len(context[-600:].strip()):].strip()
     return text
 
 
 class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):  # health check used by server.mjs to find a running instance
+    def do_GET(self):  # health check: callme.exe uses it to find a running instance
         self.send_response(200 if self.path == "/health" else 404)
         self.end_headers()
 
@@ -121,11 +120,10 @@ class Handler(BaseHTTPRequestHandler):
         last_used = time.time()
         body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
         if route.path == "/tts_stream":
-            chunk = int(parse_qs(route.query).get("chunk", [STREAM_CHUNK])[0])
-            return self.stream(speak_stream(body.decode("utf-8").strip(), chunk))
+            return self.stream(speak_stream(body.decode("utf-8").strip()))
         try:
             if route.path == "/stt":
-                context = unquote(self.headers.get("X-Context", ""))  # sent URI-encoded
+                context = parse_qs(route.query).get("context", [""])[0]
                 data, kind = hear(np.frombuffer(body, dtype="<f4").copy(), context).encode("utf-8"), "text/plain; charset=utf-8"
             else:
                 data, kind = speak(body.decode("utf-8").strip()), "audio/wav"

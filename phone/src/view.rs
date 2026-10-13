@@ -29,7 +29,6 @@ pub struct View {
     pub can_finish: bool,
     pub call_start: f64,
     pub ended_at: f64,
-    pub cut_in: bool,
     pub hold_start: f64,
     pub hold_label: String,
     pub notice: String,
@@ -92,7 +91,6 @@ impl View {
             can_finish: false,
             call_start: 0.0,
             ended_at: 0.0,
-            cut_in: false,
             hold_start: 0.0,
             hold_label: String::new(),
             notice: String::new(),
@@ -111,7 +109,7 @@ impl View {
 
     /// The engine's status line, as the design's states. "Claude is talking…" is left to `claude`, so the screen
     /// only changes once Claude's voice is actually heard.
-    pub fn status(&mut self, s: &str, _now: f64) {
+    pub fn status(&mut self, s: &str) {
         if self.phase == Phase::Ended {
             return;
         }
@@ -148,11 +146,11 @@ impl View {
     }
 
     /// A line of Claude's starts sounding.
-    pub fn claude(&mut self, id: u64, text: &str, _now: f64) {
+    pub fn claude(&mut self, id: u64, text: &str) {
         self.hold_after = false;
         self.voice = Voice::Claude;
         self.msgs.push(Msg { id: id.to_string(), me: false, text: String::new(), parts: sentences(text), spoken: (0, 0), cut: false, live: true });
-        (self.phase, self.transcribing, self.cut_in, self.notice) = (Phase::Talking, false, false, String::new());
+        (self.phase, self.transcribing, self.notice) = (Phase::Talking, false, String::new());
         self.partial.clear();
     }
 

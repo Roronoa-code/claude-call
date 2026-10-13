@@ -18,7 +18,6 @@
     <application
         android:label="Claude Call"
         android:icon="@drawable/ic_call_logo"
-        android:roundIcon="@drawable/ic_call_logo"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
 
         <activity
