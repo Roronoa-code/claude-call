@@ -150,23 +150,26 @@ pub fn ring(env: &mut JNIEnv, ctx: &JObject, link: &str, reason: &str) -> Result
         let still = STATE.lock().unwrap().as_ref().is_some_and(|s| s.current.as_deref() == Some(link.as_str()));
         if still {
             if let Ok(mut env) = vm.attach_current_thread() {
-                let _ = stop(&mut env, ctx.as_obj(), false);
+                let _ = stop(&mut env, ctx.as_obj(), &link, false);
             }
         }
     });
     Ok(())
 }
 
-/// Stops ringing; an answered or declined call is remembered so its re-rings stay quiet.
-pub fn stop(env: &mut JNIEnv, ctx: &JObject, handled: bool) -> Result<()> {
+/// Stops ringing for `link` only: ending or touching one call must not silence another one that is ringing.
+/// An answered or declined call is remembered so its re-rings stay quiet.
+pub fn stop(env: &mut JNIEnv, ctx: &JObject, link: &str, handled: bool) -> Result<()> {
     {
         let mut st = STATE.lock().unwrap();
         let st = st.get_or_insert_with(State::default);
-        if let Some(l) = st.current.take() {
-            if handled {
-                st.handled.insert(l);
-            }
+        if handled {
+            st.handled.insert(link.to_string());
         }
+        if st.current.as_deref() != Some(link) {
+            return Ok(());
+        }
+        st.current = None;
     }
     stop_sound(env)?;
     let nm = service(env, ctx, "notification")?;

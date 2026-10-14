@@ -176,24 +176,32 @@ pub fn call_opened(env: &mut JNIEnv, act: &JObject, intent: &JObject) -> Result<
         let sig = "(Landroid/content/Context;Ljava/lang/CharSequence;I)Landroid/widget/Toast;";
         let toast = env.call_static_method("android/widget/Toast", "makeText", sig, &[JValue::Object(act), JValue::Object(&t), JValue::Int(len)])?.l()?;
         env.call_method(&toast, "show", "()V", &[])?;
-        ring::stop(env, act, true)?;
+        ring::stop(env, act, &link, true)?;
         env.call_method(act, "finish", "()V", &[])?;
         return Ok(());
     }
     {
         let mut sc = SCREEN.lock().unwrap();
         let answered = sc.as_ref().is_some_and(|s| s.1 == link && s.2);
-        *sc = Some((env.new_global_ref(act)?, link, answered));
+        *sc = Some((env.new_global_ref(act)?, link.clone(), answered));
     }
     if jx::extra_bool(env, intent, "answer")? {
-        ring::stop(env, act, true)?;
+        ring::stop(env, act, &link, true)?;
     }
     Ok(())
 }
 
+/// A touch on the call screen quiets its own ringing, not another call's.
+pub fn screen_touched(env: &mut JNIEnv, act: &JObject) -> Result<()> {
+    let link = SCREEN.lock().unwrap().as_ref().map(|s| s.1.clone());
+    match link {
+        Some(l) => ring::stop(env, act, &l, true),
+        None => Ok(()),
+    }
+}
+
 /// The call connected (from the call screen's engine): quiet, and the ongoing-call notification.
 pub fn call_began(env: &mut JNIEnv, act: &JObject) -> Result<()> {
-    ring::stop(env, act, true)?;
     let link = {
         let mut sc = SCREEN.lock().unwrap();
         sc.as_mut().map(|s| {
@@ -202,7 +210,10 @@ pub fn call_began(env: &mut JNIEnv, act: &JObject) -> Result<()> {
         })
     };
     match link {
-        Some(l) => call_started(env, act, &l),
+        Some(l) => {
+            ring::stop(env, act, &l, true)?;
+            call_started(env, act, &l)
+        }
         None => Ok(()),
     }
 }
@@ -220,7 +231,6 @@ pub fn call_back(env: &mut JNIEnv, act: &JObject) -> Result<()> {
 
 /// The call screen closed: that hangs up.
 pub fn call_closed(env: &mut JNIEnv, act: &JObject) -> Result<()> {
-    ring::stop(env, act, true)?;
     let link = {
         let mut sc = SCREEN.lock().unwrap();
         match sc.as_ref() {
@@ -228,6 +238,9 @@ pub fn call_closed(env: &mut JNIEnv, act: &JObject) -> Result<()> {
             _ => None,
         }
     };
+    if let Some(l) = &link {
+        ring::stop(env, act, l, true)?;
+    }
     if let Some(link) = link.filter(|l| l != ring::TEST_LINK) {
         net::hang_up(&link);
         call_ended(env, act, &link)?;
@@ -237,8 +250,8 @@ pub fn call_closed(env: &mut JNIEnv, act: &JObject) -> Result<()> {
 
 /// Decline / End call from a notification: close the call screen if it's open (that hangs up), else hang up here.
 pub fn declined(env: &mut JNIEnv, ctx: &JObject, intent: &JObject) -> Result<()> {
-    ring::stop(env, ctx, true)?;
     let Some(link) = jx::extra(env, intent, "link")? else { return Ok(()) };
+    ring::stop(env, ctx, &link, true)?;
     let open = SCREEN.lock().unwrap().as_ref().filter(|s| s.1 == link).map(|s| s.0.clone());
     if let Some(act) = open {
         if !env.call_method(act.as_obj(), "isFinishing", "()Z", &[])?.z()? {

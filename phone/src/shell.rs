@@ -1,6 +1,6 @@
 //! The Android entry points. Android itself must create the app's activities, service and receivers as Java classes,
 //! so those stay as one-line Kotlin shells (android/app/.../Shell.kt) that forward here (fyi.mani.callme.Native).
-use crate::{jx, net, ring, service, widget};
+use crate::{jx, net, service, widget};
 use jni::{
     JNIEnv,
     objects::{JClass, JObject},
@@ -26,7 +26,7 @@ export!(Java_fyi_mani_callme_Native_permissionsAnswered, |env, act| service::per
 export!(Java_fyi_mani_callme_Native_declined, |env, ctx, intent| service::declined(env, &ctx, &intent));
 export!(Java_fyi_mani_callme_Native_modeTapped, |env, ctx, intent| widget::tapped(env, &ctx, &intent));
 export!(Java_fyi_mani_callme_Native_widgets, |env, ctx| widget::update_all(env, &ctx));
-export!(Java_fyi_mani_callme_Native_stopRinging, |env, ctx| ring::stop(env, &ctx, true));
+export!(Java_fyi_mani_callme_Native_stopRinging, |env, act| service::screen_touched(env, &act));
 
 /// ListenService stopped: the listener ends within a second.
 #[unsafe(no_mangle)]
