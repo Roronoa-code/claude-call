@@ -37,10 +37,26 @@ fn tools() -> Value {
     ])
 }
 
+/// What to tell the agent when the user hung up: maybe they asked to be called back.
+fn hung_up(plain: &str) -> String {
+    match call().call_back {
+        Some(at) => format!(
+            "The user hung up and asked you to call back in {} minutes. Call call_user now with what you want to say when they pick up: it waits until then before ringing.",
+            at.saturating_duration_since(Instant::now()).as_secs().div_ceil(60)
+        ),
+        None => plain.into(),
+    }
+}
+
 async fn call_user(message: String, reason: Option<String>) -> Result<String, String> {
+    // The user asked to be called back: wait until then, and ring whatever the contact mode says.
+    let back = call().call_back.take();
+    if let Some(at) = back {
+        tokio::time::sleep_until(at.into()).await;
+    }
     let mode = voice::contact_mode().await;
     // A recent Call request from the phone means the user asked for this call, whatever the mode says.
-    if mode != "call" && mode != "both" && !voice::call_requested().await {
+    if back.is_none() && mode != "call" && mode != "both" && !voice::call_requested().await {
         let next = if mode == "text" { " Message them on Discord instead (ask_discord)." } else { " Do not contact them; carry on with work that does not need them, and leave the question for when they are back." };
         return Ok(format!("Not called: the user's contact mode is \"{mode}\" (calls not allowed).{next}"));
     }
@@ -64,7 +80,7 @@ async fn call_user(message: String, reason: Option<String>) -> Result<String, St
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
         if call().declined {
-            return Ok("The user declined the call. Do not call again for this; continue without them or wait.".into());
+            return Ok(hung_up("The user declined the call. Do not call again for this; continue without them or wait."));
         }
         if !call().answered {
             call::cancel_reply();
@@ -73,7 +89,7 @@ async fn call_user(message: String, reason: Option<String>) -> Result<String, St
     }
     let t = reply.await;
     if call().declined {
-        return Ok("The user hung up.".into());
+        return Ok(hung_up("The user hung up."));
     }
     Ok(t.map_or("The user picked up but did not reply in time.".into(), |t| format!("User said: {t}")))
 }
@@ -95,7 +111,7 @@ async fn tool(name: &str, args: &Value) -> Result<String, String> {
             say(message()?, false, false).await;
             let t = wait_for_reply(REPLY_WAIT_MS).await;
             if call().declined {
-                return Ok("The user hung up.".into());
+                return Ok(hung_up("The user hung up."));
             }
             Ok(t.map_or("No reply from the user in time.".into(), |t| format!("User said: {t}")))
         }

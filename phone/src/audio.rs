@@ -25,6 +25,8 @@ struct Buf {
     ending: bool,   // the whole line is here: play out what is left
     gaps: u32,      // times it ran dry mid-line
     paused: bool,   // a sudden sound while she talks: hold the voice until it is known to be words (or not)
+    quiet: bool,    // the user silenced her: keep playing through the line (captions keep time) but send zeros
+    peak: i16,      // loudest sample handed to the speaker since last asked (debug log)
 }
 
 /// Claude's voice. Samples are pushed as they arrive; `stop` silences at once.
@@ -53,9 +55,10 @@ impl Player {
                 b.primed = true;
             }
             let mut n = 0;
-            let play = b.primed && !b.paused;
+            let (play, quiet) = (b.primed && !b.paused, b.quiet);
             for s in out.iter_mut() {
-                *s = if play { b.data.pop_front().map(|v| { n += 1; v }).unwrap_or(0) } else { 0 };
+                *s = if play { b.data.pop_front().map(|v| { n += 1; if quiet { 0 } else { v } }).unwrap_or(0) } else { 0 };
+                b.peak = b.peak.max(s.saturating_abs());
             }
             b.played += n;
             if play && b.data.is_empty() && !b.ending {
@@ -140,6 +143,16 @@ impl Player {
     /// Holds the voice where it is (true) or carries on (false).
     pub fn pause(&self, on: bool) {
         self.buf.lock().unwrap().paused = on;
+    }
+
+    /// Silences her voice (true) without losing her place, or lets it be heard again (false).
+    pub fn quiet(&self, on: bool) {
+        self.buf.lock().unwrap().quiet = on;
+    }
+
+    /// The loudest sample sent to the speaker since the last call.
+    pub fn take_peak(&self) -> i16 {
+        std::mem::take(&mut self.buf.lock().unwrap().peak)
     }
 
     pub fn paused(&self) -> bool {

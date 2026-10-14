@@ -53,6 +53,7 @@ pub struct Call {
     tts: Option<tokio::task::AbortHandle>,
     pub answered: bool,
     pub declined: bool,
+    pub call_back: Option<Instant>, // the user hung up asking to be called back then
     last_seen: Option<Instant>,
     watchers: u32,
     waiter: Option<oneshot::Sender<Option<String>>>,
@@ -427,7 +428,15 @@ async fn handle(req: Request) -> Result<Response, String> {
             no_content()
         }
         "/decline" if post => {
-            call().declined = true;
+            let mut c = call();
+            c.declined = true;
+            if let Some(m) = num("back") {
+                c.call_back = Some(Instant::now() + Duration::from_secs(m * 60));
+            }
+            if let Some(t) = c.tts.take() {
+                t.abort(); // hung up mid-line: stop making the rest
+            }
+            drop(c);
             cancel_reply();
             no_content()
         }

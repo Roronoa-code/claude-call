@@ -159,7 +159,7 @@ fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activi
             }
         })
         .collect();
-    let (speaker, can_finish, ended_at) = (v.speaker, v.can_finish, v.ended_at);
+    let (speaker, quiet, can_finish, ended_at) = (v.speaker, v.quiet, v.can_finish, v.ended_at);
     drop(s);
 
     // ---- Clawd: whole pixels, perched small on Claude's bubble while the thread shows ----
@@ -245,6 +245,9 @@ fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activi
     if ui.get_speaker() != speaker {
         ui.set_speaker(speaker);
     }
+    if ui.get_quiet() != quiet {
+        ui.set_quiet(quiet);
+    }
     if ui.get_can_finish() != can_finish {
         ui.set_can_finish(can_finish);
     }
@@ -324,6 +327,14 @@ pub fn run(app: android_activity::AndroidApp) {
     ui.on_toggle_speaker({
         let e = e.clone();
         move || e.toggle_speaker()
+    });
+    ui.on_call_back({
+        let e = e.clone();
+        move || e.call_back(5)
+    });
+    ui.on_toggle_quiet({
+        let e = e.clone();
+        move || e.toggle_quiet()
     });
     ui.on_send({
         let e = e.clone();

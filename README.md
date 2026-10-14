@@ -14,6 +14,8 @@ Timing:
 - Talking over Claude: loudness against the measured echo, confirmed by Whisper words; transcripts that only repeat Claude's own line are dropped.
 - Debug: `"debug": true` in `config.json` (or `CALLME_DEBUG=1`) logs the phone's mic levels, echo level and interrupts to `timing.log`.
 
+Call screen: Mute turns off your mic; Quiet silences Claude's voice while the call (and its captions) carries on; "Call back in 5 min" hangs up and Claude rings again five minutes later.
+
 Fallbacks: ElevenLabs for the voice (`ELEVENLABS_API_KEY` + `ELEVENLABS_VOICE_ID`), then captions only. Without the GPU server there is no hearing: type replies instead.
 
 **Tools:** `call_user`, `continue_call`, `hold_call`, `end_call`, `get_contact_mode`, `set_contact_mode`.

@@ -276,6 +276,14 @@ impl Engine {
         }
     }
 
+    /// Hangs up and asks for a call back in `min` minutes (sent before the hang-up, so the PC knows why).
+    pub fn call_back(&self, min: u32) {
+        if !self.lock().ended {
+            self.post(format!("{}&back={min}", self.api("decline")), vec![]);
+            self.end();
+        }
+    }
+
     fn end(&self) {
         let mut s = self.lock();
         s.ended = true;
@@ -284,7 +292,12 @@ impl Engine {
         s.view.status("Call ended");
         s.view.can_finish = false;
         s.mic = None; // release the mic
+        if let Some(l) = &mut s.line {
+            l.cut = true; // the line's player tasks stop fetching and never push again
+        }
+        self.line_stop.notify_waiters();
         s.player.close();
+        android::log("call ended: voice closed");
         s.view.ended(now);
     }
 
@@ -302,12 +315,14 @@ impl Engine {
                 }
                 let (n, sum, max, low, high) = std::mem::take(&mut s.stats);
                 let line = format!(
-                    "{:.2} {:?} frames={n} rms avg={:.4} max={max:.4} echo={:.4} floor={:.4}{}",
+                    "{:.2} {:?} frames={n} rms avg={:.4} max={max:.4} echo={:.4} floor={:.4} out={}{}{}",
                     self.now() / 1000.0,
                     s.mode,
                     sum / n.max(1) as f32,
                     s.echo,
                     s.noise_floor,
+                    s.player.take_peak(),
+                    if s.view.quiet { " quiet" } else { "" },
                     if s.mode == Mode::Claude { format!(" thr={low:.4}/{high:.4}") } else { String::new() }
                 );
                 s.dq.push(line);
@@ -413,6 +428,16 @@ impl Engine {
             s.view.speaker
         };
         android::route(on);
+    }
+
+    pub fn toggle_quiet(self: &Arc<Self>) {
+        let mut s = self.lock();
+        if s.ended {
+            return;
+        }
+        s.view.quiet = !s.view.quiet;
+        let on = s.view.quiet;
+        s.player.quiet(on);
     }
 
     /// Called about once a second: puts the call audio back where it belongs if the system moved it.

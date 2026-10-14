@@ -34,6 +34,7 @@ export component CallScreen inherits Window {
     in property <float> glow-t; // the glow drifts only while someone talks
     in property <bool> muted;
     in property <bool> speaker;
+    in property <bool> quiet;
     in property <bool> can-finish;
     in property <bool> closed;
     in property <[Msg]> msgs;
@@ -46,6 +47,8 @@ export component CallScreen inherits Window {
     callback hang-up();
     callback toggle-mute();
     callback toggle-speaker();
+    callback toggle-quiet();
+    callback call-back();
     callback send(string);
     callback poke();
 
@@ -57,7 +60,7 @@ export component CallScreen inherits Window {
     // While typing, the stage and the reply field sit above the keyboard (the window itself never resizes).
     property <length> stage-bottom: self.height - (typing ? kb + max(96px, sab + 302px - kb) : sab + 302px);
     property <length> controls-y: self.height - sab - 28px - 224px;
-    property <length> col-w: (self.width - 32px) / 4;
+    property <length> col-w: (self.width - 32px) / 5;
 
     background: T.bg;
     title: "Claude Call";
@@ -82,6 +85,25 @@ export component CallScreen inherits Window {
             height: 52px;
             Text { x: 0; y: 2px; text: root.agent; font-size: 18px; font-weight: 700; color: T.fg; }
             SwapText { y: 28px; width: parent.width; height: 20px; text: root.time-text; key: root.time-key; font-size: 14px; color: T.muted; }
+            // Hangs up and has Claude ring back in five minutes.
+            later := Rectangle {
+                x: parent.width - self.width;
+                y: 6px;
+                width: laterText.preferred-width + 28px;
+                height: 40px;
+                border-radius: 20px;
+                background: laterTouch.pressed ? T.btn-on : T.btn;
+                opacity: root.ended ? 0 : 1;
+                transform-scale: laterTouch.pressed ? 0.94 : 1;
+                animate background { duration: 200ms; easing: T.out; }
+                animate transform-scale { duration: 160ms; easing: T.out; }
+                animate opacity { duration: 200ms; easing: T.out; }
+                laterText := Text { text: "Call back in 5 min"; font-size: 14px; color: laterTouch.pressed ? #111 : T.fg; vertical-alignment: center; horizontal-alignment: center; }
+                laterTouch := TouchArea {
+                    enabled: !root.ended;
+                    clicked => { root.call-back(); }
+                }
+            }
         }
 
         // ---- The stage: Clawd, the big caption, and the thread while you talk and Claude thinks ----
@@ -289,26 +311,28 @@ export component CallScreen inherits Window {
             y: root.controls-y;
             width: parent.width - 32px;
             height: 224px;
-            for i in 4: Rectangle {
-                x: root.col-w * i + (root.in-call ? 0 : (1.5 - i) * 95px);
+            for i in 5: Rectangle {
+                x: root.col-w * i + (root.in-call ? 0 : (2 - i) * 76px);
                 y: root.in-call ? 0 : 124px;
                 width: root.col-w;
                 height: 90px;
                 opacity: root.in-call ? 1 : 0;
-                transform-origin: { x: root.col-w / 2, y: 32px };
+                transform-origin: { x: root.col-w / 2, y: 29px };
                 transform-scale: root.in-call ? 1 : 0.35;
                 animate x, y, transform-scale { duration: root.in-call ? 500ms : 300ms; delay: root.in-call ? i * 30ms : 0ms; easing: root.in-call ? T.spring : T.close; }
                 animate opacity { duration: 200ms; delay: root.in-call ? i * 30ms : 0ms; easing: T.out; }
                 Round {
-                    icon: i == 0 ? (root.muted ? Icons.mic-off : Icons.mic) : i == 1 ? Icons.speaker : i == 2 ? Icons.captions : Icons.keyboard;
-                    label: i == 0 ? (root.muted ? "Unmute" : "Mute") : i == 1 ? "Speaker" : i == 2 ? "Captions" : "Type";
-                    pressed: i == 0 ? root.muted : i == 1 ? root.speaker : i == 2 ? root.caps-open : root.typing;
+                    size: 58px;
+                    icon: i == 0 ? (root.muted ? Icons.mic-off : Icons.mic) : i == 1 ? Icons.speaker-off : i == 2 ? Icons.speaker : i == 3 ? Icons.captions : Icons.keyboard;
+                    label: i == 0 ? (root.muted ? "Unmute" : "Mute") : i == 1 ? "Quiet" : i == 2 ? "Speaker" : i == 3 ? "Captions" : "Type";
+                    pressed: i == 0 ? root.muted : i == 1 ? root.quiet : i == 2 ? root.speaker : i == 3 ? root.caps-open : root.typing;
                     enabled: root.in-call && !root.ended;
                     faded: root.typing;
                     clicked => {
                         if (i == 0) { root.toggle-mute(); }
-                        else if (i == 1) { root.toggle-speaker(); }
-                        else if (i == 2) { root.caps-open = !root.caps-open; }
+                        else if (i == 1) { root.toggle-quiet(); }
+                        else if (i == 2) { root.toggle-speaker(); }
+                        else if (i == 3) { root.caps-open = !root.caps-open; }
                         else { root.typing = !root.typing; }
                     }
                 }
@@ -403,7 +427,6 @@ export component CallScreen inherits Window {
                         Rectangle {
                             width: endLabel.preferred-width + 14px;
                             border-radius: 9px;
-                            background: #111214a0;
                             endLabel := Text { text: root.incoming ? "Decline" : "Hang up"; font-size: 14px; color: #e8e9ec; horizontal-alignment: center; vertical-alignment: center; }
                         }
                     }
@@ -420,7 +443,6 @@ export component CallScreen inherits Window {
                         Rectangle {
                             width: measure.preferred-width + 14px;
                             border-radius: 9px;
-                            background: #111214a0;
                             SwapText { width: measure.preferred-width + 14px; height: 20px; text: root.incoming ? "Answer" : "Done talking"; font-size: 14px; color: #e8e9ec; align: center; }
                         }
                     }
@@ -431,8 +453,9 @@ export component CallScreen inherits Window {
         // ---- Transcript: grows out of the Captions button ----
         Morph {
             open: root.caps-open && root.in-call;
-            fx: 16px + root.col-w * 2.5 - 32px;
+            fx: 16px + root.col-w * 3.5 - 29px;
             fy: root.controls-y;
+            fsize: 58px;
             tx: 12px;
             ty: root.sat + 8px;
             tw: root.width - 24px;
@@ -486,8 +509,9 @@ export component CallScreen inherits Window {
         // ---- Type a reply: grows out of the Type button ----
         typeSheet := Morph {
             open: root.typing && root.in-call && !root.ended;
-            fx: 16px + root.col-w * 3.5 - 32px;
+            fx: 16px + root.col-w * 4.5 - 29px;
             fy: root.controls-y;
+            fsize: 58px;
             tx: 16px;
             ty: root.height - root.kb - max(12px, root.sab + 188px - root.kb) - 64px; // 12px above the keyboard
             tw: root.width - 32px;

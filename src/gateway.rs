@@ -101,7 +101,11 @@ fn glog(msg: &str) {
 
 fn kill_tunnel() {
     if let Some(pid) = *CHILD_PID.lock().unwrap() {
-        let _ = std::process::Command::new("taskkill").args(["/F", "/PID", &pid.to_string()]).output();
+        let mut cmd = std::process::Command::new("taskkill");
+        cmd.args(["/F", "/PID", &pid.to_string()]);
+        #[cfg(windows)]
+        std::os::windows::process::CommandExt::creation_flags(&mut cmd, 0x0800_0000); // CREATE_NO_WINDOW: the gateway has no console, so taskkill would open one
+        let _ = cmd.output();
     }
 }
 

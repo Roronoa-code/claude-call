@@ -42,6 +42,7 @@ export global Icons {
     out property <string> mic: "M9 6a3 3 0 0 1 6 0v5a3 3 0 0 1 -6 0z M5.5 11a6.5 6.5 0 0 0 13 0 M12 17.5V21";
     out property <string> mic-off: "M15 9.3V6a3 3 0 0 0 -5.7 -1.3 M9 9v2a3 3 0 0 0 4.9 2.3 M18.5 11a6.5 6.5 0 0 1 -1.1 3.6 M5.5 11a6.5 6.5 0 0 0 10.4 5.2 M12 17.5V21 M3 3l18 18";
     out property <string> speaker: "M11 5L6.5 9H3v6h3.5l4.5 4z M15.5 8.5a5 5 0 0 1 0 7 M18.5 5.5a9 9 0 0 1 0 13";
+    out property <string> speaker-off: "M11 5L6.5 9H3v6h3.5l4.5 4z M15.5 9.5l5 5 M20.5 9.5l-5 5";
     out property <string> captions: "M6 5h12a3 3 0 0 1 3 3v8a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3v-8a3 3 0 0 1 3 -3z M7 10h4 M13 10h4 M7 14h7 M16 14h1";
     out property <string> keyboard: "M5 6h14a2.5 2.5 0 0 1 2.5 2.5v7a2.5 2.5 0 0 1 -2.5 2.5h-14a2.5 2.5 0 0 1 -2.5 -2.5v-7a2.5 2.5 0 0 1 2.5 -2.5z M6.5 10h0.01 M10 10h0.01 M14 10h0.01 M17.5 10h0.01 M7.5 14h9";
     out property <string> check: "M5 12.5L10 17.5L19 7";
@@ -196,6 +197,7 @@ export component Round {
     in property <bool> enabled: true;
     in property <bool> faded;
     in property <color> label-color: #e8e9ec;
+    in property <length> size: 64px;
     callback clicked;
     VerticalLayout {
         spacing: 6px;
@@ -203,12 +205,12 @@ export component Round {
         HorizontalLayout {
             alignment: center;
             circle := Rectangle {
-                width: 64px;
-                height: 64px;
-                border-radius: 32px;
+                width: root.size;
+                height: root.size;
+                border-radius: root.size / 2;
                 background: root.pressed ? T.btn-on : T.btn;
                 opacity: root.faded ? 0 : root.enabled ? 1 : 0.4;
-                transform-origin: { x: 32px, y: 32px };
+                transform-origin: { x: root.size / 2, y: root.size / 2 };
                 transform-scale: touch.pressed && root.enabled ? 0.93 : 1;
                 animate background { duration: 200ms; easing: T.out; }
                 animate transform-scale { duration: 160ms; easing: T.out; }
@@ -228,8 +230,6 @@ export component Round {
             alignment: center;
             Rectangle {
                 height: 18px;
-                border-radius: 9px;
-                background: #111214a0;
                 opacity: root.faded ? 0 : 1;
                 animate opacity { duration: 160ms; }
                 HorizontalLayout {

@@ -162,6 +162,9 @@ impl Engine {
                     {
                         let mut s = self.lock();
                         let s = &mut *s;
+                        if s.line.as_ref().is_none_or(|l| l.cut) {
+                            return; // hung up or cut while it downloaded
+                        }
                         let (at, out_rate) = s.player.push(rate, &samples);
                         if let Some(l) = &mut s.line {
                             if i == 0 {
@@ -192,6 +195,9 @@ impl Engine {
     pub(super) async fn play_line(self: &Arc<Self>, seq: u64, text: String) {
         {
             let mut s = self.lock();
+            if s.ended {
+                return; // hung up while the line was on its way
+            }
             s.line = Some(Line { id: seq, text, started: false, start_at: 0.0, start_frame: None, rate: 0, dur: 0.0, cut: false });
             s.player.begin_line();
             s.mode = Mode::Claude;
