@@ -279,6 +279,13 @@ fn live_link(env: &mut JNIEnv) -> Result<Option<String>> {
 
 /// The home screen opened: during a call the app icon brings the call back instead.
 pub fn home_opened(env: &mut JNIEnv, act: &JObject) -> Result<()> {
+    // A chat notification was tapped: the home screen opens that chat.
+    let intent = env.call_method(act, "getIntent", "()Landroid/content/Intent;", &[])?.l()?;
+    if let Some(chat) = jx::extra(env, &intent, "chat")? {
+        *crate::inbox::OPEN_CHAT.lock().unwrap() = Some(chat);
+        let k = s(env, "chat")?;
+        env.call_method(&intent, "removeExtra", "(Ljava/lang/String;)V", &[JValue::Object(&k)])?;
+    }
     let Some(link) = live_link(env)? else { return Ok(()) };
     let i = ring::call_intent(env, act, &link, true)?;
     jx::start_activity(env, act, &i)?;

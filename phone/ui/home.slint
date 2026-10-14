@@ -1,8 +1,9 @@
 // The home screen ("stage"): Clawd and Null on a soft light in the middle, how agents can reach you as one sliding control,
-// and round buttons along the bottom: Test ring, Widget (its sheet also holds the channel) and Call, which asks the
-// agent picked by tapping Clawd or Null to phone you.
+// and round buttons along the bottom: Test ring, Widget (its sheet also holds the channel), Chats (the in-app chats
+// with the agents) and Call, which asks the agent picked by tapping Clawd or Null to phone you.
 import { T, Icon, Icons, Morph, Round } from "parts.slint";
 import { Home, Mode, Clawd, Null, SetupCard } from "home_parts.slint";
+import { Chats, ChatList, ChatThread, PickRow } from "chat.slint";
 
 // A choice in a sheet: icon, title and a line under it.
 component Choice {
@@ -99,7 +100,7 @@ export component HomeScreen inherits Window {
     title: "Claude Call";
     property <string> draft;
     property <length> row-y: self.height - Home.sab - 24px - 88px; // the round buttons
-    property <length> col-w: (self.width - 40px) / 3;
+    property <length> col-w: (self.width - 40px) / 4;
     property <length> sheet-w: self.width - 40px;
 
     // The stage light behind Clawd and Null.
@@ -184,6 +185,14 @@ export component HomeScreen inherits Window {
         height: 88px;
         Round { icon: Icons.bell; label: "Test ring"; label-color: T.fg2; clicked => { Home.test-ring(); } }
         Round { icon: Icons.grid; label: "Widget"; label-color: T.fg2; pressed: Home.widgets || Home.channel; clicked => { Home.widgets = !Home.widgets && !Home.channel; Home.channel = false; Home.editing(false); } }
+        Round {
+            icon: Icons.chat;
+            label: "Chats";
+            label-color: T.fg2;
+            pressed: Chats.open;
+            dot: Chats.unread;
+            clicked => { Home.widgets = false; Home.channel = false; Home.editing(false); Chats.open = true; }
+        }
         // Asks Claude (or Codex, if Null is picked) to call you; it rings within a minute or so.
         Round {
             icon: Icons.phone;
@@ -194,10 +203,20 @@ export component HomeScreen inherits Window {
         }
     }
 
-    // Back closes an open sheet; otherwise it is left unhandled and leaves the app.
+    // Back closes what is open (the new-chat picker, a chat, the Chats screen, a sheet); otherwise it is left
+    // unhandled and leaves the app.
     forward-focus: keys;
+    // Leaving a chat, or putting the keyboard away in one, hands focus back here: with nothing focused, Back went
+    // straight past the Chats screen and left the app, and the field kept its cursor handle on screen.
+    property <string> chat-now: Chats.current;
+    changed chat-now => { if (chat-now == "") { keys.focus(); } }
+    property <length> kb-now: Home.kb;
+    changed kb-now => { if (kb-now == 0 && Chats.current != "") { keys.focus(); } }
     keys := FocusScope {
         key-pressed(e) => {
+            if (e.text == Key.Back && Chats.back()) {
+                return accept;
+            }
             if (e.text == Key.Back && (Home.widgets || Home.channel)) {
                 Home.widgets = false;
                 Home.channel = false;
@@ -297,6 +316,47 @@ export component HomeScreen inherits Window {
                     }
                 }
             }
+        }
+    }
+
+    // The Chats screen grows out of its button and fills the screen; the new-chat picker grows out of its "+".
+    Morph {
+        open: Chats.open;
+        panel: #1c1d21;
+        fx: 20px + root.col-w * 2.5 - 32px;
+        fy: root.row-y;
+        tx: 0px;
+        ty: 0px;
+        tw: root.width;
+        th: root.height;
+        radius: 0px;
+        face: Icons.chat;
+        if Chats.current == "": ChatList { width: root.width; height: root.height; }
+        if Chats.current != "": ChatThread { width: root.width; height: root.height; }
+    }
+
+    if Chats.picker: TouchArea {
+        clicked => { Chats.picker = false; }
+    }
+
+    Morph {
+        open: Chats.picker;
+        panel: #26282d;
+        fx: root.width - 54px;
+        fy: Home.sat + 6px;
+        fsize: 48px;
+        tw: min(root.width - 32px, 280px);
+        tx: root.width - 16px - self.tw;
+        th: 272px;
+        ty: Home.sat + 60px;
+        face: Icons.plus;
+        VerticalLayout {
+            padding: 12px;
+            spacing: 8px;
+            PickRow { title: "Agent 1 · Haiku"; clicked => { Chats.picker = false; Chats.new-chat("claude", "haiku-5.5"); Chats.want-focus = true; } }
+            PickRow { title: "Agent 2 · Sonnet"; clicked => { Chats.picker = false; Chats.new-chat("claude", "sonnet-5.5"); Chats.want-focus = true; } }
+            PickRow { title: "Agent 3 · Opus"; clicked => { Chats.picker = false; Chats.new-chat("claude", "opus-5.5"); Chats.want-focus = true; } }
+            PickRow { title: "Codex"; clicked => { Chats.picker = false; Chats.new-chat("codex", ""); Chats.want-focus = true; } }
         }
     }
 }

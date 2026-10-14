@@ -51,6 +51,29 @@ pub fn set_topic(env: &mut JNIEnv, ctx: &JObject, topic: &str) -> Result<()> {
     put(env, ctx, &[("topic", topic.trim())], &[])
 }
 
+/// The key chat messages are signed with, from res/values/topic.xml; None until the PC has set it up.
+pub fn chat_key(env: &mut JNIEnv, ctx: &JObject) -> Result<Option<String>> {
+    let id = jx::res(env, ctx, "string", "chat_key")?;
+    if id == 0 {
+        return Ok(None);
+    }
+    let k = env.call_method(ctx, "getString", "(I)Ljava/lang/String;", &[JValue::Int(id)])?.l()?;
+    Ok(jx::string(env, k)?.map(|k| k.trim().to_string()).filter(|k| !k.is_empty()))
+}
+
+/// The time (seconds) of the last ntfy message seen, so the listener catches up from there after being off.
+pub fn cursor(env: &mut JNIEnv, ctx: &JObject) -> Result<i64> {
+    let (p, k) = (prefs(env, ctx)?, s(env, "ntfyCursor")?);
+    env.call_method(&p, "getLong", "(Ljava/lang/String;J)J", &[JValue::Object(&k), JValue::Long(0)])?.j()
+}
+
+pub fn set_cursor(env: &mut JNIEnv, ctx: &JObject, secs: i64) -> Result<()> {
+    if secs > cursor(env, ctx)? {
+        put(env, ctx, &[], &[("ntfyCursor", secs)])?;
+    }
+    Ok(())
+}
+
 pub fn mode(env: &mut JNIEnv, ctx: &JObject) -> Result<String> {
     Ok(get(env, ctx, "mode")?.unwrap_or_else(|| "both".into()))
 }

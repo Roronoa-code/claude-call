@@ -48,6 +48,8 @@ export global Icons {
     out property <string> check: "M5 12.5L10 17.5L19 7";
     out property <string> phone: "M5 4h3.2l1.6 4l-2 1.3a10 10 0 0 0 4.9 4.9l1.3 -2l4 1.6V17a2 2 0 0 1 -2 2A15 15 0 0 1 3 6a2 2 0 0 1 2 -2z";
     out property <string> send: "M5 12h13 M13 6l6 6l-6 6";
+    out property <string> back: "M19 12H6 M11 6l-6 6l6 6";
+    out property <string> plus: "M12 5v14 M5 12h14";
     out property <string> close: "M6 6l12 12 M18 6L6 18";
     out property <string> chat: "M5 5h14a2 2 0 0 1 2 2v8a2 2 0 0 1 -2 2h-8l-4 3.5v-3.5h-2a2 2 0 0 1 -2 -2v-8a2 2 0 0 1 2 -2z";
     out property <string> both: "M3.5 6.5h9a1.5 1.5 0 0 1 1.5 1.5v5a1.5 1.5 0 0 1 -1.5 1.5h-5l-3 2.5v-2.5h-1a1.5 1.5 0 0 1 -1.5 -1.5v-5a1.5 1.5 0 0 1 1.5 -1.5z M14 10.5h5.5a1.5 1.5 0 0 1 1.5 1.5v5a1.5 1.5 0 0 1 -1.5 1.5h-1v2.5l-3 -2.5h-4a1.5 1.5 0 0 1 -1.5 -1.5";
@@ -197,6 +199,7 @@ export component Round {
     in property <bool> pressed;
     in property <bool> enabled: true;
     in property <bool> faded;
+    in property <bool> dot; // something new (a small accent dot at the top right)
     in property <color> label-color: #e8e9ec;
     in property <length> size: 64px;
     callback clicked;
@@ -221,6 +224,7 @@ export component Round {
                     stroke: root.pressed ? #111 : T.fg;
                     animate stroke { duration: 200ms; }
                 }
+                if root.dot: Rectangle { x: root.size - 22px; y: 8px; width: 12px; height: 12px; border-radius: 6px; background: T.accent; }
                 touch := TouchArea {
                     enabled: root.enabled && !root.faded;
                     clicked => { root.clicked(); }

@@ -81,6 +81,7 @@ pub fn run(_app: android_activity::AndroidApp) {
         move |on| editing.set(on)
     });
     refresh(&ui);
+    let mut chats = crate::inbox::wire(&ui);
 
     // Clawd idles on the home screen (asleep while it is quiet) and Null idles beside it (at its laptop while it is
     // quiet: they keep working); only what changed is drawn.
@@ -95,6 +96,7 @@ pub fn run(_app: android_activity::AndroidApp) {
         move || {
             let Some(ui) = ui.upgrade() else { return };
             let home = ui.global::<Home>();
+            chats.tick(&ui);
             // Permissions granted in Settings, or a mode changed elsewhere, show up within a second.
             if last_refresh.elapsed() > Duration::from_secs(1) {
                 last_refresh = Instant::now();
@@ -104,7 +106,7 @@ pub fn run(_app: android_activity::AndroidApp) {
                 requested_at.set(None);
                 home.set_requested(false);
             }
-            // The channel sheet rides above the keyboard.
+            // The channel sheet (and a chat's field) rides above the keyboard.
             let kb = if editing.get() { android::keyboard() } else { 0.0 };
             if home.get_kb() != kb {
                 home.set_kb(kb);

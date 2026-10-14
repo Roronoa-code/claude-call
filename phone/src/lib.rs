@@ -8,6 +8,8 @@ mod audio;
 #[cfg(target_os = "android")]
 mod engine;
 #[cfg(target_os = "android")]
+mod inbox;
+#[cfg(target_os = "android")]
 mod jx;
 #[cfg(target_os = "android")]
 mod net;
@@ -22,6 +24,7 @@ mod shell;
 #[cfg(target_os = "android")]
 mod widget;
 mod antics;
+mod chats;
 mod mascot;
 mod null;
 mod view;

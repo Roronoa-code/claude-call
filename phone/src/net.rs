@@ -23,16 +23,24 @@ pub fn stop() {
     GEN.fetch_add(1, Ordering::Relaxed);
 }
 
-/// Listens until `stop`: rings for fresh calls (ring.rs) and stores contact-mode changes (settings.rs).
-/// Reconnects with backoff; after a drop it catches up on what it missed.
+/// Where to start reading: from the last message seen (a few seconds back, at most 12 h), else the last 75 s.
+/// Replays are safe: calls older than 75 s are ignored, the contact mode checks its time, chat replies dedupe.
+fn start_since(cursor: i64) -> String {
+    let now = crate::jx::now_ms() / 1000;
+    if cursor > 0 { (cursor - 5).max(now - 12 * 3600).to_string() } else { "75s".into() }
+}
+
+/// Listens until `stop`: rings for fresh calls (ring.rs), stores contact-mode changes (settings.rs) and files chat
+/// replies (inbox.rs). Reconnects with backoff; after a drop it catches up on what it missed.
 pub fn listen(env: &mut JNIEnv, ctx: &JObject, topic: String, generation: u64) {
     let alive = move || GEN.load(Ordering::Relaxed) == generation;
+    let since = start_since(crate::settings::cursor(env, ctx).unwrap_or(0));
     let (tx, rx) = std::sync::mpsc::channel::<Value>();
     // The network runs on the runtime; the Java calls run here, on the listener's own thread.
     let task = RT.spawn(async move {
         let (mut last_id, mut backoff) = (None::<String>, 2u64);
         while alive() {
-            let since = last_id.clone().unwrap_or_else(|| "75s".into());
+            let since = last_id.clone().unwrap_or_else(|| since.clone());
             let r = HTTP.get(format!("https://ntfy.sh/{topic}/json?since={since}")).timeout(Duration::from_secs(24 * 3600)).send().await;
             if let Ok(mut r) = r.and_then(|r| r.error_for_status()) {
                 crate::android::log("listening for calls");
@@ -77,8 +85,10 @@ pub fn listen(env: &mut JNIEnv, ctx: &JObject, topic: String, generation: u64) {
             Some("Claude is calling") if crate::jx::now_ms() - at < 75_000 && link.starts_with("https://") => {
                 crate::ring::ring(env, ctx, &link, &text)
             }
+            Some("Chat reply") => crate::inbox::reply_arrived(env, ctx, &text),
             _ => Ok(()),
         });
+        crate::jx::ok(env, |env| crate::settings::set_cursor(env, ctx, at / 1000));
     }
     task.abort();
 }
@@ -98,6 +108,14 @@ fn publish(topic: String, title: &'static str, body: String) {
     RT.spawn(async move {
         let req = HTTP.post(format!("https://ntfy.sh/{topic}")).header("Title", title).header("Priority", "1").body(body);
         let _ = req.timeout(Duration::from_secs(10)).send().await;
+    });
+}
+
+/// A signed chat message for the PC; `done` says whether ntfy took it.
+pub fn publish_chat(topic: String, body: String, done: impl FnOnce(bool) + Send + 'static) {
+    RT.spawn(async move {
+        let req = HTTP.post(format!("https://ntfy.sh/{topic}")).header("Title", "Chat").header("Priority", "1").body(body);
+        done(req.timeout(Duration::from_secs(10)).send().await.is_ok_and(|r| r.status().is_success()));
     });
 }
 
