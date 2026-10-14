@@ -2,7 +2,7 @@
 // and round buttons along the bottom: Test ring, Widget (its sheet also holds the channel) and Call, which asks the
 // agent picked by tapping Clawd or Null to phone you.
 import { T, Icon, Icons, Morph, Round } from "parts.slint";
-import { Home, Clawd, Null, SetupCard } from "home_parts.slint";
+import { Home, Mode, Clawd, Null, SetupCard } from "home_parts.slint";
 
 // A choice in a sheet: icon, title and a line under it.
 component Choice {
@@ -31,6 +31,67 @@ component Choice {
         }
     }
     touch := TouchArea { clicked => { root.clicked(); } }
+}
+
+// A row of contact modes: the white highlight slides to your choice. sel = -1 when the choice is in the other row: the
+// highlight shrinks away where it was, and the other row's grows in just after, so it moves from row to row.
+component ModeRow inherits Rectangle {
+    in property <[Mode]> modes;
+    in property <int> sel;
+    property <int> shown: 0;
+    property <length> w: (self.width - 8px) / modes.length;
+    init => { if (sel >= 0) { shown = sel; } }
+    changed sel => { if (sel >= 0) { shown = sel; } }
+    height: 52px;
+    border-radius: 26px;
+    background: #1a1b1e;
+    Rectangle {
+        x: 4px + root.w * root.shown;
+        y: 4px;
+        width: root.w;
+        height: parent.height - 8px;
+        animate x { duration: 500ms; easing: T.spring; }
+        // 1 = shown; shrinking out is quick, growing in waits for the other row's to have shrunk.
+        property <float> k: root.sel >= 0 ? 1 : 0;
+        animate k { duration: root.sel >= 0 ? 260ms : 160ms; delay: root.sel >= 0 ? 120ms : 0ms; easing: root.sel >= 0 ? T.spring : T.out; }
+        Rectangle {
+            x: parent.width * (1 - parent.k) / 2;
+            y: parent.height * (1 - parent.k) / 2;
+            width: parent.width * parent.k;
+            height: parent.height * parent.k;
+            border-radius: self.height / 2;
+            background: T.fg;
+            opacity: min(1, parent.k * 3);
+        }
+    }
+    for m[i] in root.modes: Rectangle {
+        x: 4px + root.w * i;
+        y: 4px;
+        width: root.w;
+        height: parent.height - 8px;
+        property <bool> on: i == root.sel;
+        HorizontalLayout {
+            alignment: center;
+            spacing: 6px;
+            Icon {
+                d: m.icon;
+                width: 16px;
+                height: 16px;
+                y: (parent.height - 16px) / 2;
+                stroke: on ? #111214 : T.fg2;
+                animate stroke { duration: 200ms; }
+            }
+            Text {
+                text: m.label;
+                font-size: 14px;
+                font-weight: 600;
+                color: on ? #111214 : T.fg2;
+                vertical-alignment: center;
+                animate color { duration: 200ms; }
+            }
+        }
+        TouchArea { clicked => { Home.set-mode(m.id); } }
+    }
 }
 
 export component HomeScreen inherits Window {
@@ -93,65 +154,26 @@ export component HomeScreen inherits Window {
         }
         Rectangle { height: 28px; }
         Text {
-            text: Home.ready ? Home.modes[Home.index].title : "Almost ready";
+            text: Home.ready ? Home.current.title : "Almost ready";
             font-size: 26px;
             font-weight: 700;
             color: T.fg;
             horizontal-alignment: center;
         }
-        Rectangle { height: 8px; }
-        Text {
-            text: Home.ready ? Home.modes[Home.index].desc : "A few phone settings first, then they can call.";
+        // Only the setup hint: the modes need no explaining.
+        if !Home.ready: Rectangle { height: 8px; }
+        if !Home.ready: Text {
+            text: "A few phone settings first, then they can call.";
             font-size: 15px;
             color: T.muted;
             horizontal-alignment: center;
             wrap: word-wrap;
         }
         Rectangle { height: 26px; }
-        // How agents can reach you: the white highlight slides to your choice.
-        seg := Rectangle {
-            height: 52px;
-            border-radius: 26px;
-            background: #1a1b1e;
-            property <length> w: (self.width - 8px) / 4;
-            Rectangle {
-                x: 4px + seg.w * Home.index;
-                y: 4px;
-                width: seg.w;
-                height: parent.height - 8px;
-                border-radius: 22px;
-                background: T.fg;
-                animate x { duration: 500ms; easing: T.spring; }
-            }
-            for m[i] in Home.modes: Rectangle {
-                x: 4px + seg.w * i;
-                y: 4px;
-                width: seg.w;
-                height: parent.height - 8px;
-                property <bool> on: i == Home.index;
-                HorizontalLayout {
-                    alignment: center;
-                    spacing: 6px;
-                    Icon {
-                        d: m.icon;
-                        width: 16px;
-                        height: 16px;
-                        y: (parent.height - 16px) / 2;
-                        stroke: on ? #111214 : T.fg2;
-                        animate stroke { duration: 200ms; }
-                    }
-                    Text {
-                        text: m.label;
-                        font-size: 14px;
-                        font-weight: 600;
-                        color: on ? #111214 : T.fg2;
-                        vertical-alignment: center;
-                        animate color { duration: 200ms; }
-                    }
-                }
-                TouchArea { clicked => { Home.set-mode(m.id); } }
-            }
-        }
+        // How agents can reach you, and under it the two Sleep modes.
+        ModeRow { modes: Home.modes; sel: Home.index < 4 ? Home.index : -1; }
+        Rectangle { height: 10px; }
+        ModeRow { modes: Home.sleep-modes; sel: Home.index >= 4 ? Home.index - 4 : -1; }
         if !Home.ready: Rectangle { height: 20px; }
         if !Home.ready: SetupCard { }
     }

@@ -17,6 +17,11 @@ const MODES: [(&str, &str, &str, &str); 4] = [
     ("both", "Both", "Calls and texts", "Claude can call or message you"),
     ("none", "None", "Do not disturb", "Claude saves its questions"),
 ];
+/// The Sleep modes have no tile (set in the app); the wide card still says which is on, with the None tile's art.
+const SLEEP: [(&str, &str, &str, &str); 2] = [
+    ("wake", "None", "Asleep, wake me", "Calls ring until you pick up"),
+    ("sleep", "None", "Asleep", "Claude decides and keeps working"),
+];
 const WHITE: i32 = 0xFFFFFFFFu32 as i32;
 const DIM: i32 = 0x8CFFFFFFu32 as i32; // white at 55%
 const DIP: i32 = 1; // TypedValue.COMPLEX_UNIT_DIP
@@ -140,7 +145,8 @@ fn build<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, wide: bool, size: Option<(f32,
         }
     }
     if wide {
-        let (id, _, title, line) = MODES.iter().find(|m| m.0 == current).unwrap_or(&MODES[2]);
+        let (id, _, title, line) = MODES.iter().chain(&SLEEP).find(|m| m.0 == current).unwrap_or(&MODES[2]);
+        let id = if SLEEP.iter().any(|m| m.0 == *id) { "none" } else { *id };
         let r = |env: &mut JNIEnv, kind: &str, name: &str| jx::res(env, ctx, kind, name);
         let (hero, hero_icon, hero_title) = (r(env, "id", "hero")?, r(env, "id", "hero_icon")?, r(env, "id", "hero_title")?);
         let (hero_line, hero_since) = (r(env, "id", "hero_line")?, r(env, "id", "hero_since")?);

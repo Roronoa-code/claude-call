@@ -166,8 +166,9 @@ pub async fn ring(link: &str, reason: Option<&str>) {
 }
 
 // ---- Contact mode, shared by every agent (Discord Input MCP reads the same file):
-// "call" = calls only, "text" = Discord only, "both", "none" = don't contact.
-pub const MODES: [&str; 4] = ["call", "text", "both", "none"];
+// "call" = calls only, "text" = Discord only, "both", "none" = don't contact, "wake" = asleep but ring until they pick
+// up (calls only), "sleep" = asleep: no contact, keep working on your own judgement.
+pub const MODES: [&str; 6] = ["call", "text", "both", "none", "wake", "sleep"];
 
 pub fn read_status() -> Value {
     std::fs::read_to_string(&cfg().status_path)

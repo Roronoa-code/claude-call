@@ -116,13 +116,14 @@ pub fn ring(env: &mut JNIEnv, ctx: &JObject, link: &str, reason: &str) -> Result
     let n = env.call_method(&b, "build", "()Landroid/app/Notification;", &[])?.l()?;
     env.call_method(&nm, "notify", "(ILandroid/app/Notification;)V", &[JValue::Int(NOTIFICATION_ID), JValue::Object(&n)])?;
 
-    // The ringtone, looping, on the ringtone volume.
-    let uri = env.call_static_method("android/media/RingtoneManager", "getDefaultUri", "(I)Landroid/net/Uri;", &[JValue::Int(1)])?.l()?;
+    // The ringtone, looping, on the ringtone volume; in wake mode an alarm, which wakes through Do Not Disturb.
+    let alarm = crate::settings::mode(env, ctx)? == "wake";
+    let uri = env.call_static_method("android/media/RingtoneManager", "getDefaultUri", "(I)Landroid/net/Uri;", &[JValue::Int(if alarm { 4 } else { 1 })])?.l()?;
     let sig = "(Landroid/content/Context;Landroid/net/Uri;)Landroid/media/Ringtone;";
     let tone = env.call_static_method("android/media/RingtoneManager", "getRingtone", sig, &[JValue::Object(ctx), JValue::Object(&uri)])?.l()?;
     if !tone.is_null() {
         let ab = env.new_object("android/media/AudioAttributes$Builder", "()V", &[])?;
-        env.call_method(&ab, "setUsage", "(I)Landroid/media/AudioAttributes$Builder;", &[JValue::Int(6)])?; // NOTIFICATION_RINGTONE
+        env.call_method(&ab, "setUsage", "(I)Landroid/media/AudioAttributes$Builder;", &[JValue::Int(if alarm { 4 } else { 6 })])?; // ALARM / NOTIFICATION_RINGTONE
         env.call_method(&ab, "setContentType", "(I)Landroid/media/AudioAttributes$Builder;", &[JValue::Int(4)])?; // SONIFICATION
         let attrs = env.call_method(&ab, "build", "()Landroid/media/AudioAttributes;", &[])?.l()?;
         env.call_method(&tone, "setAudioAttributes", "(Landroid/media/AudioAttributes;)V", &[JValue::Object(&attrs)])?;

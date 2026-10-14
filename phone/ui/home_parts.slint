@@ -29,7 +29,13 @@ export global Home {
         { id: "both", label: "Both", icon: Icons.both, title: "Ready when they call", desc: "Calls and Discord messages." },
         { id: "none", label: "Quiet", icon: Icons.moon, title: "Quiet for now", desc: "They keep working and save their questions." },
     ];
-    out property <int> index: mode == "call" ? 0 : mode == "text" ? 1 : mode == "both" ? 2 : 3;
+    // The two Sleep modes, in their own row under the four.
+    out property <[Mode]> sleep-modes: [
+        { id: "wake", label: "Wake me", icon: Icons.bell, title: "Asleep, wake me", desc: "Calls keep ringing, like an alarm, until you pick up." },
+        { id: "sleep", label: "Sleep", icon: Icons.zzz, title: "Asleep", desc: "No calls or texts. They decide for themselves and keep working." },
+    ];
+    out property <int> index: mode == "call" ? 0 : mode == "text" ? 1 : mode == "both" ? 2 : mode == "none" ? 3 : mode == "wake" ? 4 : 5;
+    out property <Mode> current: index < 4 ? modes[index] : sleep-modes[index - 4];
 }
 
 // Clawd at a whole number of px per cell (pixel art never at fractions).

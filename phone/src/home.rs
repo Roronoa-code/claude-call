@@ -109,7 +109,7 @@ pub fn run(_app: android_activity::AndroidApp) {
             if home.get_kb() != kb {
                 home.set_kb(kb);
             }
-            let phase = if home.get_mode() == "none" { Phase::Hold } else { Phase::Listening };
+            let phase = if matches!(home.get_mode().as_str(), "none" | "wake" | "sleep") { Phase::Hold } else { Phase::Listening };
             let now = start.elapsed().as_secs_f32();
             let n = null.frame(now, if phase == Phase::Hold { Phase::Hold } else { Phase::Hearing });
             if home.get_null_frame() != n {

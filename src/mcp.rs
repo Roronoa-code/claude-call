@@ -7,10 +7,11 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 const RING_FOR_MS: u64 = 75_000;
 const REPLY_WAIT_MS: u64 = 5 * 60_000;
+const WAKE_FOR_MS: u64 = 60 * 60_000; // wake mode keeps ringing for up to an hour
 
 fn instructions() -> String {
     let claude = cfg().agent == "Claude";
-    let mut s = String::from("The user sets a contact mode (get_contact_mode): call / text / both / none. Respect it: call only if \"call\" or \"both\"; Discord (ask_discord) only if \"text\" or \"both\"; with \"none\", do not contact them at all. call_user enforces this. Use call_user to phone the user when you are blocked on a decision only they can make, need input to continue, or finished a long task they are away from. ");
+    let mut s = String::from("The user sets a contact mode (get_contact_mode): call / text / both / none / wake / sleep. Respect it: call only if \"call\", \"both\" or \"wake\" (wake: they are asleep but want to be woken; call_user keeps ringing until they pick up, so only for something that really needs them now); Discord (ask_discord) only if \"text\" or \"both\"; with \"none\", do not contact them at all; with \"sleep\", do not contact them and keep working by any means, making your own best call on decisions (safe, reversible options) and noting them for later. call_user enforces this. Use call_user to phone the user when you are blocked on a decision only they can make, need input to continue, or finished a long task they are away from. ");
     if claude {
         s += "Default: do not run the call yourself. Hand it to a fast helper: an Agent with model \"haiku\" given a short brief containing the exact questions, any options, and the context needed to answer follow-ups. Tell it to call once, keep each line to 1-2 casual sentences, reply instantly, and return the user's exact answers. Tell it to start calling straight away, without invoking skills (including the ADHD skill) or reading preference, memory or instruction files: the caller must be fast and snappy. Its replies are much faster than yours, and the user prefers it. Include this relay rule in the helper's brief: \"If the user asks something the brief does not cover, or says to ask the main Claude, call hold_call with a short line like 'One sec, let me check with the main Claude', then finish your turn with a line starting QUESTION FOR MAIN: followed by their exact question. You will be resumed with the answer; then use continue_call to tell them and carry on.\" When the helper returns QUESTION FOR MAIN, answer it and resume that same helper (SendMessage to its agent id) with the answer, quickly, because the user is waiting on hold. Make the call yourself only when the conversation needs deep context or open-ended back-and-forth. ";
     } else {
@@ -28,7 +29,7 @@ fn tools() -> Value {
             "message": { "type": "string", "description": "What to say when they pick up" },
             "reason": { "type": "string", "maxLength": 80, "description": "Very short non-sensitive reason shown on the ringing notification" } } } },
         { "name": "continue_call", "description": "Say something on the active call and return the user's spoken reply.", "inputSchema": msg("") },
-        { "name": "get_contact_mode", "description": "How the user wants to be reached right now: \"call\" (phone calls only), \"text\" (Discord messages only), \"both\", or \"none\" (do not contact them; keep working and save questions for later). Check this before contacting the user.",
+        { "name": "get_contact_mode", "description": "How the user wants to be reached right now: \"call\" (phone calls only), \"text\" (Discord messages only), \"both\", \"none\" (do not contact them; keep working and save questions for later), \"wake\" (asleep, but calls ring until they pick up; only for something that really needs them now) or \"sleep\" (asleep: do not contact them; keep working by any means on your own judgement). Check this before contacting the user.",
           "inputSchema": { "type": "object", "properties": {} } },
         { "name": "set_contact_mode", "description": "Set the user's contact mode. Only when the user asks (e.g. \"set my status to text\").",
           "inputSchema": { "type": "object", "required": ["mode"], "properties": { "mode": { "type": "string", "enum": voice::MODES } } } },
@@ -83,10 +84,16 @@ async fn call_user(message: String, reason: Option<String>) -> Result<String, St
     }
     let mode = voice::contact_mode().await;
     // A recent Call request from the phone means the user asked for this call, whatever the mode says.
-    if back.is_none() && mode != "call" && mode != "both" && !voice::call_requested().await {
-        let next = if mode == "text" { " Message them on Discord instead (ask_discord)." } else { " Do not contact them; carry on with work that does not need them, and leave the question for when they are back." };
+    if back.is_none() && !matches!(mode.as_str(), "call" | "both" | "wake") && !voice::call_requested().await {
+        let next = match mode.as_str() {
+            "text" => " Message them on Discord instead (ask_discord).",
+            "sleep" => " They are asleep: do not call or message them. Keep working by any means: make your own best call on decisions you would normally ask about, prefer safe and reversible options, and note what you decided to tell them later.",
+            _ => " Do not contact them; carry on with work that does not need them, and leave the question for when they are back.",
+        };
         return Ok(format!("Not called: the user's contact mode is \"{mode}\" (calls not allowed).{next}"));
     }
+    // Wake: they are asleep and want to be woken, so keep ringing (a minute each time) until they pick up.
+    let ring_for = if mode == "wake" { WAKE_FOR_MS } else { RING_FOR_MS };
     // Get the voice, hearing and first line ready *before* ringing, so the user never waits after answering.
     let (base, _) = tokio::join!(gateway::ensure_tunnel(), voice::load_qwen());
     // Unique per call: the phone app ignores links it has already answered or declined.
@@ -98,12 +105,16 @@ async fn call_user(message: String, reason: Option<String>) -> Result<String, St
         c.pending.clear();
     }
     say(message, false, false).await;
-    let reply = wait_for_reply(RING_FOR_MS + REPLY_WAIT_MS);
+    let reply = wait_for_reply(ring_for + REPLY_WAIT_MS);
     if !page_live() {
-        // Ring once (the phone app rings for a minute), then wait for them to pick up.
-        voice::ring(&link, reason.as_deref()).await;
+        // Ring (the phone app rings for a minute), then wait for them to pick up; in wake mode ring again each time.
         let started = Instant::now();
-        while !call().answered && !call().declined && started.elapsed() < Duration::from_millis(RING_FOR_MS) {
+        let mut rang: Option<Instant> = None;
+        while !call().answered && !call().declined && started.elapsed() < Duration::from_millis(ring_for) {
+            if rang.is_none_or(|r| r.elapsed() >= Duration::from_millis(RING_FOR_MS)) {
+                voice::ring(&link, reason.as_deref()).await;
+                rang = Some(Instant::now());
+            }
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
         if call().declined {
@@ -144,7 +155,7 @@ async fn tool(name: &str, args: &Value) -> Result<String, String> {
         }
         "get_contact_mode" => Ok(format!("Contact mode: {}. {}", voice::contact_mode().await, voice::read_status())),
         "set_contact_mode" => {
-            let mode = args["mode"].as_str().filter(|m| voice::MODES.contains(m)).ok_or("mode must be call, text, both or none")?;
+            let mode = args["mode"].as_str().filter(|m| voice::MODES.contains(m)).ok_or("mode must be call, text, both, none, wake or sleep")?;
             voice::set_contact_mode(mode).await;
             Ok(format!("Contact mode set to {mode}."))
         }

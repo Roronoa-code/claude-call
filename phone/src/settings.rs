@@ -7,7 +7,8 @@ use jni::{
     objects::{JObject, JValue},
 };
 
-pub const MODES: [&str; 4] = ["call", "text", "both", "none"];
+/// The contact modes; "wake" and "sleep" are the two Sleep modes (ring until picked up / do not disturb).
+pub const MODES: [&str; 6] = ["call", "text", "both", "none", "wake", "sleep"];
 
 fn prefs<'a>(env: &mut JNIEnv<'a>, ctx: &JObject) -> Result<JObject<'a>> {
     let n = s(env, "callme")?;
