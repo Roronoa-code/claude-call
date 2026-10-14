@@ -60,6 +60,7 @@ pub struct Call {
     pub pending: Vec<String>,
     heard_at: Option<Instant>, // the user's audio last arrived (they are mid-sentence while it keeps coming)
     turns_in_flight: u32,      // turns still being transcribed
+    usage: String,             // what the call has used so far, e.g. "$0.04" (usage.rs)
 }
 
 static CALL: LazyLock<Mutex<Call>> = LazyLock::new(Default::default);
@@ -254,6 +255,14 @@ pub fn wait_for_reply(ms: u64) -> impl Future<Output = Option<String>> {
     }
 }
 
+pub fn set_usage(u: String) {
+    let mut c = call();
+    if c.usage != u {
+        c.usage = u;
+        changed(&mut c);
+    }
+}
+
 /// Ends the wait of whoever is waiting for a reply (hung up / declined / no answer).
 pub fn cancel_reply() {
     if let Some(w) = call().waiter.take() {
@@ -353,7 +362,7 @@ async fn handle(req: Request) -> Result<Response, String> {
             let c = call();
             json_res(json!({ "v": c.v, "seq": c.seq, "say": c.say, "end": c.end, "hold": c.hold,
                 "holdLabel": if c.hold { c.say.as_str() } else { "" }, "mode": c.mode, "parts": c.parts,
-                "ready": c.audio.len(), "debug": debug_on(), "agent": cfg().agent }))
+                "ready": c.audio.len(), "debug": debug_on(), "agent": cfg().agent, "usage": c.usage }))
         }
         "/stream" => {
             // Claude's line as 16-bit PCM while it is being made, in rolling pieces: each request returns the audio made

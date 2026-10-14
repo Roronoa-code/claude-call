@@ -1,6 +1,6 @@
 //! The MCP server on stdio (JSON-RPC, one message per line) and the call tools.
 use crate::call::{self, call, page_live, said_meanwhile, say, wait_for_reply};
-use crate::{cfg, gateway, log, voice};
+use crate::{cfg, gateway, log, usage, voice};
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -50,7 +50,32 @@ fn hung_up(plain: &str) -> String {
     }
 }
 
+/// The usage meter: from the first call on, adds up the agent's transcript (and helpers') every few seconds.
+fn start_meter(said: String) {
+    static STARTED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    if STARTED.set(()).is_err() {
+        return;
+    }
+    let since = crate::now_iso();
+    tokio::spawn(async move {
+        let mut file = None;
+        loop {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            if file.is_none() {
+                let s = said.clone();
+                file = tokio::task::spawn_blocking(move || usage::find(&s)).await.ok().flatten();
+            }
+            let Some(f) = file.clone() else { continue };
+            let since = since.clone();
+            if let Ok(d) = tokio::task::spawn_blocking(move || usage::cost(&f, &since)).await {
+                call::set_usage(usage::label(d));
+            }
+        }
+    });
+}
+
 async fn call_user(message: String, reason: Option<String>) -> Result<String, String> {
+    start_meter(message.clone());
     // The user asked to be called back: wait until then, and ring whatever the contact mode says.
     let back = call().call_back.take();
     if let Some(at) = back {

@@ -256,6 +256,7 @@ impl Engine {
             s.view.agent = a.to_string();
         }
         s.debug = st["debug"] == true;
+        s.view.usage = st["usage"].as_str().unwrap_or("").to_string();
         s.last_hold = (st["hold"] == true, st["holdLabel"].as_str().unwrap_or("").to_string());
     }
 

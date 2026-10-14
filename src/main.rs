@@ -5,6 +5,7 @@ mod call;
 mod gateway;
 mod mcp;
 mod speech;
+mod usage;
 mod voice;
 
 use std::{io::Write, path::PathBuf, sync::OnceLock};

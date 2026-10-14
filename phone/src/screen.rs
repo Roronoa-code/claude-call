@@ -137,11 +137,13 @@ fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activi
     } else {
         String::new()
     };
+    // The usage meter rides on the call clock: "On call · 2:31 · $0.04".
+    let used = if v.usage.is_empty() { String::new() } else { format!(" · {}", v.usage) };
     let time = match v.phase {
         Phase::Incoming => "Calling you".to_string(),
         Phase::Connecting => "Connecting…".to_string(),
-        Phase::Ended => format!("Call ended · {}", clock(v.ended_at - v.call_start)),
-        _ => format!("On call · {}", clock(now - v.call_start)),
+        Phase::Ended => format!("Call ended · {}{used}", clock(v.ended_at - v.call_start)),
+        _ => format!("On call · {}{used}", clock(now - v.call_start)),
     };
     let phase = v.phase;
     let agent = v.agent.clone();

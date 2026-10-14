@@ -29,6 +29,7 @@ pub struct View {
     pub quiet: bool,
     pub can_finish: bool,
     pub call_start: f64,
+    pub usage: String, // what the call has used so far, from the PC ("$0.04")
     pub ended_at: f64,
     pub hold_start: f64,
     pub hold_label: String,
@@ -92,6 +93,7 @@ impl View {
             quiet: false,
             can_finish: false,
             call_start: 0.0,
+            usage: String::new(),
             ended_at: 0.0,
             hold_start: 0.0,
             hold_label: String::new(),
