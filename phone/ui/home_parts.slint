@@ -16,6 +16,8 @@ export global Home {
     in property <length> kb; // the keyboard's height while the channel is being edited
     in-out property <string> caller: "claude"; // who the Call button asks for: claude or codex (tap Clawd or Null)
     in property <bool> requested; // a call was just asked for; it rings within a minute or so
+    in-out property <bool> widgets; // the Widget sheet is open
+    in-out property <bool> channel; // the private channel sheet is open (Back closes either)
     callback set-mode(string);
     callback set-up();
     callback test-ring();

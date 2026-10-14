@@ -261,17 +261,19 @@ export component Morph {
     // and closing always lands back in the button, from wherever it was.
     property <float> k: open ? 1 : 0;
     animate k { duration: open ? 500ms : 300ms; easing: open ? T.spring : T.close; }
+    // The spring's overshoot settles in place: a full-width sheet pushed past its spot ran off the screen's edges.
+    property <float> g: Math.min(1, k);
     visible: open || k > 0.002; // visible at once when opening, so its text field can take focus
-    x: fx + (tx - fx) * k;
-    y: fy + (ty - fy) * k;
-    width: fsize + (tw - fsize) * k;
-    height: fsize + (th - fsize) * k;
+    x: fx + (tx - fx) * g;
+    y: fy + (ty - fy) * g;
+    width: fsize + (tw - fsize) * g;
+    height: fsize + (th - fsize) * g;
     Rectangle {
         x: 0;
         y: 0;
         width: parent.width;
         height: parent.height;
-        border-radius: root.fsize / 2 + (root.radius - root.fsize / 2) * Math.min(1, root.k);
+        border-radius: root.fsize / 2 + (root.radius - root.fsize / 2) * root.g;
         background: root.panel;
         clip: true;
         // The button's face fades as the contents fade in.
@@ -281,13 +283,14 @@ export component Morph {
             y: (parent.height - self.height) / 2;
             opacity: Math.max(0, 1 - root.k * 4);
         }
-        // The contents stay where they will be once open; the growing surface reveals them.
+        // The contents stay where they will be once open, and only show once the surface is nearly full size (and
+        // go first when closing), so no cut-off words show while it grows or shrinks.
         Rectangle {
             x: root.tx - root.x;
             y: root.ty - root.y;
             width: root.tw;
             height: root.th;
-            opacity: Math.max(0, Math.min(1, (root.k - 0.25) * 2.5));
+            opacity: Math.max(0, Math.min(1, (root.g - 0.85) * 6.7));
             TouchArea { } // a tap on the surface stays on it (never reaches what is behind)
             @children
         }
