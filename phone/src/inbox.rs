@@ -73,6 +73,11 @@ fn notification_id(chat: &str) -> i32 {
 pub fn reply_arrived(env: &mut JNIEnv, ctx: &JObject, body: &str) -> Result<()> {
     path(env, ctx)?;
     let Ok(v) = serde_json::from_str::<Value>(body) else { return Ok(()) };
+    let Some(key) = settings::chat_key(env, ctx)? else { return Ok(()) };
+    if !chats::reply_signed(&key, &v) {
+        android::log("chats: reply with a missing or wrong signature dropped");
+        return Ok(());
+    }
     let open = if focused(env) { VIEWING.lock().unwrap().clone() } else { None };
     let note = update(|s| s.apply_reply(&v, open.as_deref())).flatten();
     VERSION.fetch_add(1, Relaxed);

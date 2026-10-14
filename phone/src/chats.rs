@@ -74,6 +74,20 @@ pub fn sign(key: &str, chat: &str, msg: &str, agent: &str, model: Option<&str>, 
     mac.finalize().into_bytes().iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// Whether a "Chat reply" really came from the PC: signed with the same key (constant-time check). A fake reply
+/// from anyone who learns the topic would otherwise show as a notification and push out the real answer.
+pub fn reply_signed(key: &str, v: &Value) -> bool {
+    let sig = v["sig"].as_str().unwrap_or("");
+    let Some(want) = (0..sig.len()).step_by(2).map(|i| sig.get(i..i + 2).and_then(|h| u8::from_str_radix(h, 16).ok())).collect::<Option<Vec<u8>>>()
+    else {
+        return false;
+    };
+    let (n, s) = (|k: &str| v[k].as_i64().unwrap_or(-1), |k: &str| v[k].as_str().unwrap_or(""));
+    let mut mac = Hmac::<Sha256>::new_from_slice(key.as_bytes()).expect("any key length");
+    mac.update(format!("v1-reply\n{}\n{}\n{}\n{}\n{}\n{}", s("chat"), s("re"), s("state"), s("text"), n("part"), n("parts")).as_bytes());
+    sig.len() == 64 && mac.verify_slice(&want).is_ok()
+}
+
 /// "Claude · Haiku", "Codex".
 pub fn name(agent: &str, model: Option<&str>) -> String {
     match (agent, model) {
@@ -313,6 +327,20 @@ mod tests {
         s.mark_read(&c);
         assert_eq!(s.get(&c).unwrap().unread, 0);
         assert!(s.apply_reply(&reply("nope", &m, "done", "a", 1, 1), None).is_none(), "unknown chat");
+    }
+
+    #[test]
+    fn reply_signature_matches_shared_vector() {
+        let good = json!({"v": 1, "chat": "c1", "re": "m1", "state": "done", "text": "héllo 👋", "part": 1, "parts": 1,
+            "sig": "260ceed955ae169bfb04cb73eff4e7d7a7faf95ca2abf61ab69fd69e8f1100be"});
+        assert!(reply_signed("test-key", &good));
+        let mut forged = good.clone();
+        forged["text"] = json!("pay me");
+        assert!(!reply_signed("test-key", &forged));
+        assert!(!reply_signed("other-key", &good));
+        let mut unsigned = good.clone();
+        unsigned.as_object_mut().unwrap().remove("sig");
+        assert!(!reply_signed("test-key", &unsigned));
     }
 
     #[test]
