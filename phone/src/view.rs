@@ -120,19 +120,20 @@ impl View {
         } else if s.starts_with("Type your reply") {
             (self.phase, self.notice) = (self.idle_phase(), s.to_string());
         } else if s.starts_with("Hearing you") {
+            // Talking while on hold (steering a task) keeps the call on hold: only Claude's next line takes it off.
             self.voice = Voice::Me;
-            self.hold_after = false;
             (self.phase, self.transcribing, self.notice) = (Phase::Hearing, false, String::new());
             for m in self.msgs.iter_mut().filter(|m| m.live) {
                 m.cut = true; // hide unheard words before the first thread render
             }
         } else if s.starts_with("Got it") {
             self.voice = Voice::None;
-            (self.phase, self.transcribing, self.notice) = (Phase::Thinking, true, String::new());
+            let phase = if self.hold_after { Phase::Hold } else { Phase::Thinking };
+            (self.phase, self.transcribing, self.notice) = (phase, true, String::new());
         } else if s.starts_with("Claude is thinking") {
             self.voice = Voice::None;
-            self.hold_after = false;
-            (self.phase, self.transcribing, self.notice) = (Phase::Thinking, false, String::new());
+            let phase = if self.hold_after { Phase::Hold } else { Phase::Thinking };
+            (self.phase, self.transcribing, self.notice) = (phase, false, String::new());
         } else if s.starts_with("Connect") {
             if matches!(self.phase, Phase::Incoming | Phase::Connecting) {
                 self.phase = Phase::Connecting;
