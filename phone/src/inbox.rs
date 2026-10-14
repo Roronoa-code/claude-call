@@ -48,7 +48,10 @@ fn path(env: &mut JNIEnv, ctx: &JObject) -> Result<()> {
 fn update<R>(f: impl FnOnce(&mut Store) -> R) -> Option<R> {
     let path = PATH.get()?;
     let _lock = LOCK.lock().unwrap();
-    let mut store = Store::load(path);
+    let Some(mut store) = Store::load(path) else {
+        android::log("chats: chats.json unreadable; left as it is");
+        return None;
+    };
     let r = f(&mut store);
     if let Err(e) = store.save(path) {
         android::log(&format!("chats: {e}"));
@@ -194,7 +197,7 @@ fn status(ui: &HomeScreen) {
     let cur = c.get_current().to_string();
     if let Some(path) = PATH.get() {
         let _lock = LOCK.lock().unwrap();
-        let (text, action) = Store::load(path).get(&cur).map_or(("", ""), |chat| chats::status(chat, chats::now()));
+        let (text, action) = Store::load(path).unwrap_or_default().get(&cur).map_or(("", ""), |chat| chats::status(chat, chats::now()));
         if c.get_status() != text {
             c.set_status(text.into());
         }

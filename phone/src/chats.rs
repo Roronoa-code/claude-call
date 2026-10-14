@@ -18,6 +18,7 @@ const MAX_BODY: usize = 4000;
 /// The PC's: `id` is the message it answers, `state` is done / failed / stopped / missed (partial while parts are
 /// still missing), `parts` the pieces of a long answer by number.
 #[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq)]
+#[serde(default)] // fields added later must not make older files unreadable
 pub struct Line {
     pub id: String,
     pub me: bool,
@@ -29,6 +30,7 @@ pub struct Line {
 }
 
 #[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq)]
+#[serde(default)] // fields added later must not make older files unreadable
 pub struct Chat {
     pub id: String,
     pub agent: String,
@@ -40,6 +42,7 @@ pub struct Chat {
 }
 
 #[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq)]
+#[serde(default)] // fields added later must not make older files unreadable
 pub struct Store {
     pub chats: Vec<Chat>,
 }
@@ -127,8 +130,13 @@ fn cut(s: &str, n: usize) -> &str {
 }
 
 impl Store {
-    pub fn load(path: &Path) -> Self {
-        std::fs::read(path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+    /// None when the file is there but can't be read: the caller must not save over it (that wiped every chat).
+    pub fn load(path: &Path) -> Option<Self> {
+        match std::fs::read(path) {
+            Ok(b) => serde_json::from_slice(&b).ok(),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Some(Self::default()),
+            Err(_) => None,
+        }
     }
 
     /// Writes beside the file and renames over it, so a crash never leaves half a file.
@@ -191,7 +199,8 @@ impl Store {
         if !matches!(l.state.as_str(), "sending" | "not_sent") {
             return None;
         }
-        (l.state, l.since) = ("sending".into(), now());
+        // A fresh time, so a retry long after the first try isn't turned away as too old (same id: no double run).
+        (l.state, l.since, l.at) = ("sending".into(), now(), now());
         Some(l.id.clone())
     }
 
@@ -271,9 +280,9 @@ mod tests {
         let (s, ..) = store();
         let path = std::env::temp_dir().join(format!("callme-chats-{}.json", std::process::id()));
         s.save(&path).unwrap();
-        assert_eq!(Store::load(&path), s);
+        assert_eq!(Store::load(&path), Some(s));
         std::fs::remove_file(path).unwrap();
-        assert_eq!(Store::load(Path::new("no/such/file")), Store::default());
+        assert_eq!(Store::load(Path::new("no/such/file")), Some(Store::default()));
     }
 
     #[test]
