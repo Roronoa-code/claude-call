@@ -114,8 +114,19 @@ asr_proc = AutoProcessor.from_pretrained(ASR)
 asr = WhisperForConditionalGeneration.from_pretrained(ASR, torch_dtype=torch.float16).to("cuda:0").eval()
 
 
-# Words Whisper keeps mishearing (e.g. "call screen" -> "cold screen"); always part of the prompt.
-VOCAB = "Claude, Clawd, Codex, call screen, Discord, ntfy, Whisper, widget."
+# Words Whisper keeps mishearing (e.g. "call screen" -> "cold screen"); always part of the prompt. Mani's own list
+# (names, bands, songs) is words.txt, one per line, added to on calls with the add_words tool; read fresh each time.
+VOCAB = "Claude, Codex, call screen, Discord, ntfy, Whisper, widget, Haiku, Sonnet, Opus"
+WORDS = HERE / "words.txt"
+
+
+def vocab() -> str:
+    try:
+        mine = [w.strip() for w in WORDS.read_text(encoding="utf-8").splitlines() if w.strip()]
+    except OSError:
+        mine = []
+    # Newest words last, so a long list keeps the recent ones; capped so Claude's own line still fits the prompt.
+    return (", ".join([VOCAB] + mine))[-350:].lstrip(", ") + "."
 
 
 def hear(pcm: np.ndarray, context: str) -> str:
@@ -125,7 +136,8 @@ def hear(pcm: np.ndarray, context: str) -> str:
     kw = dict(language="en", task="transcribe", max_new_tokens=220)
     if long:
         kw.update(attention_mask=inputs.attention_mask.to("cuda:0"), return_timestamps=True)
-    context = (VOCAB + " " + context.strip()[-500:]).strip()
+    v = vocab()
+    context = (v + " " + context.strip()[-(600 - len(v) - 1):]).strip()
     kw["prompt_ids"] = torch.tensor(asr_proc.get_prompt_ids(context[-600:])).to("cuda:0")
     with gpu_lock, torch.inference_mode():
         ids = asr.generate(inputs.input_features.to("cuda:0", torch.float16), **kw)

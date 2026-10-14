@@ -9,6 +9,7 @@ android/app/src/main/res/values/topic.xml
 voice/*.mp3
 voice/*.wav
 voice/voice.json
+voice/words.txt
 voice/*.log
 
 # Downloads / environments / builds

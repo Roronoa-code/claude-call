@@ -37,6 +37,8 @@ fn tools() -> Value {
         { "name": "listen", "description": "While on hold (e.g. a helper is working in the background): say nothing and wait up to `seconds` for the user to speak. Returns what they said (a correction, a question, \"stop\") or that they said nothing yet. The call stays on hold; call it in a loop while you wait, so the user can steer the work.",
           "inputSchema": { "type": "object", "properties": { "seconds": { "type": "integer", "minimum": 1, "maximum": 60, "description": "How long to wait (default 15)" } } } },
         { "name": "end_call", "description": "Say a final message and hang up.", "inputSchema": msg("") },
+        { "name": "add_words", "description": "Add words to the user's personal word list, so speech-to-text hears them right from now on (names, bands, songs, places, projects). Use it when the user corrects a mishearing (add the right spelling), spells something out, or asks you to remember a word.",
+          "inputSchema": { "type": "object", "required": ["words"], "properties": { "words": { "type": "array", "items": { "type": "string", "maxLength": 60 }, "description": "Each word or name, spelled the way it should be written" } } } },
     ])
 }
 
@@ -170,6 +172,20 @@ async fn tool(name: &str, args: &Value) -> Result<String, String> {
                 return Ok(hung_up("The user hung up."));
             }
             Ok(t.map_or("Nothing said yet; still on hold.".into(), |t| format!("User said (while on hold): {t}")))
+        }
+        "add_words" => {
+            let path = crate::dir().join("voice").join("words.txt");
+            let have = std::fs::read_to_string(&path).unwrap_or_default();
+            let known: Vec<String> = have.lines().map(|l| l.trim().to_lowercase()).collect();
+            let new: Vec<&str> = args["words"].as_array().into_iter().flatten().filter_map(|w| w.as_str()).map(str::trim)
+                .filter(|w| !w.is_empty() && w.len() <= 60 && !w.contains(['\n', '\r']) && !known.contains(&w.to_lowercase()))
+                .collect();
+            if new.is_empty() {
+                return Ok("Already on the word list.".into());
+            }
+            let sep = if have.is_empty() || have.ends_with('\n') { "" } else { "\n" };
+            std::fs::write(&path, format!("{have}{sep}{}\n", new.join("\n"))).map_err(|e| e.to_string())?;
+            Ok(format!("Added to the word list: {}.", new.join(", ")))
         }
         "end_call" => {
             say(message()?, true, false).await;
