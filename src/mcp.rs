@@ -32,7 +32,9 @@ fn tools() -> Value {
           "inputSchema": { "type": "object", "properties": {} } },
         { "name": "set_contact_mode", "description": "Set the user's contact mode. Only when the user asks (e.g. \"set my status to text\").",
           "inputSchema": { "type": "object", "required": ["mode"], "properties": { "mode": { "type": "string", "enum": voice::MODES } } } },
-        { "name": "hold_call", "description": "Put the active call on hold: say a short line (e.g. \"One sec, let me check with the main Claude\") and return immediately without waiting for a reply. The call stays open; anything the user says meanwhile is kept and returned by the next continue_call. Then continue_call with the answer when you have it (within ~5 minutes).", "inputSchema": msg("") },
+        { "name": "hold_call", "description": "Put the active call on hold: say a short line (e.g. \"One sec, let me check with the main Claude\") and return immediately without waiting for a reply. The call stays open; anything the user says meanwhile is kept and returned by the next continue_call or listen. Then continue_call with the answer when you have it (within ~5 minutes).", "inputSchema": msg("") },
+        { "name": "listen", "description": "While on hold (e.g. a helper is working in the background): say nothing and wait up to `seconds` for the user to speak. Returns what they said (a correction, a question, \"stop\") or that they said nothing yet. The call stays on hold; call it in a loop while you wait, so the user can steer the work.",
+          "inputSchema": { "type": "object", "properties": { "seconds": { "type": "integer", "minimum": 1, "maximum": 60, "description": "How long to wait (default 15)" } } } },
         { "name": "end_call", "description": "Say a final message and hang up.", "inputSchema": msg("") },
     ])
 }
@@ -123,7 +125,15 @@ async fn tool(name: &str, args: &Value) -> Result<String, String> {
         }
         "hold_call" => {
             say(message()?, false, true).await;
-            Ok("On hold. The call is still open; use continue_call to carry on.".into())
+            Ok("On hold. The call is still open; use listen to hear the user meanwhile, continue_call to carry on.".into())
+        }
+        "listen" => {
+            let secs = args["seconds"].as_u64().unwrap_or(15).clamp(1, 60);
+            let t = wait_for_reply(secs * 1000).await;
+            if call().declined {
+                return Ok(hung_up("The user hung up."));
+            }
+            Ok(t.map_or("Nothing said yet; still on hold.".into(), |t| format!("User said (while on hold): {t}")))
         }
         "end_call" => {
             say(message()?, true, false).await;
