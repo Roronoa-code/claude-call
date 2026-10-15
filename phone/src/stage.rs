@@ -30,22 +30,28 @@ pub static STAGES: [Stage; 5] = [
     s(0.84, 70.0, [0.0; 4], [-0.3, 1.0, 0.45, 0.6], [0.04, -0.02, -0.08, -0.3], [0.45, 4.0, 20.0, 0.1]),
 ];
 
-/// The stage picked with `debug.callme.stage`, or 0.
+/// The stage picked with `debug.callme.stage`, or 1 (Spotlight, Mani's pick).
 #[cfg(target_os = "android")]
 pub fn pick() -> usize {
-    prop(c"debug.callme.stage", STAGES.len() - 1)
+    prop_or(c"debug.callme.stage", 1, STAGES.len() - 1)
 }
 
 /// A preview's number from an Android system property (0 when unset), at most `max`.
 #[cfg(target_os = "android")]
 pub fn prop(name: &std::ffi::CStr, max: usize) -> usize {
+    prop_or(name, 0, max)
+}
+
+/// A preview's number from an Android system property (`default` when unset), at most `max`.
+#[cfg(target_os = "android")]
+pub fn prop_or(name: &std::ffi::CStr, default: usize, max: usize) -> usize {
     unsafe extern "C" {
         fn __system_property_get(name: *const std::ffi::c_char, value: *mut std::ffi::c_char) -> std::ffi::c_int;
     }
     let mut buf = [0 as std::ffi::c_char; 92]; // PROP_VALUE_MAX
     let n = unsafe { __system_property_get(name.as_ptr(), buf.as_mut_ptr()) };
     let v = unsafe { std::ffi::CStr::from_ptr(buf.as_ptr()) }.to_str().unwrap_or("");
-    if n <= 0 { 0 } else { v.trim().parse::<usize>().unwrap_or(0).min(max) }
+    if n <= 0 { default } else { v.trim().parse::<usize>().unwrap_or(0).min(max) }
 }
 
 // Each character's camera is turned round the floor's vertical from the backdrop's square-on view (clawd_cast.frag,

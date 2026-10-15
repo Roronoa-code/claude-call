@@ -302,7 +302,7 @@ pub fn run(app: android_activity::AndroidApp) {
     });
     let now = e.now();
     // PREVIEW (branch preview/call-screen): which call screen shows (call_looks.slint), 0 as shipped.
-    let look = stage::prop(c"debug.callme.call", LOOK_K.len() - 1);
+    let look = stage::prop_or(c"debug.callme.call", 3, LOOK_K.len() - 1); // 3 Comic, Mani's pick
     ui.global::<Call>().set_look(look as i32);
     let frame = Rc::new(std::cell::RefCell::new(Frame {
         held: Held::default(),
