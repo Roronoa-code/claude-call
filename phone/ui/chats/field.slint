@@ -1,5 +1,5 @@
 // The text box of a chat: + (attach), the field, and Send / Stop (44px, a 48px touch area). A word the keyboard is
-// still composing is sent with the message, and shows as a faint warm wash.
+// still composing is sent with the message, and looks like normal text.
 import { T, Icon, Icons } from "../parts.slint";
 import { Home } from "../home_parts.slint";
 import { Chats, Ink, IconButton } from "../chat.slint";
@@ -101,13 +101,22 @@ export component Composer inherits Rectangle {
                     text <=> root.draft;
                     font-size: 16.5px;
                     color: Ink.text;
-                    // Android draws the caret, its handle and the word being composed in this colour (opaque for
-                    // the first two): a faint warm wash, the letters as typed (as fix/1015 ships).
-                    selection-background-color: #e3a48c33;
+                    // Slint draws the keyboard's word in progress as a selection, and Android draws the caret in
+                    // this colour (opaque). So the wash is invisible (alpha 0, same hue) while composing: the word
+                    // looks like normal text and the caret keeps its colour. A real selection still shows.
+                    selection-background-color: self.preedit-text != "" ? #e3a48c00 : #e3a48c33;
                     selection-foreground-color: Ink.text;
                     vertical-alignment: center;
                     single-line: true;
-                    changed preedit-text => { root.composing = self.preedit-text != ""; }
+                    changed preedit-text => {
+                        root.composing = self.preedit-text != "";
+                        // The keyboard just committed its word: leave the caret at the end, nothing selected.
+                        if (self.preedit-text == "" && self.anchor-position-byte-offset != self.cursor-position-byte-offset) {
+                            self.set-selection-offsets(self.cursor-position-byte-offset, self.cursor-position-byte-offset);
+                        }
+                    }
+                    // A sent or emptied field keeps nothing selected.
+                    changed text => { if (self.text == "") { self.set-selection-offsets(0, 0); } }
                     // The keyboard's word in progress goes too, then the keyboard's side of the field is emptied
                     // (chat.slint, fix/1015). shortcut: the word is put at the end; one typed mid-text would go there.
                     function send-all() {
