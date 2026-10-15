@@ -2,7 +2,7 @@
 //! whoever is calling, alive in 3D (caller.rs, live_gl.rs), every frame it moves.
 use crate::{
     Call, Cap, CallScreen, Msg as UiMsg, alive, android,
-    caller::{Caller, LOOK_K},
+    caller::Caller,
     engine::Engine,
     live_gl, stage,
     view::{self, Msg, Phase, View, Voice, clock},
@@ -60,10 +60,24 @@ fn caption(v: &View, now: f64) -> Cap {
         size: 0,
         tone: tone.into(),
         orb,
+        said: text.into(),
+        ..Default::default()
     };
     let spoken = |m: &Msg, tone: &str| {
         let (text, lit) = view::lit(m, Some(part(m)));
-        Cap { key: hash(&format!("c{}-{}", m.id, part(m))), label: v.agent.clone().into(), text: text.into(), lit: lit.into(), size: size(m), tone: tone.into(), orb: false }
+        let (said, fresh, rest) = view::split_lit(&text, &lit);
+        Cap {
+            key: hash(&format!("c{}-{}", m.id, part(m))),
+            label: v.agent.clone().into(),
+            text: text.into(),
+            lit: lit.into(),
+            size: size(m),
+            tone: tone.into(),
+            orb: false,
+            said: said.into(),
+            fresh: fresh.into(),
+            rest: rest.into(),
+        }
     };
     match v.phase {
         Phase::Incoming => plain("inc", "Calling now".into(), &format!("{} would like to talk.", v.agent), "", false),
@@ -112,14 +126,20 @@ fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activi
     e.line_progress(&mut s);
     let ended = s.ended;
     let v = &s.view;
-    let thread = matches!(v.phase, Phase::Hearing | Phase::Thinking);
-    let pending = v.phase == Phase::Thinking && !v.transcribing;
+    // PREVIEW (captures only): `adb shell setprop debug.callme.hear "<words>"` shows those words on your turn as if you
+    // were saying them (the test emulator's mic is silent). Only the screen sees them; nothing reaches the call.
+    let hear = if v.phase == Phase::Listening { stage::prop_text(c"debug.callme.hear") } else { String::new() };
+    let faked = !hear.is_empty();
+    let vphase = if faked { Phase::Hearing } else { v.phase };
+    let partial = if faked { hear } else { v.partial.clone() };
+    let thread = matches!(vphase, Phase::Hearing | Phase::Thinking);
+    let pending = vphase == Phase::Thinking && !v.transcribing;
     let last_claude = v.msgs.iter().rev().find(|m| !m.me).cloned();
     let last_me = v.msgs.iter().rev().find(|m| m.me).cloned();
     if thread || f.held.claude.is_none() {
         f.held = Held {
-            me_text: if pending { last_me.map(|m| m.text) } else { Some(v.partial.clone()).filter(|p| !p.is_empty()) },
-            live: v.phase == Phase::Hearing,
+            me_text: if pending { last_me.map(|m| m.text) } else { Some(partial).filter(|p| !p.is_empty()) },
+            live: vphase == Phase::Hearing,
             pending,
             claude: last_claude.clone(),
         };
@@ -129,13 +149,29 @@ fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activi
     if !thread || f.cap.is_none() {
         f.cap = Some(caption(v, now));
     }
-    let me_level = if v.voice == Voice::Me && !v.muted { v.mic_level } else { 0.0 };
+    let me_level = if faked {
+        (0.3 + 0.25 * (now * 0.011).sin() * (now * 0.0037).sin().abs()) as f32
+    } else if v.voice == Voice::Me && !v.muted {
+        v.mic_level
+    } else {
+        0.0
+    };
     let level = if v.voice == Voice::Claude { claude_level } else { me_level };
     f.level += (level - f.level) * 0.35;
     let status = if !v.notice.is_empty() {
         v.notice.clone()
+    } else if faked {
+        "Hearing you…".to_string()
     } else if matches!(v.phase, Phase::Connecting | Phase::Talking | Phase::Listening | Phase::Hearing) || (v.phase == Phase::Thinking && !pending) {
         v.status_text().to_string()
+    } else {
+        String::new()
+    };
+    // Round 2 shows only what is out of the ordinary (a dropped line, a blocked or muted mic) as a notice.
+    let notice = if !v.notice.is_empty() {
+        v.notice.clone()
+    } else if v.muted && v.phase == Phase::Listening {
+        "Mic muted, type a reply".to_string()
     } else {
         String::new()
     };
@@ -147,7 +183,7 @@ fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activi
         Phase::Ended => format!("Call ended · {}{used}", clock(v.ended_at - v.call_start)),
         _ => format!("On call · {}{used}", clock(now - v.call_start)),
     };
-    let phase = v.phase;
+    let phase = vphase;
     let agent = v.agent.clone();
     let muted = v.muted;
     let msgs: Vec<UiMsg> = v
@@ -155,15 +191,16 @@ fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activi
         .iter()
         .map(|m| {
             if m.me {
-                UiMsg { me: true, text: m.text.clone().into(), lit: m.text.clone().into() }
+                UiMsg { me: true, text: m.text.clone().into(), lit: m.text.clone().into(), said: m.text.clone().into(), ..Default::default() }
             } else {
                 let (text, lit) = view::lit(m, None);
                 let shown = if m.cut { lit.clone() } else { text };
-                UiMsg { me: false, text: shown.into(), lit: lit.into() }
+                let (said, fresh, rest) = view::split_lit(&shown, &lit);
+                UiMsg { me: false, text: shown.into(), lit: lit.into(), said: said.into(), fresh: fresh.into(), rest: rest.into() }
             }
         })
         .collect();
-    let (speaker, quiet, can_finish, ended_at) = (v.speaker, v.quiet, v.can_finish, v.ended_at);
+    let (speaker, quiet, can_finish, ended_at) = (v.speaker, v.quiet, v.can_finish || faked, v.ended_at);
     drop(s);
 
     // ---- The caller's character: big over the caption, small on the bubble while the thread shows ----
@@ -182,6 +219,7 @@ fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activi
     set_if(ui.global::<Call>().get_time_key(), key, |t| ui.global::<Call>().set_time_key(t));
     set_if(ui.global::<Call>().get_time_text(), time, |t| ui.global::<Call>().set_time_text(t));
     set_if(ui.global::<Call>().get_status(), status, |t| ui.global::<Call>().set_status(t));
+    set_if(ui.global::<Call>().get_notice(), notice, |t| ui.global::<Call>().set_notice(t));
     set_if(ui.global::<Call>().get_agent(), agent, |t| ui.global::<Call>().set_agent(t));
     let cap = f.cap.clone().unwrap();
     if ui.global::<Call>().get_cap() != cap {
@@ -301,8 +339,10 @@ pub fn run(app: android_activity::AndroidApp) {
         move |t| e.send_typed(&t)
     });
     let now = e.now();
-    // PREVIEW (branch preview/call-screen): which call screen shows (call_looks.slint), 0 as shipped.
-    let look = stage::prop_or(c"debug.callme.call", 3, LOOK_K.len() - 1); // 3 Comic, Mani's pick
+    // PREVIEW (branch preview/call-screen-2): which call screen shows. debug.callme.call 0 (or unset): Comic as shipped
+    // (look 3); 1-4: round 2's Subtitles, Script, Your light and Camera (looks 5-8).
+    let pick = stage::prop_or(c"debug.callme.call", 0, 4);
+    let look = if pick == 0 { 3 } else { 4 + pick };
     ui.global::<Call>().set_look(look as i32);
     let frame = Rc::new(std::cell::RefCell::new(Frame {
         held: Held::default(),
@@ -339,7 +379,7 @@ pub fn run(app: android_activity::AndroidApp) {
         let (ui, e, f) = (ui.as_weak(), e.clone(), frame.clone());
         let mut drawn = -1.0f32;
         let mut last = None;
-        let mut mood = crate::caller::Mood::new();
+        let mut mood = crate::caller::Mood::new(look >= 5);
         move || {
             let Some(ui) = ui.upgrade() else { return };
             let now = start.elapsed().as_secs_f32();
@@ -369,12 +409,13 @@ pub fn run(app: android_activity::AndroidApp) {
                 let (res, mut view) = alive::view(who, alive::solo(who, p.k), sf);
                 let mut frame = c.cast.uniforms();
                 if look > 0 {
-                    // PREVIEW: on the record, lit by its lights, its shadow on the floor drawn under the picture
-                    let st = &stage::STAGES[4];
+                    // PREVIEW: on the record (round 2: in the spotlight), lit by its lights, its shadow (and in the
+                    // spotlight its reflection) on the floor drawn under the picture
+                    let st = &stage::STAGES[if look >= 5 { 1 } else { 4 }];
                     let below = (st.below(who) * alive::solo(who, p.k) * sf).round() as i32;
                     view.1 += below;
                     frame.extend(st.uniforms(who, res.1, res.1 + below, sf, 1.0));
-                    if look == 2 {
+                    if look == 2 || look >= 5 {
                         mood.ease(phase, voice, now);
                         mood.apply(&mut frame);
                     }

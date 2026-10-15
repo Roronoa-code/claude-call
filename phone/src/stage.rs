@@ -45,13 +45,19 @@ pub fn prop(name: &std::ffi::CStr, max: usize) -> usize {
 /// A preview's number from an Android system property (`default` when unset), at most `max`.
 #[cfg(target_os = "android")]
 pub fn prop_or(name: &std::ffi::CStr, default: usize, max: usize) -> usize {
+    let v = prop_text(name);
+    if v.is_empty() { default } else { v.trim().parse::<usize>().unwrap_or(0).min(max) }
+}
+
+/// An Android system property's text ("" when unset).
+#[cfg(target_os = "android")]
+pub fn prop_text(name: &std::ffi::CStr) -> String {
     unsafe extern "C" {
         fn __system_property_get(name: *const std::ffi::c_char, value: *mut std::ffi::c_char) -> std::ffi::c_int;
     }
     let mut buf = [0 as std::ffi::c_char; 92]; // PROP_VALUE_MAX
     let n = unsafe { __system_property_get(name.as_ptr(), buf.as_mut_ptr()) };
-    let v = unsafe { std::ffi::CStr::from_ptr(buf.as_ptr()) }.to_str().unwrap_or("");
-    if n <= 0 { default } else { v.trim().parse::<usize>().unwrap_or(0).min(max) }
+    if n <= 0 { String::new() } else { unsafe { std::ffi::CStr::from_ptr(buf.as_ptr()) }.to_string_lossy().into_owned() }
 }
 
 // Each character's camera is turned round the floor's vertical from the backdrop's square-on view (clawd_cast.frag,

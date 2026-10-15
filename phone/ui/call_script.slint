@@ -1,0 +1,215 @@
+// PREVIEW (branch preview/call-screen-2) direction 2, Script: the call reads as a screenplay. A calm serif column
+// fills the top of the screen, in the beam: each speaker's name in small spaced capitals, then the line (the caller's
+// words fade in as they are said; yours appear as you say them), and the state as a stage direction in italics:
+// (calling you), (your turn), (thinking...), (on hold, 0:12), (call ended). Older lines fade upward and the column
+// scrolls back through the whole call, so it is also the transcript. The caller stands smaller on the stage below.
+// Controls: Hang up and Answer / Done talking as two round buttons in the bottom corners; between them a few words
+// (MUTE, TYPE, MORE), and MORE turns them to SPEAKER, QUIET, IN 5 MIN, BACK.
+import "fonts/InstrumentSerif-Regular.ttf";
+import "fonts/InstrumentSerif-Italic.ttf";
+import { T, Icon, Icons, SwapText } from "parts.slint";
+import { Call } from "call_data.slint";
+import { Sheets } from "call_kit.slint";
+import { Spot, SpotBack, Words, Dots, Pill, SpotCaller } from "call_spot.slint";
+
+// A word you can tap: small spaced capitals; on, in the light's warm colour.
+component Say inherits Rectangle {
+    in property <string> text;
+    in property <bool> on;
+    in property <bool> enabled: true;
+    callback clicked;
+    width: t.preferred-width + 16px;
+    height: 44px;
+    t := Text {
+        x: 8px;
+        text: root.text;
+        font-size: 11.5px;
+        font-weight: 600;
+        letter-spacing: 1.4px;
+        color: root.on ? #f2b089 : #ebe5dc.with-alpha(touch.pressed ? 1 : 0.72);
+        vertical-alignment: center;
+        animate color { duration: 200ms; }
+    }
+    touch := TouchArea { enabled: root.enabled; clicked => { root.clicked(); } }
+}
+
+export component ScriptLook inherits Rectangle {
+    property <string> phase: Call.phase;
+    property <bool> incoming: phase == "incoming";
+    property <bool> ended: phase == "ended";
+    property <length> W: root.width;
+    property <length> H: root.height;
+    property <string> serif: "Instrument Serif";
+    property <length> by: H - Call.sab - 20px - 56px;
+    property <length> fx: W / 2;
+    property <length> fy: root.by - 46px;
+    property <length> field-top: H - Call.kb - Math.max(12px, Call.sab + 96px - Call.kb) - 64px;
+    property <bool> keys: Call.typing && Call.kb > 0;
+    property <length> col-top: Call.sat + 66px;
+    property <length> col-bottom: keys ? field-top - 14px : fy - 200px;
+
+    SpotBack { width: W; height: H; fx: root.fx; fy: root.fy; k: 0.72; drawn-k: 0.72; bh: 1180px; above: 760px; source: @image-url("stage/spot-script.png"); }
+    SpotCaller { fx: root.fx; fy: root.fy; }
+
+    // ---- Header ----
+    Text { y: Call.sat + 14px; width: W; height: 18px; text: Call.agent.to-uppercase(); font-size: 12px; font-weight: 600; letter-spacing: 2.4px; color: #ebe5dcd0; horizontal-alignment: center; vertical-alignment: center; }
+    SwapText { x: 0; y: Call.sat + 34px; width: W; height: 18px; text: Call.time-text; key: Call.time-key; font-size: 12.5px; color: T.muted; align: center; }
+
+    // ---- The script ----
+    property <bool> live-me: phase == "hearing" && Call.me-text != "";
+    property <string> direction: Call.notice != "" ? "(" + Call.notice + ")"
+        : incoming ? "(calling you)" : phase == "connecting" ? "(connecting)" : phase == "listening" ? "(your turn)"
+        : phase == "thinking" ? "(" + Call.agent + " is thinking)" : phase == "hold" ? "(" + Call.cap.label + ")"
+        : ended ? "(call ended, " + Call.cap.label + ")" : "";
+    property <int> n: Call.msgs.length + (root.live-me ? 1 : 0) + (root.direction != "" ? 1 : 0);
+    property <length> col-x: 40px;
+    property <length> col-w: W - 80px;
+    script := Flickable {
+        x: 0;
+        y: root.col-top;
+        width: W;
+        height: root.col-bottom - root.col-top;
+        animate height { duration: 300ms; easing: T.out; }
+        content-height: rows.preferred-height;
+        rows := VerticalLayout {
+            x: root.col-x;
+            width: root.col-w;
+            alignment: end;
+            spacing: 22px;
+            padding-top: 40px;
+            min-height: script.height;
+            for m[i] in Call.msgs: VerticalLayout {
+                property <int> age: root.n - 1 - i;
+                spacing: 6px;
+                opacity: (self.age == 0 ? 1 : self.age == 1 ? 0.6 : self.age == 2 ? 0.4 : 0.26) * Math.max(0, Math.min(1, (self.y + script.content-y) / 56px));
+                animate opacity { duration: 420ms; easing: T.out; }
+                Text {
+                    text: m.me ? "YOU" : Call.agent.to-uppercase();
+                    font-size: 10.5px;
+                    font-weight: 600;
+                    letter-spacing: 2px;
+                    color: m.me ? Spot.label-cool : Spot.label;
+                    horizontal-alignment: left;
+                }
+                if !m.me: Words {
+                    width: root.col-w;
+                    said: m.said;
+                    fresh: m.fresh;
+                    rest: m.rest;
+                    size: 24px;
+                    family: root.serif;
+                    align: left;
+                }
+                if m.me: Text {
+                    text: m.text;
+                    wrap: word-wrap;
+                    font-size: 24px;
+                    font-family: root.serif;
+                    color: Spot.cool;
+                }
+            }
+            if root.live-me: VerticalLayout {
+                spacing: 6px;
+                Text { text: "YOU"; font-size: 10.5px; font-weight: 600; letter-spacing: 2px; color: Spot.label-cool; horizontal-alignment: left; }
+                Text { text: Call.me-text; wrap: word-wrap; font-size: 24px; font-family: root.serif; color: Spot.cool; }
+            }
+            if root.direction != "": HorizontalLayout {
+                alignment: start;
+                spacing: 6px;
+                Text {
+                    text: root.direction;
+                    font-size: 19px;
+                    font-family: root.serif;
+                    font-italic: true;
+                    color: Call.notice != "" ? #e8a08a : phase == "hold" ? Spot.hold : phase == "listening" ? Spot.label-cool : #ebe5dc99;
+                }
+                if phase == "thinking" && Call.notice == "": VerticalLayout {
+                    alignment: center;
+                    padding-top: 6px;
+                    Dots { ink: #ebe5dc99; }
+                }
+            }
+        }
+        changed content-height => { self.content-y = Math.min(0px, self.height - self.content-height); }
+        changed height => { self.content-y = Math.min(0px, self.height - self.content-height); }
+    }
+
+    // ---- Controls: two round buttons in the corners, a few words between them ----
+    Pill {
+        x: 24px;
+        y: root.by;
+        width: 56px;
+        icon: Icons.phone;
+        turn: true;
+        fill: Spot.red;
+        enabled: !root.ended;
+        opacity: root.ended || root.keys ? 0 : 1;
+        animate opacity { duration: 260ms; easing: T.out; }
+        clicked => { Call.hang-up(); }
+    }
+    property <bool> big-live: root.incoming || Call.can-finish;
+    Pill {
+        x: W - 24px - 56px;
+        y: root.by;
+        width: 56px;
+        icon: root.incoming ? Icons.phone : Icons.check;
+        fill: root.incoming ? Spot.green : Spot.warm;
+        ink: root.incoming ? white : #1b1713;
+        enabled: root.big-live && !root.ended;
+        opacity: root.big-live && !root.ended && !root.keys ? 1 : 0;
+        transform-origin: { x: 28px, y: 28px };
+        transform-scale: root.big-live ? 1 : 0.7;
+        animate opacity { duration: root.big-live ? 240ms : 160ms; easing: T.out; }
+        animate transform-scale { duration: root.big-live ? 520ms : 200ms; easing: root.big-live ? T.spring : T.close; }
+        clicked => { if (root.incoming) { Call.answer(); } else { Call.done-talking(); } }
+    }
+    for side in 2: Text {
+        x: side == 0 ? 24px - 22px : W - 24px - 56px - 22px;
+        y: root.by + 60px;
+        width: 100px;
+        height: 16px;
+        text: side == 0 ? (root.incoming ? "Decline" : "Hang up") : root.incoming ? "Answer" : "Done talking";
+        font-size: 11px;
+        color: #ebe5dc99;
+        horizontal-alignment: center;
+        opacity: (side == 0 ? !root.ended : root.big-live && !root.ended) && !root.keys ? 1 : 0;
+        animate opacity { duration: 220ms; }
+    }
+    property <bool> more;
+    words := Rectangle {
+        x: 24px + 56px + 4px;
+        y: root.by + 6px;
+        width: W - 2 * (24px + 56px + 4px);
+        height: 44px;
+        opacity: root.incoming || root.ended || root.keys ? 0 : 1;
+        animate opacity { duration: 240ms; easing: T.out; }
+        for page in 2: HorizontalLayout {
+            property <bool> on: (page == 1) == root.more;
+            alignment: center;
+            spacing: 0;
+            opacity: self.on ? 1 : 0;
+            y: self.on ? 0 : page == 1 ? 8px : -8px;
+            animate opacity { duration: self.on ? 300ms : 160ms; delay: self.on ? 100ms : 0ms; easing: T.out; }
+            animate y { duration: self.on ? 420ms : 200ms; delay: self.on ? 100ms : 0ms; easing: self.on ? T.spring : T.close; }
+            if page == 0: Say { text: Call.muted ? "UNMUTE" : "MUTE"; on: Call.muted; enabled: parent.on && !root.incoming; clicked => { Call.toggle-mute(); } }
+            if page == 0: Say { text: "TYPE"; on: Call.typing; enabled: parent.on && !root.incoming; clicked => { Call.typing = !Call.typing; } }
+            if page == 0: Say { text: "MORE"; enabled: parent.on && !root.incoming; clicked => { root.more = true; } }
+            if page == 1: Say { text: "SPEAKER"; on: Call.speaker; enabled: parent.on; clicked => { Call.toggle-speaker(); } }
+            if page == 1: Say { text: "QUIET"; on: Call.quiet; enabled: parent.on; clicked => { Call.toggle-quiet(); } }
+            if page == 1: Say { text: "IN 5 MIN"; enabled: parent.on; clicked => { Call.call-back(); } }
+            if page == 1: Say { text: "BACK"; enabled: parent.on; clicked => { root.more = false; } }
+        }
+    }
+
+    Sheets {
+        width: W;
+        height: H;
+        caps-x: -100px; // the script is the transcript: no Captions button here
+        caps-y: -100px;
+        type-x: W / 2 - 20px;
+        type-y: root.by + 8px;
+        fsize: 40px;
+        keep: H - root.by - Call.sab + 12px;
+        lift: 96px;
+    }
+}

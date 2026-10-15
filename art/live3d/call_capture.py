@@ -1,25 +1,27 @@
-# PREVIEW (branch preview/call-screen): captures each call screen direction from the real app on the headless test
-# emulator only (emulator-5580, never a phone). Each run starts its own callme.exe on a private ntfy topic with a
+# PREVIEW (branch preview/call-screen-2): captures each call screen direction from the real app on the headless test
+# emulator only (emulator-5584, never a phone). Each run starts its own callme.exe on a private ntfy topic with a
 # throwaway status file and a local link (CALLME_LOCAL, reached through adb reverse), so no real phone can ring and
 # the real status.json is never touched. The call screen is opened over adb like the ringing notification does;
 # replies are typed in the app's own reply field.
-# Per direction: stills of every state, call.mp4 (ring, answer, talking, your turn, typing, thinking, hold, talking,
-# hang up) and a 540 px wide copy. Usage: python call_capture.py <look 0-4> [probe] [Codex]
+# Your live words are shown with debug.callme.hear (screen.rs), as the emulator's mic is silent.
+# Per direction: stills of every state, call.mp4 (ring, answer, talking, your turn, you talking, typing, thinking,
+# hold, talking, More, hang up) and a 540 px wide copy. Usage: python call_capture.py <look 0-4> [probe] [Codex]
+# (debug.callme.call: 0 Comic as shipped, 1 Subtitles, 2 Script, 3 Your light, 4 Camera)
 import io, json, os, re, subprocess, sys, threading, time, urllib.request
 
 os.environ['MSYS_NO_PATHCONV'] = '1'
-SER = 'emulator-5580'
+SER = 'emulator-5584'
 EXE = r'B:\Projects\CallMe\target\release\callme.exe'
-OUT = r'D:\Outputs\CallMe\design\step4-call'
-NAMES = {0: '0-current', 1: '1-stage', 2: '2-closeup', 3: '3-comic', 4: '4-lyrics'}
+OUT = r'D:\Outputs\CallMe\design\step4-call-2'
+NAMES = {0: '0-current', 1: '1-subtitles', 2: '2-script', 3: '3-your-light', 4: '4-camera'}
 DP = 2.625
 # Where each direction's buttons are, in dp from the top left (the bottom ones from the bottom edge, as `-y`).
 TAPS = {
-    0: dict(answer=(139, -121), type=(357, -248), hang=(271, -121)),
-    1: dict(answer=(269, -71), type=(357, -186), hang=(51, -71)),
-    2: dict(answer=(273, -70), type=(371, 412), hang=(78, -70)),
-    3: dict(answer=(274, -68), type=(360, -159), hang=(79, -68)),
-    4: dict(answer=(205, -149), type=(355, -149), hang=(331, -62)),
+    0: dict(answer=(274, -68), type=(360, -159), hang=(79, -68)),
+    1: dict(answer=(293, -74), type=(291, -74), more=(357, -74), shut=(357, -74), hang=(52, -74)),
+    2: dict(answer=(359, -72), type=(206, -72), more=(254, -72), shut=(290, -72), hang=(52, -72)),
+    3: dict(answer=(288, -86), type=(288, -86), more=(370, -86), shut=(370, -86), hang=(206, -86)),
+    4: dict(answer=(289, -74), type=(377, -184), more=(377, -280), shut=(377, -280), hang=(88, -74)),
 }
 CF = 0x08000000  # no console window
 
@@ -133,7 +135,7 @@ def main():
     r = Run(look, agent)
     who = 'Codex' if agent == 'Codex' else 'Claude'
     if probe:
-        first, res = r.ring(f"Hi, it's {who}. Quick check of the new call screen, with me on the record.")
+        first, res = r.ring(f"Hi, it's {who}. Quick check of the new call screen, in the spotlight.")
         time.sleep(3)
         r.shot('probe-ringing')
         r.tap('answer')
@@ -146,7 +148,7 @@ def main():
         r.shot('probe-ended')
         r.p.kill()
         return
-    rec = r.record(75, 'call')
+    rec = r.record(100, 'call')
     time.sleep(1.0)
     first, res = r.ring(f"Hi, it's {who}. I finished the new call screen. Want to hear what changed before I push it?")
     time.sleep(1.6)
@@ -162,6 +164,16 @@ def main():
     r.shot('2b-talking')
     time.sleep(6.5)  # the line ends: your turn
     r.shot('3-listening')
+    # you talk (shown with debug.callme.hear), then stop and type instead
+    for i, words in enumerate(['Yes', 'Yes please,', 'Yes please, the', 'Yes please, the short', 'Yes please, the short version.']):
+        adb('shell', 'setprop', 'debug.callme.hear', f"'{words}'")
+        time.sleep(0.45)
+        if i == 2:
+            r.shot('3a-hearing-mid')
+    time.sleep(1.2)
+    r.shot('3b-hearing')
+    adb('shell', 'setprop', 'debug.callme.hear', "''")
+    time.sleep(1.5)
     r.tap('type')
     time.sleep(1.6)
     for w in ['Yes', 'please,', 'the', 'short', 'version.']:  # a word at a time, as a person types (a burst can drop letters)
@@ -182,11 +194,19 @@ def main():
     t.join()
     time.sleep(2.0)
     r.shot('6b-hold')
-    t, res = r.bg('continue_call', "Okay. The character is bigger, the controls match home, and the words read like subtitles. Anything you'd change?")
+    t, res = r.bg('continue_call', "Okay. I'm standing in the light now, the words are part of the scene, and the buttons stay out of the way until you need them. Anything you'd change?")
     time.sleep(5.5)
     r.shot('7-talking-long')
     time.sleep(3.0)
     r.shot('7b-talking-long')
+    if 'more' in TAPS[look]:  # the shipped Comic has no More
+        r.tap('more')
+        time.sleep(0.25)
+        r.shot('7c-more-mid')
+        time.sleep(1.0)
+        r.shot('7d-more-open')
+        r.tap('shut')
+        time.sleep(1.2)
     r.tap('hang')
     time.sleep(0.35)
     r.shot('8-ended')

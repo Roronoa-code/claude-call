@@ -1,0 +1,272 @@
+// PREVIEW (branch preview/call-screen-2): pieces the round 2 call screens share (call_subs, call_script, call_light,
+// call_camera). All four are set in the home screen's Spotlight: the cone of warm light on the glossy black floor
+// (stage/spot-<look>.png, art/live3d/call_spots.py), which also tells the call's state: it swells on each ring,
+// warms with the caller's voice, settles a little for your turn, goes low while it works, lower on hold, and out at
+// the end. No boxes or balloons: words are set straight into the scene, and controls are bare icons and soft pills.
+import { T, Icon, Icons, Cap } from "parts.slint";
+import { Call } from "call_data.slint";
+import { Actor } from "actor.slint";
+
+export global Spot {
+    out property <color> bg: #010101; // past the backdrop's edges
+    out property <color> warm: #f3ece2; // the caller's words, in its warm light
+    out property <color> cool: #d6e0f0; // yours
+    out property <color> label: #c9a58a; // small names and states over the words
+    out property <color> label-cool: #9fb3cf;
+    out property <color> hold: #c4b5ec;
+    out property <color> red: #d9463e;
+    out property <color> green: #2fa84f;
+}
+
+// The spotlight, with the middle of the caller's feet at (fx, fy) at size k, drawn for `drawn-k` (scaled exactly:
+// the spot's geometry scales with k round the feet line). Over it, the light's state.
+export component SpotBack inherits Rectangle {
+    in property <length> fx;
+    in property <length> fy;
+    in property <float> k: 1;
+    in property <float> drawn-k: 1;
+    in property <image> source;
+    in property <length> bw: 500px; // the picture's logical size at drawn-k, and its feet line from the top
+    in property <length> bh: 1400px;
+    in property <length> above: 640px;
+    in property <float> lift; // 0..1: brighter, for a look's own reasons (your light)
+    property <string> phase: Call.phase;
+    property <float> s: root.k / root.drawn-k;
+    // How far the light is down, per state (eased); while it rings it swells on each ring.
+    property <float> dim: root.phase == "ended" ? 0.94 : root.phase == "hold" ? 0.52 : root.phase == "thinking" ? 0.38
+        : root.phase == "listening" || root.phase == "hearing" ? 0.14 : root.phase == "incoming" ? 0.22 : 0;
+    animate dim { duration: root.phase == "ended" ? 900ms : 700ms; easing: T.close; }
+    property <float> ring: root.phase == "incoming" ? Math.pow(0.5 + 0.5 * Math.cos(Math.mod(Call.t, 1.5) / 1.5 * 360deg), 3) : 0;
+    background: Spot.bg;
+    Image {
+        source: root.source;
+        x: root.fx - root.bw / 2 * root.s;
+        y: root.fy - root.above * root.s;
+        width: root.bw * root.s;
+        height: root.bh * root.s;
+        image-fit: fill;
+    }
+    Rectangle {
+        background: black;
+        opacity: Math.max(0, root.dim - 0.22 * root.ring - 0.1 * root.lift);
+    }
+    // The pool warms and brightens with the caller's voice.
+    property <length> pw: 400px * root.k;
+    Rectangle {
+        x: root.fx - root.pw / 2;
+        y: root.fy + 4px * root.k - root.pw / 2;
+        width: root.pw;
+        height: root.pw;
+        transform-origin: { x: root.pw / 2, y: root.pw / 2 };
+        transform-scale-y: 0.32;
+        background: @radial-gradient(circle, #ffd2a0a0 0%, #ffc88a40 38%, #ffc88a00 70%);
+        opacity: root.phase == "talking" ? Math.min(1, Call.level * 1.4) * 0.55 : 0;
+        animate opacity { duration: 140ms; }
+    }
+}
+
+// Words set straight into the scene, each fading in as it is said (said / fresh / rest: view.rs split_lit).
+// The words still to come take their place unseen (or in `unsaid`), so a line never reflows as it is said.
+export component Words inherits Rectangle {
+    in property <string> said;
+    in property <string> fresh;
+    in property <string> rest;
+    in property <length> size: 22px;
+    in property <color> ink: Spot.warm;
+    in property <color> unsaid: transparent;
+    in property <string> family;
+    in property <TextHorizontalAlignment> align: center;
+    property <float> start: -10;
+    property <bool> fading; // only while a word fades in does this follow the clock (and re-lay the line out)
+    changed said => { self.start = Call.t; self.fading = true; }
+    changed fresh => { self.start = Call.t; self.fading = true; }
+    Timer { interval: 250ms; running: root.fading; triggered => { if (Call.t - root.start > 0.45) { root.fading = false; } } }
+    property <float> f: root.fading ? Math.min(1, Math.max(0, (Call.t - root.start) / 0.42)) : 1;
+    property <float> e: 1 - (1 - root.f) * (1 - root.f);
+    height: st.preferred-height;
+    st := StyledText {
+        width: root.width;
+        default-font-size: root.size;
+        default-color: root.ink;
+        default-font-family: root.family;
+        horizontal-alignment: root.align;
+        text: @markdown("\{root.said}<font color=\"\{root.ink.with-alpha(root.e)}\">\{root.fresh}</font><font color=\"\{root.unsaid}\">\{root.rest}</font>");
+    }
+}
+
+// The caller's current line (Call.cap): a new line crossfades in over the old one, the same line (more words said)
+// updates in place. `hide` takes it away (your words show instead).
+export component SpotCap inherits Rectangle {
+    in property <bool> hide;
+    in property <length> s0: 23px; // short, longer and long lines
+    in property <length> s1: 20.5px;
+    in property <length> s2: 18px;
+    in property <bool> small; // the keyboard is up: the smallest size
+    in property <color> ink: Spot.warm;
+    in property <color> unsaid: transparent;
+    in property <string> family;
+    in property <TextHorizontalAlignment> align: center;
+    in property <bool> bottom; // the words sit on the bottom edge
+    in property <float> rest-opacity: 0.6; // a finished line, while it's your turn
+    in property <length> rise: 6px;
+    property <Cap> cap: Call.cap;
+    property <Cap> a;
+    property <Cap> b;
+    property <int> pa: 1;
+    property <int> pb: 0;
+    init => { self.a = self.cap; }
+    changed cap => {
+        if (self.pa == 1 && self.a.key != self.cap.key) { self.b = self.cap; self.pb = 0; self.pb = 1; self.pa = 2; }
+        else if (self.pb == 1 && self.b.key != self.cap.key) { self.a = self.cap; self.pa = 0; self.pa = 1; self.pb = 2; }
+        else if (self.pa == 1) { self.a = self.cap; } else { self.b = self.cap; }
+    }
+    for slot in [0, 1]: Rectangle {
+        property <Cap> c: slot == 0 ? root.a : root.b;
+        property <int> p: slot == 0 ? root.pa : root.pb;
+        opacity: (self.p == 1 ? 1 : 0) * (root.hide ? 0 : 1) * (self.c.tone == "rest" || self.c.tone == "dim" ? root.rest-opacity : 1);
+        y: (self.p == 0 ? root.rise : self.p == 1 ? 0 : -root.rise) + (root.hide ? -root.rise : 0);
+        animate opacity { duration: self.p == 0 ? 0ms : root.hide ? 220ms : self.p == 1 ? 340ms : 180ms; delay: self.p == 1 && !root.hide ? 140ms : 0ms; easing: T.out; }
+        animate y { duration: self.p == 0 ? 0ms : self.p == 1 ? 420ms : 220ms; delay: self.p == 1 && !root.hide ? 140ms : 0ms; easing: T.out; }
+        Words {
+            y: root.bottom ? parent.height - self.height : 0;
+            width: parent.width;
+            said: parent.c.said;
+            fresh: parent.c.fresh;
+            rest: parent.c.rest;
+            size: root.small || parent.c.size == 2 ? root.s2 : parent.c.size == 1 ? root.s1 : root.s0;
+            ink: parent.c.tone == "hold" ? Spot.hold : root.ink;
+            unsaid: root.unsaid;
+            family: root.family;
+            align: root.align;
+        }
+    }
+}
+
+// Three dots that come and go in turn after a word ("thinking..."), in place of a spinner.
+export component Dots inherits Rectangle {
+    in property <color> ink: Spot.label;
+    in property <length> d: 3px;
+    width: root.d * 3 + root.d * 2 * 1.4;
+    height: root.d;
+    for i in 3: Rectangle {
+        x: i * root.d * 2.4;
+        width: root.d;
+        height: root.d;
+        border-radius: root.d / 2;
+        background: root.ink;
+        opacity: 0.25 + 0.75 * Math.max(0, Math.sin((Call.t * 1.6 - i * 0.22) * 360deg));
+    }
+}
+
+// A bare control: an icon over a small name, no box. On: it takes the light's warm colour.
+export component Glyph inherits Rectangle {
+    in property <string> icon;
+    in property <string> label;
+    in property <bool> on;
+    in property <bool> enabled: true;
+    in property <color> ink: #ebe5dc;
+    in property <color> lit: #f2b089;
+    in property <bool> show-label: true;
+    callback clicked;
+    width: 60px;
+    height: root.show-label ? 52px : 44px;
+    Rectangle {
+        transform-origin: { x: root.width / 2, y: 13px };
+        transform-scale: touch.pressed && root.enabled ? 0.86 : 1;
+        animate transform-scale { duration: 160ms; easing: T.out; }
+        Icon {
+            d: root.icon;
+            x: (root.width - 22px) / 2;
+            y: root.show-label ? 2px : (root.height - 22px) / 2;
+            width: 22px;
+            height: 22px;
+            stroke-width: 1.8px;
+            stroke: root.on ? root.lit : root.ink;
+            opacity: root.enabled ? (root.on ? 1 : 0.86) : 0.3;
+            animate stroke { duration: 220ms; }
+            animate opacity { duration: 220ms; }
+        }
+    }
+    if root.show-label: Text {
+        y: 31px;
+        width: root.width;
+        height: 16px;
+        text: root.label;
+        font-size: 11px;
+        letter-spacing: 0.2px;
+        color: root.on ? root.lit : root.ink.with-alpha(root.enabled ? 0.6 : 0.25);
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        animate color { duration: 220ms; }
+    }
+    touch := TouchArea { enabled: root.enabled; clicked => { root.clicked(); } }
+}
+
+// A soft filled pill (Answer, Done talking, Decline, Hang up): no outline. `turn`: the handset put down.
+export component Pill inherits Rectangle {
+    in property <string> icon;
+    in property <string> label;
+    in property <color> fill;
+    in property <color> ink: white;
+    in property <bool> turn;
+    in property <bool> enabled: true;
+    in property <length> size: 15px;
+    callback clicked;
+    height: 56px;
+    Rectangle {
+        border-radius: root.height / 2;
+        background: touch.pressed && root.enabled ? root.fill.darker(0.18) : root.fill;
+        transform-origin: { x: self.width / 2, y: self.height / 2 };
+        transform-scale: touch.pressed && root.enabled ? 0.95 : 1;
+        animate background { duration: 240ms; easing: T.out; }
+        animate transform-scale { duration: 160ms; easing: T.out; }
+        HorizontalLayout {
+            alignment: center;
+            spacing: root.label == "" ? 0 : 9px;
+            Icon {
+                d: root.icon;
+                y: (root.height - 22px) / 2;
+                width: 22px;
+                height: 22px;
+                stroke: root.ink;
+                transform-origin: { x: 11px, y: 11px };
+                transform-rotation: root.turn ? 135deg : 0deg;
+            }
+            if root.label != "": Text {
+                text: root.label;
+                font-size: root.size;
+                font-weight: 600;
+                color: root.ink;
+                vertical-alignment: center;
+            }
+        }
+        touch := TouchArea { enabled: root.enabled; clicked => { root.clicked(); } }
+    }
+}
+
+// Whoever is calling, alive, with the middle of its feet at (fx, fy). A tap: a hop.
+export component SpotCaller inherits Rectangle {
+    in property <length> fx;
+    in property <length> fy;
+    Actor {
+        x: root.fx - 150px;
+        y: root.fy - 300px;
+        width: 300px;
+        height: 300px;
+        face: Call.face;
+        k: Call.face-k;
+        live: Call.face-gpu;
+        source: Call.face-live;
+        lw: Call.face-w;
+        lh: Call.face-h;
+        th: Call.face-th;
+        opacity: Call.face-fade;
+        TouchArea {
+            x: (parent.width - self.width) / 2;
+            y: parent.height - self.height;
+            width: 240px * Call.face-k;
+            height: 210px * Call.face-k;
+            clicked => { Call.poke(); }
+        }
+    }
+}

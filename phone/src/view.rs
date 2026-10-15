@@ -264,9 +264,29 @@ pub fn lit(m: &Msg, only: Option<usize>) -> (String, String) {
     (text.join(" "), lit.join(" "))
 }
 
+/// PREVIEW (round 2): a line split so each word can fade in as it is said: the words said before the newest (with a
+/// space after them), the newest, and the rest still to come (with a space before them).
+pub fn split_lit(text: &str, lit: &str) -> (String, String, String) {
+    let (t, l) = (words(text), words(lit));
+    let n = l.len().min(t.len());
+    let said = if n > 1 { t[..n - 1].join(" ") + " " } else { String::new() };
+    let fresh = if n > 0 { t[n - 1].to_string() } else { String::new() };
+    let rest = if n < t.len() { if n > 0 { " " } else { "" }.to_string() + &t[n..].join(" ") } else { String::new() };
+    (said, fresh, rest)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn words_split_for_fading_in() {
+        let s = |a: &str, b: &str, c: &str| (a.to_string(), b.to_string(), c.to_string());
+        assert_eq!(split_lit("This is a test.", "This is"), s("This ", "is", " a test."));
+        assert_eq!(split_lit("This is a test.", ""), s("", "", "This is a test."));
+        assert_eq!(split_lit("This is a test.", "This"), s("", "This", " is a test."));
+        assert_eq!(split_lit("This is a test.", "This is a test."), s("This is a ", "test.", ""));
+    }
 
     #[test]
     fn sentences_and_progress() {

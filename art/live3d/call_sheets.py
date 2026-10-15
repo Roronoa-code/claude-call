@@ -1,21 +1,21 @@
-# PREVIEW (branch preview/call-screen): after call_capture.py has run for every direction, trims each call.mp4 to start
-# as the call screen appears (the capture cold-starts the app), remakes the 540 px copies, saves the crops, and draws
-# the labelled comparisons (talking and ringing) in D:\Outputs\CallMe\design\step4-call.
+# PREVIEW (branch preview/call-screen-2): after call_capture.py has run for every direction, trims each call.mp4 to
+# start as the call screen appears (the capture cold-starts the app), remakes the 540 px copies, saves the crops, and
+# draws the labelled comparisons (talking, you talking, ringing) in D:\Outputs\CallMe\design\step4-call-2.
 # Usage: python call_sheets.py [direction folder ...]   (only those were captured again; default all)
 import os, subprocess
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-OUT = r'D:\Outputs\CallMe\design\step4-call'
-LOOKS = [('0-current', 'Current'), ('1-stage', '1  Stage'), ('2-closeup', '2  Close-up'), ('3-comic', '3  Comic'), ('4-lyrics', '4  Lyrics')]
+OUT = r'D:\Outputs\CallMe\design\step4-call-2'
+LOOKS = [('0-current', 'Current (Comic)'), ('1-subtitles', '1  Subtitles'), ('2-script', '2  Script'), ('3-your-light', '3  Your light'), ('4-camera', '4  Camera')]
 CF = 0x08000000
 # Crops (px of the 1080 x 2400 screenshots): the caller and its stage while talking, the thinking sign, the controls.
 CROPS = {
-    '0-current': dict(caller=('2-talking', (0, 240, 1080, 1100)), thinking=('5b-thinking', (0, 240, 1080, 1100)), controls=('3-listening', (0, 1540, 1080, 2330))),
-    '1-stage': dict(caller=('2-talking', (0, 300, 1080, 1460)), thinking=('5b-thinking', (0, 300, 1080, 1460)), controls=('3-listening', (0, 1560, 1080, 2330))),
-    '2-closeup': dict(caller=('2-talking', (0, 140, 1080, 1500)), thinking=('5b-thinking', (0, 140, 1080, 2000)), controls=('3-listening', (0, 1700, 1080, 2330))),
-    '3-comic': dict(caller=('2-talking', (0, 580, 1080, 1620)), thinking=('5b-thinking', (0, 580, 1080, 1800)), controls=('3-listening', (0, 1350, 1080, 2330))),
-    '4-lyrics': dict(caller=('2-talking', (0, 130, 1080, 1700)), thinking=('5b-thinking', (0, 130, 1080, 1700)), controls=('3-listening', (0, 1780, 1080, 2330))),
+    '0-current': dict(caller=('2-talking', (0, 580, 1080, 1620)), thinking=('5b-thinking', (0, 580, 1080, 1800)), controls=('3-listening', (0, 1350, 1080, 2330))),
+    '1-subtitles': dict(caller=('2-talking', (0, 500, 1080, 1800)), thinking=('5b-thinking', (0, 500, 1080, 1800)), controls=('3-listening', (0, 1900, 1080, 2340))),
+    '2-script': dict(caller=('2-talking', (0, 150, 1080, 2150)), thinking=('5b-thinking', (0, 150, 1080, 2150)), controls=('3-listening', (0, 2050, 1080, 2340))),
+    '3-your-light': dict(caller=('2-talking', (0, 150, 1080, 1500)), thinking=('5b-thinking', (0, 150, 1080, 2150)), controls=('3b-hearing', (0, 1500, 1080, 2340))),
+    '4-camera': dict(caller=('2-talking', (0, 700, 1080, 2150)), thinking=('5b-thinking', (0, 700, 1080, 2150)), controls=('3-listening', (0, 1300, 1080, 2340))),
 }
 
 
@@ -62,7 +62,6 @@ def comparison(shot, name):
         out.paste(im, (x, top))
         tw = dr.textlength(label, font=font)
         dr.text((x + (w - tw) / 2, 22), label, font=font, fill=(242, 242, 243) if i else (154, 156, 163))
-    out.save(os.path.join(OUT, name + '.png'))
     out.save(os.path.join(OUT, name + '.jpg'), quality=90)
 
 
@@ -80,5 +79,6 @@ if __name__ == '__main__':
         videos(d)
         crops(d)
     comparison('2-talking', 'comparison')
+    comparison('3b-hearing', 'comparison-listening')
     comparison('1-ringing', 'comparison-ringing')
     print('done')

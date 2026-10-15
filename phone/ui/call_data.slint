@@ -11,6 +11,7 @@ export global Call {
     in property <string> time-text: "Calling you";
     in property <string> time-key: "Calling you"; // the header line animates only when this changes
     in property <string> status;
+    in property <string> notice; // round 2: only what is out of the ordinary (a dropped line, a muted mic)
     in property <Cap> cap: { key: 0, label: "Calling now", text: "Claude would like to talk.", lit: "Claude would like to talk.", size: 0, tone: "", orb: false };
     in property <string> bubble-text; // Claude's line in the thread
     in property <string> bubble-lit;

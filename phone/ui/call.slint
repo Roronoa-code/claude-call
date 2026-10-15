@@ -8,6 +8,10 @@ import { StageLook } from "call_stage.slint";
 import { CloseLook } from "call_close.slint";
 import { ComicLook } from "call_comic.slint";
 import { LyricsLook } from "call_lyrics.slint";
+import { SubsLook } from "call_subs.slint";
+import { ScriptLook } from "call_script.slint";
+import { LightLook } from "call_light.slint";
+import { CameraLook } from "call_camera.slint";
 export { Cap, Msg, Call }
 
 export component CallScreen inherits Window {
@@ -565,6 +569,31 @@ export component CallScreen inherits Window {
         animate opacity { duration: Call.placed && !root.closed ? 180ms : 500ms; easing: T.close; }
     }
     if Call.look == 4: LyricsLook {
+        width: root.width;
+        height: root.height;
+        opacity: root.closed || !Call.placed ? 0 : 1;
+        animate opacity { duration: Call.placed && !root.closed ? 180ms : 500ms; easing: T.close; }
+    }
+    // PREVIEW (branch preview/call-screen-2): round 2, in the spotlight (debug.callme.call 1-4)
+    if Call.look == 5: SubsLook {
+        width: root.width;
+        height: root.height;
+        opacity: root.closed || !Call.placed ? 0 : 1;
+        animate opacity { duration: Call.placed && !root.closed ? 180ms : 500ms; easing: T.close; }
+    }
+    if Call.look == 6: ScriptLook {
+        width: root.width;
+        height: root.height;
+        opacity: root.closed || !Call.placed ? 0 : 1;
+        animate opacity { duration: Call.placed && !root.closed ? 180ms : 500ms; easing: T.close; }
+    }
+    if Call.look == 7: LightLook {
+        width: root.width;
+        height: root.height;
+        opacity: root.closed || !Call.placed ? 0 : 1;
+        animate opacity { duration: Call.placed && !root.closed ? 180ms : 500ms; easing: T.close; }
+    }
+    if Call.look == 8: CameraLook {
         width: root.width;
         height: root.height;
         opacity: root.closed || !Call.placed ? 0 : 1;
