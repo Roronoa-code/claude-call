@@ -282,7 +282,8 @@ impl Store {
         let c = self.get_mut(chat).filter(|_| !text.is_empty())?;
         let (at, msg) = (now(), id("m"));
         if c.title.is_empty() {
-            c.title = text.chars().take(40).collect();
+            // The first line; the header elides it with "…" to fit.
+            c.title = text.lines().next().unwrap_or("").chars().take(120).collect();
         }
         c.updated = at;
         c.lines.push(Line { id: msg.clone(), me: true, text: text.into(), at, since: at, state: "sending".into(), ..Line::default() });
