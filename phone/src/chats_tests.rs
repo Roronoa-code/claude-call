@@ -449,3 +449,84 @@ fn a_deleted_thread_stays_deleted_and_undo_brings_it_back() {
     s.remove(&mine).unwrap();
     assert_eq!(s.gone, vec!["updates/n1".to_string()]);
 }
+
+fn receipt(chat: &str, re: &str, state: &str) -> Value {
+    json!({"v": 1, "chat": chat, "re": re, "state": state})
+}
+
+#[test]
+fn receipt_vectors_match_the_pc() {
+    // PROTOCOL-asks.md, "Read receipts" (key test-key)
+    for (state, sig) in [
+        ("delivered", "b7f7d1d56b961afaca9ca2cd7a80538ab72c9f9ac076c0256be198fe8d1cd283"),
+        ("read", "c30a0bb0ca6ba10dacd0112fc1bff039a760aa0117c06d289ab01af1495471f5"),
+    ] {
+        let mut good = receipt("c1", "m1", state);
+        good["sig"] = sig.into();
+        assert!(receipt_signed("test-key", &good), "{state}");
+        assert!(!receipt_signed("other-key", &good));
+        assert!(!reply_signed("test-key", &good), "a receipt's signature is not a reply's");
+        for (k, v) in [("chat", "c2"), ("re", "m2"), ("state", if state == "read" { "delivered" } else { "read" })] {
+            let mut forged = good.clone();
+            forged[k] = v.into();
+            assert!(!receipt_signed("test-key", &forged), "{k}");
+        }
+        let mut upper = good.clone();
+        upper["sig"] = sig.to_uppercase().into();
+        assert!(receipt_signed("test-key", &upper), "hex in either case, like replies");
+        good.as_object_mut().unwrap().remove("sig");
+        assert!(!receipt_signed("test-key", &good));
+    }
+}
+
+#[test]
+fn receipts_step_the_status_forward_only() {
+    let (mut s, c, m) = store();
+    let line = |s: &Store| s.get(&c).unwrap().lines[0].clone();
+    let shows = |s: &Store| status(s.get(&c).unwrap(), now());
+    assert_eq!(shows(&s), ("Sending…", ""));
+    s.sent(&c, &m, true);
+    assert_eq!(shows(&s), ("Sent", ""));
+    assert!(s.apply_receipt(&receipt(&c, &m, "delivered")));
+    assert_eq!(shows(&s), ("Delivered", ""));
+    assert!(!s.apply_receipt(&receipt(&c, &m, "delivered")), "replay");
+    assert!(s.apply_reply(&reply(&c, &m, "working", "", 1, 1), None).is_none());
+    assert_eq!(shows(&s), ("Delivered", "stop"), "working: Stop still offered");
+    assert!(s.apply_receipt(&receipt(&c, &m, "read")));
+    assert_eq!(shows(&s), ("Read", "stop"));
+    assert!(!s.apply_receipt(&receipt(&c, &m, "delivered")), "late, lower receipt");
+    assert_eq!(line(&s).seen, "read");
+    // unknown chat, message, state or version; and the PC's own line is never mine
+    for v in [receipt("nope", &m, "read"), receipt(&c, "nope", "read"), receipt(&c, &m, "seen"), receipt(&c, &m, ""), json!({"v": 2, "chat": c, "re": m, "state": "read"})] {
+        assert!(!s.apply_receipt(&v), "{v}");
+    }
+    let before = s.clone();
+    assert!(s.apply_reply(&reply(&c, &m, "done", "hi", 1, 1), None).is_some());
+    assert_eq!(shows(&s), ("", ""), "answered: the line goes");
+    assert!(!s.apply_receipt(&receipt(&c, &m, "read")));
+    // survives a restart (the store is the chat file); a file from before receipts still loads
+    let path = std::env::temp_dir().join(format!("callme-receipts-{}.json", std::process::id()));
+    before.save(&path).unwrap();
+    assert_eq!(Store::load(&path).unwrap().get(&c).unwrap().lines[0].seen, "read");
+    std::fs::remove_file(&path).unwrap();
+    let old: Store = serde_json::from_str(r#"{"chats":[{"id":"c1","lines":[{"id":"m1","me":true,"state":"sent"}]}]}"#).unwrap();
+    assert_eq!(status(&old.chats[0], now()), ("Sent", ""));
+}
+
+#[test]
+fn a_receipt_proves_a_failed_send_went() {
+    let (mut s, c, m) = store();
+    s.sent(&c, &m, false);
+    assert_eq!(status(s.get(&c).unwrap(), now()), ("Failed · Tap to retry", "retry"));
+    assert!(s.apply_receipt(&receipt(&c, &m, "delivered")));
+    assert_eq!(status(s.get(&c).unwrap(), now()), ("Delivered", ""));
+    assert_eq!(s.retry(&c), None, "nothing to retry");
+    // a send that never finished shows as failed after a while
+    let (mut s, c, _) = store();
+    s.chats[0].lines[0].since -= 16_000;
+    assert_eq!(status(s.get(&c).unwrap(), now()), ("Failed · Tap to retry", "retry"));
+    // only my latest message carries the line
+    let m2 = s.add_mine(&c, "again", None).unwrap();
+    s.sent(&c, &m2, true);
+    assert_eq!(status(s.get(&c).unwrap(), now()), ("Sent", ""));
+}

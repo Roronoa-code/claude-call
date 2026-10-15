@@ -14,7 +14,8 @@ use std::{
 const MAX_TEXT: usize = 2800;
 const MAX_BODY: usize = 4000;
 
-/// One bubble. Mine: `id` is the message id and `state` how it is going (sending, sent, not_sent, working, answered).
+/// One bubble. Mine: `id` is the message id, `state` how it is going (sending, sent, not_sent, working, answered) and
+/// `seen` the PC's read receipt ("", "delivered", "read").
 /// The PC's: `id` is the message it answers, `state` is done / failed / stopped / missed (partial while parts are
 /// still missing), `parts` the pieces of a long answer by number.
 #[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq)]
@@ -29,6 +30,7 @@ pub struct Line {
     pub parts: Vec<Option<String>>,
     pub media: Vec<Media>, // photos and videos sent with the PC's answer, in part order
     pub choices: Vec<String>, // an agent's question: the answers it offers as buttons
+    pub seen: String,
 }
 
 /// The biggest photo or video the phone fetches (the PC sends up to this; ntfy.sh holds up to 15 MB).
@@ -255,6 +257,16 @@ pub fn note_signed(key: &str, v: &Value) -> bool {
     }
 }
 
+/// Whether a "Chat receipt" really came from the PC: "v1-receipt", the chat, the message and "delivered" / "read",
+/// signed like a reply (its own prefix, so a reply's signature never passes as a receipt's).
+pub fn receipt_signed(key: &str, v: &Value) -> bool {
+    let s = |k: &str| v[k].as_str().unwrap_or("");
+    verify(key, v, &format!("v1-receipt
+{}
+{}
+{}", s("chat"), s("re"), s("state")))
+}
+
 /// "Claude · Haiku", "Codex".
 pub fn name(agent: &str, model: Option<&str>) -> String {
     match (agent, model) {
@@ -403,10 +415,16 @@ pub fn status(c: &Chat, now: i64) -> (&'static str, &'static str) {
     match l.state.as_str() {
         // A photo or video goes up first, which takes longer.
         "sending" if age < if l.media.is_empty() { 15_000 } else { 120_000 } => ("Sending…", ""),
-        "sending" | "not_sent" => ("Not sent · tap to retry", "retry"),
-        "sent" if age > 60_000 => ("PC hasn't picked this up yet", ""),
-        "sent" => ("Sent", ""),
-        "working" => ("Working…", "stop"),
+        "sending" | "not_sent" => ("Failed · Tap to retry", "retry"),
+        "sent" | "working" => {
+            // the PC working on it proves it arrived, even from a PC that sends no receipts
+            let seen = match l.seen.as_str() {
+                "read" => "Read",
+                _ if l.seen == "delivered" || l.state == "working" => "Delivered",
+                _ => "Sent",
+            };
+            (seen, if l.state == "working" { "stop" } else { "" })
+        }
         _ => ("", ""),
     }
 }
@@ -619,6 +637,25 @@ impl Store {
         }
         c.unread += 1;
         Some((c.id.clone(), label(c), shown))
+    }
+
+    /// The PC's read receipt for one of my messages: only ever moves forward (delivered, then read); a receipt for a
+    /// message not here, a lower or unknown one changes nothing. True when it changed something.
+    pub fn apply_receipt(&mut self, v: &Value) -> bool {
+        let rank = |s: &str| ["", "delivered", "read"].iter().position(|r| *r == s);
+        let (Some(chat), Some(re), Some(new)) = (v["chat"].as_str(), v["re"].as_str(), v["state"].as_str().and_then(rank)) else { return false };
+        let Some(l) = self.get_mut(chat).filter(|_| v["v"] == 1).and_then(|c| c.lines.iter_mut().find(|l| l.me && l.id == re)) else {
+            return false;
+        };
+        if new <= rank(&l.seen).unwrap_or(0) {
+            return false;
+        }
+        l.seen = v["state"].as_str().unwrap_or("").into();
+        // the PC has it, so it went, whatever the send thought
+        if matches!(l.state.as_str(), "sending" | "not_sent") {
+            (l.state, l.since) = ("sent".into(), now());
+        }
+        true
     }
 
     /// A thread the PC started ("Chat note"): an agent's question (kind "ask", in its own thread "ask-<id>") or an

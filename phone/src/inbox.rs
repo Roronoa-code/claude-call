@@ -110,6 +110,15 @@ pub fn note_arrived(env: &mut JNIEnv, ctx: &JObject, body: &str) -> Result<()> {
     arrived(env, ctx, body, "note", chats::note_signed, Store::apply_note)
 }
 
+/// The PC's read receipt for one of my messages ("Chat receipt": delivered or read): checked like a reply, then the
+/// status line under my last message moves on. Never notifies.
+pub fn receipt_arrived(env: &mut JNIEnv, ctx: &JObject, body: &str) -> Result<()> {
+    arrived(env, ctx, body, "receipt", chats::receipt_signed, |s, v, _| {
+        s.apply_receipt(v);
+        None
+    })
+}
+
 type Apply = fn(&mut Store, &Value, Option<&str>) -> Option<(String, String, String)>;
 
 /// Checks the PC's signature, files the message, fetches its files and notifies, unless that chat is being looked at.

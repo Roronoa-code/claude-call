@@ -88,6 +88,7 @@ pub fn listen(env: &mut JNIEnv, ctx: &JObject, topic: String, generation: u64) {
             }
             Some("Chat reply") => crate::inbox::reply_arrived(env, ctx, &text),
             Some("Chat note") => crate::inbox::note_arrived(env, ctx, &text),
+            Some("Chat receipt") => crate::inbox::receipt_arrived(env, ctx, &text),
             _ => Ok(()),
         });
         crate::jx::ok(env, |env| crate::settings::set_cursor(env, ctx, at / 1000));
