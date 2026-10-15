@@ -88,22 +88,18 @@ export component ListB inherits Rectangle {
             VerticalLayout {
                 padding-left: 12px;
                 padding-right: 12px;
-                spacing: 6px;
+                // the others (the one standing at the top isn't repeated)
                 for r in Chats.rows: SlideRow {
                     id: r.id;
-                    face-h: 76px;
+                    face-h: r.id == root.h.id ? 0px : 76px;
+                    gap: 6px;
+                    visible: r.id != root.h.id;
                     face-bg: B.row;
                     radius: 22px;
                     margin: 12px;
                     tapped(y) => { Chats.from-y = y; Chats.open-chat(r.id); }
-                    Rectangle {
-                        x: 6px;
-                        y: 4px;
-                        width: 62px;
-                        height: 68px;
-                        Rectangle { x: 6px; y: 56px; width: 50px; height: 10px; border-radius: 5px; background: @radial-gradient(circle, #00000099 0%, #00000000 70%); }
-                        Figure { face: r.face; pose: r.busy ? "think" : "idle"; k: 0.2; }
-                    }
+                    // the character standing in its card, feet on the card's floor line
+                    Figure { x: 6px; y: 0; width: 62px; height: 66px; face: r.face; pose: r.busy ? "think" : "idle"; k: 0.21; }
                     Text {
                         x: 76px;
                         y: 14px;
@@ -199,8 +195,12 @@ export component ThreadB inherits Rectangle {
         animate opacity, y { duration: 320ms; easing: T.out; }
         Rectangle {
             height: 170px;
-            Floor { x: (parent.width - 220px) / 2; y: 120px; width: 220px; height: 60px; }
+            Floor { x: (parent.width - 220px) / 2; y: 130px; width: 220px; height: 52px; }
             Figure {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: 158px;
                 face: Chats.face;
                 k: 0.7;
                 live: Chats.live;
@@ -232,10 +232,11 @@ export component ThreadB inherits Rectangle {
             height: 60px;
             BackButton { }
             Text {
+                property <bool> alone: Chats.title == "" && !Chats.waiting;
                 x: 60px;
-                y: 9px;
+                y: alone ? 0px : 9px;
                 width: parent.width - 120px;
-                height: 22px;
+                height: alone ? 60px : 22px;
                 text: Chats.name;
                 font-size: 17px;
                 font-weight: 650;
@@ -270,8 +271,12 @@ export component ThreadB inherits Rectangle {
         y: field.y + field.height - self.height + 2px;
         width: 76px;
         height: 84px;
-        Floor { x: 4px; y: 64px; width: 68px; height: 20px; }
+        Floor { x: 0; y: 58px; width: 76px; height: 26px; }
         Figure {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: 74px;
             face: Chats.face;
             pose: Chats.waiting ? "think" : "idle";
             k: 0.26;

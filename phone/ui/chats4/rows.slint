@@ -8,6 +8,7 @@ import { Chats, Ink } from "../chat.slint";
 export component SlideRow inherits Rectangle {
     in property <string> id;
     in property <length> face-h: 80px; // the row's height
+    in property <length> gap: 0px; // room under it, before the next
     in property <length> radius: 20px;
     in property <brush> face-bg: Ink.bg;
     in property <length> margin: 8px; // the list's side margin: what shows is clipped to the screen's edges
@@ -33,7 +34,7 @@ export component SlideRow inherits Rectangle {
             Chats.returning = "";
         }
     }
-    height: face-h * hk * enter;
+    height: (face-h + (face-h > 0 ? gap : 0px)) * hk * enter;
     Timer {
         interval: 480ms;
         running: root.away && !root.gone;
