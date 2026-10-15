@@ -102,6 +102,15 @@ pub fn received(env: &mut JNIEnv, ctx: &JObject, m: &str, at: i64) -> Result<()>
     crate::widget::update_all(env, ctx)
 }
 
+/// Whether the home screen's one-time hint (drag Null to change the mode) has played.
+pub fn hinted(env: &mut JNIEnv, ctx: &JObject) -> Result<bool> {
+    Ok(get(env, ctx, "faceHint")?.is_some())
+}
+
+pub fn set_hinted(env: &mut JNIEnv, ctx: &JObject) -> Result<()> {
+    put(env, ctx, &[("faceHint", "1")], &[])
+}
+
 /// What still needs the user's OK, comma-separated ("" = all set).
 pub fn missing(env: &mut JNIEnv, ctx: &JObject) -> Result<String> {
     let mut m = vec![];

@@ -58,6 +58,16 @@ pub enum State {
     Sleep,
 }
 
+/// A look held on top of the state, set by the home screen's mode (alive.rs): a happy face kept without the hop and
+/// raised arms, eyes kept on their work rather than on you, lids partly down while awake, Null's screen taken down.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Hold {
+    pub glad: bool,
+    pub work: Option<(f32, f32)>, // where the eyes rest: gaze x, y
+    pub drowsy: f32,              // lids, 0..1, while awake
+    pub dim: f32,                 // Null's screen: 0 full, 1 dark
+}
+
 /// The uniforms for one frame, by name (each a vec4), ready for glUniform4f.
 pub type Uniforms = Vec<(&'static str, [f32; 4])>;
 
@@ -157,6 +167,9 @@ pub struct Cast {
     droop: Spring,                  // asleep, the antenna flops over; eased so waking lifts it, not flicks it
     head_v: (f32, f32),             // the head's velocity a substep ago, for the antenna's push
     bright: Spring,
+    pub hold: Hold,
+    /// Null's face rolled between two faces by the home screen's mode dial, -0.5..0.5 (negative: up).
+    pub roll: f32,
 }
 
 impl Cast {
@@ -214,6 +227,8 @@ impl Cast {
             droop: Spring::default(),
             head_v: (0.0, 0.0),
             bright: Spring::at(1.0),
+            hold: Hold::default(),
+            roll: 0.0,
         }
     }
 
@@ -262,6 +277,14 @@ impl Cast {
         }
     }
 
+    /// A look held on top of the state; a new one is looked at straight away.
+    pub fn set_hold(&mut self, h: Hold) {
+        if h != self.hold {
+            self.hold = h;
+            self.next_saccade = self.t + 0.05;
+        }
+    }
+
     /// The real voice's loudness, 0..1, while talking (None: made-up syllables).
     pub fn set_voice(&mut self, level: Option<f32>) {
         self.level = level;
@@ -305,6 +328,11 @@ impl Cast {
                 }
                 State::Happy => (self.range(-0.2, 0.2), self.range(0.0, 0.2), self.range(0.4, 1.0)),
                 State::Sleep => (0.0, -0.2, 3.0),
+                State::Idle if self.hold.work.is_some() => {
+                    let (x, y) = self.hold.work.unwrap_or_default();
+                    // now and then a short glance up from it
+                    if self.rand() < 0.92 { (x + self.range(-0.08, 0.08), y + self.range(-0.05, 0.05), self.wait(2.2, 0.8, 4.5)) } else { (x * 0.4 + self.range(-0.2, 0.2), self.range(-0.1, 0.15), self.range(0.3, 0.6)) }
+                }
                 State::Idle if self.attend => {
                     if self.rand() < 0.85 {
                         (self.range(-0.12, 0.12), self.range(-0.1, 0.06), self.wait(1.8, 0.6, 4.0))
@@ -423,7 +451,7 @@ impl Cast {
         let lid_to = match (st, self.asleep_for > 4.0) {
             (State::Sleep, false) => 0.55,
             (State::Sleep, true) => 1.0,
-            _ => 0.0,
+            _ => self.hold.drowsy,
         };
         // the real voice opens the mouth from a whisper's loudness (~0.05) to fully open near 0.6
         let speaking = match self.level {
@@ -460,6 +488,7 @@ impl Cast {
             State::Sleep => (0.06, 0.2),
             State::Talk => (0.0, -0.05 * speaking),
             State::Happy => (0.0, -0.08),
+            State::Idle if self.hold.work.is_some() && gy < -0.6 => (0.0, 0.3), // head down over the laptop
             State::Idle => (0.0, if gy < -0.6 { 0.18 } else { 0.0 }),
         };
         let laptop_to = if happy { 0.2 } else if st == State::Sleep { -0.05 } else { 0.0 };
@@ -491,12 +520,13 @@ impl Cast {
             }
             self.squash.step(squash_to, f.squash.0, f.squash.1, h);
             self.lean.step(self.lean_to + gx * 0.03 + sway, f.lean.0 * 0.6, f.lean.1, h);
-            self.turn.step(gx * 0.22 + 0.04 * (now * 0.21).sin(), 1.3, 0.75, h); // the body turns after the eyes
+            let work = self.hold.work.map_or(0.0, |w| w.0 * 0.3); // turned to their work
+            self.turn.step(gx * 0.22 + work + 0.04 * (now * 0.21).sin(), 1.3, 0.75, h); // the body turns after the eyes
             self.look.0.step(gx, 7.0, 0.92, h); // saccades: fast (about 3 frames at 30 fps), barely overshooting
             self.look.1.step(gy, 7.0, 0.92, h);
             self.open.step(open_to, 18.0, 1.0, h);
             self.lid.step(lid_to, 1.1, 1.0, h);
-            self.happy.step(if happy { 1.0 } else { 0.0 }, 5.0, 0.75, h);
+            self.happy.step(if happy || self.hold.glad { 1.0 } else { 0.0 }, 5.0, 0.75, h);
             self.think.step(if st == State::Think { 1.0 } else { 0.0 }, 3.0, 1.0, h);
             self.talk.step(if st == State::Talk { 1.0 } else { 0.0 }, 3.0, 1.0, h);
             self.voice.step(speaking, 7.5, 0.75, h);
@@ -505,7 +535,9 @@ impl Cast {
             self.arm_to.1.step(arm_r, 1.35, 1.0, h);
             self.arms.0.step(self.arm_to.0.x, f.arms.0, f.arms.1, h);
             self.arms.1.step(self.arm_to.1.x, f.arms.0 * 1.07, f.arms.1, h);
-            self.bright.step(if st == State::Sleep { 0.35 } else { 1.0 }, 0.6, 1.0, h);
+            // the screen fades slowly as he falls asleep, and comes up quicker
+            let (bright_to, hz) = if st == State::Sleep { (0.35, 0.6) } else { (1.0, 1.8) };
+            self.bright.step(bright_to * (1.0 - self.hold.dim), hz, 1.0, h);
             if null {
                 // the head trails the body's lean a little, then nods and tilts with the mood
                 self.head.0.step(head_roll_to - self.lean.x * 0.5, 2.2, 0.55, h);
@@ -527,7 +559,7 @@ impl Cast {
                 self.droop.step(droop_to, 1.2, 1.0, h);
                 self.ant.0.step(1.25 * self.droop.x, 3.2, 0.13, h);
                 self.ant.1.step(0.2 * self.droop.x + 0.08 * self.head.1.x, 2.8, 0.15, h);
-                self.ant.2.step(0.0, 5.0, 0.2, h);
+                self.ant.2.step(if self.hold.drowsy > 0.0 && self.attend && st != State::Sleep { 0.14 } else { 0.0 }, 5.0, 0.2, h); // perked up, on watch
                 self.ant.0.x = self.ant.0.x.clamp(-1.4, 1.4);
                 self.ant.2.x = self.ant.2.x.clamp(-0.25, 0.25);
             }
@@ -538,7 +570,7 @@ impl Cast {
     /// True while anything is still moving beyond breathing and drifting: then draw at the full frame rate.
     pub fn moving(&self) -> bool {
         let springs = [&self.squash, &self.look.0, &self.look.1, &self.open, &self.happy, &self.arms.0, &self.arms.1, &self.ant.0, &self.voice, &self.nod];
-        self.y > 0.0 || self.finger.is_some() || self.state == State::Talk || springs.iter().any(|s| s.v.abs() > 0.05)
+        self.y > 0.0 || self.finger.is_some() || self.state == State::Talk || self.roll != 0.0 || springs.iter().any(|s| s.v.abs() > 0.05)
     }
 
     pub fn uniforms(&self) -> Uniforms {
@@ -552,7 +584,7 @@ impl Cast {
             Who::Null => vec![
                 ("uBody", body),
                 ("uHead", [self.head.0.x, self.head.1.x - breath * 2.0, self.head.2.x, self.laptop.x + lag * 0.2]),
-                ("uAnt", [self.ant.0.x, self.ant.1.x, self.ant.2.x, 0.0]),
+                ("uAnt", [self.ant.0.x, self.ant.1.x, self.ant.2.x, self.roll]),
                 ("uEyes", eyes),
                 ("uMood", [happy, self.think.x.clamp(0.0, 1.0), self.talk.x.clamp(0.0, 1.0), self.t % 120.0]),
                 ("uHands", [self.taps.0.x.clamp(-0.3, 1.2), self.taps.1.x.clamp(-0.3, 1.2), self.voice.x.clamp(0.0, 1.0), self.bright.x]),

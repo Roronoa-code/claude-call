@@ -1,5 +1,5 @@
-//! The home screen: whether calls can reach this phone, how agents may reach you, a test ring, the widget and the
-//! private channel (settings.rs, widget.rs, ring.rs).
+//! The home screen: whether calls can reach this phone, how agents may reach you (dragged on Null's face, alive.rs),
+//! a test ring, the widget and the private channel (settings.rs, widget.rs, ring.rs).
 use crate::{Chats, Home, HomeScreen, Toys, alive, android, cast, faces, jx, live_gl, ring, service, settings, stage};
 use slint::ComponentHandle;
 use std::{
@@ -37,10 +37,9 @@ fn refresh(ui: &HomeScreen, fake: usize, first: bool) {
 pub fn run(_app: android_activity::AndroidApp) {
     let ui = HomeScreen::new().expect("home screen");
     let home = ui.global::<Home>();
-    // PREVIEW (branch preview/home-controls): which home controls show (controls.slint), and `debug.callme.fake` set
-    // keeps mode taps and the Call button on this screen only (nothing stored, published or asked of the PC).
+    // PREVIEW (test emulator): `debug.callme.fake` set keeps mode changes and the Call button on this screen only
+    // (nothing stored, published or asked of the PC), and plays the one-time hint on every start.
     let fake = stage::prop(c"debug.callme.fake", 2);
-    ui.global::<Toys>().set_controls(stage::prop(c"debug.callme.controls", 4) as i32);
     home.on_set_mode({
         let ui = ui.as_weak();
         move |m| {
@@ -106,6 +105,31 @@ pub fn run(_app: android_activity::AndroidApp) {
     ui.global::<Toys>().on_tapped({
         let pair = pair.clone();
         move |who| pair.borrow_mut().hop(who == "codex", start.elapsed().as_secs_f32())
+    });
+    // A drag on Null rolls his face through the modes, a light tick at each; letting go keeps the one he shows.
+    let hint = Rc::new(Cell::new((fake > 0 || android::with(settings::hinted) == Some(false)).then_some(0.0f32)));
+    ui.global::<Toys>().on_roll({
+        let (pair, ui, hint) = (pair.clone(), ui.as_weak(), hint.clone());
+        move |dy, phase| {
+            let Some(ui) = ui.upgrade() else { return };
+            let home = ui.global::<Home>();
+            if phase == 0 {
+                let m = pair.borrow_mut().drag(dy) as i32;
+                if m != home.get_shown() {
+                    if home.get_shown() >= 0 {
+                        android::with(ring::tick);
+                    }
+                    home.set_shown(m);
+                }
+                return;
+            }
+            let m = pair.borrow_mut().release(phase == 1);
+            home.set_shown(-1);
+            home.invoke_set_mode(settings::MODES[m].into());
+            if phase == 1 && hint.get().is_some() {
+                hint.set(Some(-1.0)); // learnt: the hint goes
+            }
+        }
     });
     ui.global::<Toys>().on_point({
         let (pair, ui) = (pair.clone(), ui.as_weak());
@@ -183,10 +207,28 @@ pub fn run(_app: android_activity::AndroidApp) {
             if home.get_kb() != kb {
                 home.set_kb(kb);
             }
-            let asleep = matches!(home.get_mode().as_str(), "none" | "wake" | "sleep");
             let now = start.elapsed().as_secs_f32();
             let mut p = pair.borrow_mut();
-            p.tick(now, asleep);
+            // The one-time hint: a chevron by Null's feet and two small nudges of his face, then never again.
+            if let Some(from) = hint.get() {
+                if from == 0.0 {
+                    if now > 1.5 {
+                        hint.set(Some(now));
+                        home.set_hint(true);
+                    }
+                } else if from > 0.0 && now - from < 8.0 {
+                    p.nudge(now - from - 0.6);
+                    p.nudge(now - from - 2.6);
+                } else {
+                    hint.set(None);
+                    home.set_hint(false);
+                    if fake == 0 {
+                        android::with(settings::set_hinted);
+                    }
+                }
+            }
+            let mode = settings::MODES.iter().position(|m| *m == home.get_mode().as_str()).unwrap_or(2);
+            p.tick(now, mode);
             let mut s = scene.borrow_mut();
             if s.failed && ui.global::<Toys>().get_live() {
                 ui.global::<Toys>().set_live(false); // still pictures instead

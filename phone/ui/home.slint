@@ -1,13 +1,12 @@
-// The home screen ("stage"): Clawd and Null on a soft light in the middle, how agents can reach you as one sliding control,
-// and round buttons along the bottom: Test ring, Widget (its sheet also holds the channel), Chats (the in-app chats
-// with the agents) and Call, which asks the agent picked by tapping Clawd or Null to phone you.
-import { T, Icon, Icons, Morph, Round } from "parts.slint";
-import { Home, Mode, SetupCard } from "home_parts.slint";
+// The home screen ("stage"): Clawd and Null in the spotlight, one line under them naming the contact mode, and a row
+// along the bottom: Chats (the in-app chats with the agents), Call (asks the agent picked by tapping Clawd or Null to
+// phone you) and ••• (Test ring, Widget, and setup while it is unfinished). The mode is changed on Null himself: drag
+// up or down on him and his LED face rolls through the six modes; letting go keeps the one he shows.
+import { T, Icon, Icons, Morph, SwapText } from "parts.slint";
+import { Home, RoundIcon } from "home_parts.slint";
 import { Toys, Clawd, Null } from "toys.slint";
 import { Chats, ChatList, ChatThread, PickRow } from "chat.slint";
 import { StageBack, Look } from "stage.slint";
-import { Ctl, Tuner, Amp } from "controls.slint";
-import { Type, Pucks } from "controls_b.slint";
 
 // A choice in a sheet: icon, title and a line under it.
 component Choice {
@@ -38,85 +37,20 @@ component Choice {
     touch := TouchArea { clicked => { root.clicked(); } }
 }
 
-// A row of contact modes: the white highlight slides to your choice. sel = -1 when the choice is in the other row: the
-// highlight shrinks away where it was, and the other row's grows in just after, so it moves from row to row.
-component ModeRow inherits Rectangle {
-    in property <[Mode]> modes;
-    in property <int> sel;
-    property <int> shown: 0;
-    property <length> w: (self.width - 8px) / modes.length;
-    init => { if (sel >= 0) { shown = sel; } }
-    changed sel => { if (sel >= 0) { shown = sel; } }
-    height: 52px;
-    border-radius: 26px;
-    background: #1a1b1e;
-    Rectangle {
-        x: 4px + root.w * root.shown;
-        y: 4px;
-        width: root.w;
-        height: parent.height - 8px;
-        animate x { duration: 500ms; easing: T.spring; }
-        // 1 = shown; shrinking out is quick, growing in waits for the other row's to have shrunk.
-        property <float> k: root.sel >= 0 ? 1 : 0;
-        animate k { duration: root.sel >= 0 ? 260ms : 160ms; delay: root.sel >= 0 ? 120ms : 0ms; easing: root.sel >= 0 ? T.spring : T.out; }
-        Rectangle {
-            x: parent.width * (1 - parent.k) / 2;
-            y: parent.height * (1 - parent.k) / 2;
-            width: parent.width * parent.k;
-            height: parent.height * parent.k;
-            border-radius: self.height / 2;
-            background: T.fg;
-            opacity: min(1, parent.k * 3);
-        }
-    }
-    for m[i] in root.modes: Rectangle {
-        x: 4px + root.w * i;
-        y: 4px;
-        width: root.w;
-        height: parent.height - 8px;
-        property <bool> on: i == root.sel;
-        HorizontalLayout {
-            alignment: center;
-            spacing: 6px;
-            Icon {
-                d: m.icon;
-                width: 16px;
-                height: 16px;
-                y: (parent.height - 16px) / 2;
-                stroke: on ? #111214 : T.fg2;
-                animate stroke { duration: 200ms; }
-            }
-            Text {
-                text: m.label;
-                font-size: 14px;
-                font-weight: 600;
-                color: on ? #111214 : T.fg2;
-                vertical-alignment: center;
-                animate color { duration: 200ms; }
-            }
-        }
-        TouchArea { clicked => { Home.set-mode(m.id); } }
-    }
-}
-
 export component HomeScreen inherits Window {
     background: Look.bg;
     title: "Claude Call";
     property <string> draft;
-    property <length> row-y: Ctl.v > 0 ? self.height - Home.sab - Ctl.act-h : self.height - Home.sab - 24px - 88px; // the round buttons
-    // PREVIEW (controls.slint): where the Widget and Chats sheets grow from, the centre of each one's button.
-    property <length> widget-x: Ctl.v == 3 ? 108px + 25px : Ctl.v == 4 ? 26px + 62px + 31px : Ctl.v > 0 ? 16px + (self.width - 32px) * 1.5 / 4 : 20px + root.col-w * 1.5;
-    property <length> chats-x: Ctl.v == 3 ? 176px + 21px : Ctl.v == 4 ? 26px + 124px + 31px : Ctl.v > 0 ? 16px + (self.width - 32px) * 2.5 / 4 : 20px + root.col-w * 2.5;
-    property <length> sheet-bottom: Ctl.v > 0 ? self.height - Home.sab - 16px : self.row-y + 88px;
-    property <length> act-y: Ctl.v == 1 ? 30px : Ctl.v == 2 ? 27px : Ctl.v == 3 ? 40px : Ctl.v == 4 ? 25px : 32px;
-    property <length> col-w: (self.width - 40px) / 4;
-    property <length> sheet-x: Ctl.v == 1 || Ctl.v == 4 ? 16px : 20px; // PREVIEW: as wide as the key bar or dock it covers
+    property <length> row-y: self.height - Home.sab - 20px - 56px; // the bottom row
+    property <length> more-x: self.width - 24px - 52px; // the ••• button, where its sheets grow from
+    property <length> sheet-x: 16px;
     property <length> sheet-w: self.width - 2 * self.sheet-x;
-    // PREVIEW (stage.slint): the moon stage has its title and status at the top left; each stage leaves its own room
-    // under the pair, so the status sits clear of the floor they stand on.
-    property <bool> status-top: Toys.stage == 3 && Ctl.v == 0;
-    property <length> top-room: root.status-top ? 104px : 52px;
+    property <length> sheet-bottom: self.row-y + 56px;
+    // each stage leaves its own room under the pair, so the line sits clear of the floor they stand on
     property <length> under: Toys.stage == 1 ? 112px : Toys.stage == 2 ? 74px : Toys.stage == 3 ? 104px : Toys.stage == 4 ? 84px : 28px;
+    // while Null's face rolls, the rest steps back
+    property <float> rest: Home.shown >= 0 ? 0.35 : 1;
+    animate rest { duration: 260ms; easing: T.out; }
 
     // Clawd's eyes follow a finger anywhere on the screen that nothing else takes.
     TouchArea {
@@ -140,38 +74,26 @@ export component HomeScreen inherits Window {
         background: @radial-gradient(circle, #d977572e 0%, #8a5cff14 40%, #11121400 70%);
     }
     Text {
-        x: root.status-top ? 24px : 0px;
         y: Home.sat + 14px;
-        width: parent.width - self.x;
+        width: parent.width;
         text: "Claude Call";
-        font-size: root.status-top ? 15px : 18px;
-        font-weight: root.status-top ? 600 : 700;
-        color: root.status-top ? T.fg2 : T.fg;
-        horizontal-alignment: root.status-top ? left : center;
-    }
-    if root.status-top: Text {
-        x: 24px;
-        y: Home.sat + 40px;
-        width: parent.width - 48px;
-        text: Home.ready ? Home.current.title : "Almost ready";
-        font-size: 30px;
+        font-size: 18px;
         font-weight: 700;
         color: T.fg;
-        horizontal-alignment: left;
+        horizontal-alignment: center;
+        opacity: root.rest;
     }
-    // The stage, centred between the title and the buttons.
+    // The stage, centred between the title and the bottom row.
     stage := VerticalLayout {
         // Out of the way while the keyboard is up (only the channel sheet is in use then).
         opacity: Home.kb > 0 ? 0 : 1;
         animate opacity { duration: 200ms; easing: T.out; }
         x: 20px;
         width: parent.width - 40px;
-        // PREVIEW (controls.slint): with the new controls, two thirds of the spare room goes above, so the controls sit
-        // nearer the thumb
-        y: Home.sat + root.top-room + (root.row-y - Home.sat - root.top-room - self.preferred-height) * (Ctl.v > 0 ? 0.66 : 0.5);
+        y: Home.sat + 52px + (root.row-y - Home.sat - 52px - self.preferred-height) * 0.5;
         height: self.preferred-height;
         // The vinyl Clawd and Null (toys.slint), alive; the one the Call button asks for is lit, the other dimmed.
-        HorizontalLayout {
+        pair := HorizontalLayout {
             alignment: center;
             spacing: 4px * Toys.k;
             clawd := Clawd {
@@ -182,7 +104,7 @@ export component HomeScreen inherits Window {
                 animate opacity { duration: 250ms; easing: T.out; }
                 tapped => { Home.caller = "claude"; Toys.tapped("claude"); }
             }
-            Null {
+            null := Null {
                 width: 96px * Toys.k;
                 height: 172px * Toys.k;
                 opacity: Home.caller == "codex" || Toys.stage > 0 ? 1 : 0.55;
@@ -191,60 +113,88 @@ export component HomeScreen inherits Window {
             }
         }
         Rectangle { height: root.under; }
-        // PREVIEW: the room the controls' block takes (controls.slint draws it there)
-        block := Rectangle { height: Ctl.v > 0 ? Ctl.block-h : 0px; }
-        if !root.status-top && Ctl.v == 0: Text {
-            text: Home.ready ? Home.current.title : "Almost ready";
-            font-size: 26px;
-            font-weight: 700;
+        // The mode, in words: it changes as Null's face rolls.
+        SwapText {
+            height: 34px;
+            text: Home.current.title;
+            font-size: 24px;
+            weight: 600;
             color: T.fg;
-            horizontal-alignment: center;
+            align: center;
         }
-        // Only the setup hint: the modes need no explaining.
-        if !Home.ready && Ctl.v == 0: Rectangle { height: 8px; }
-        if !Home.ready && Ctl.v == 0: Text {
-            text: "A few phone settings first, then they can call.";
-            font-size: 15px;
-            color: T.muted;
-            horizontal-alignment: center;
-            wrap: word-wrap;
+        // Setup, while unfinished: one quiet line (and the first row of the ••• sheet).
+        if !Home.ready: Rectangle {
+            height: 30px;
+            // out of the way of an open sheet, which would cut it off
+            opacity: Home.more || Home.widgets || Home.channel ? 0 : root.rest;
+            animate opacity { duration: 200ms; easing: T.out; }
+            Text {
+                text: "Finish setting up";
+                font-size: 14px;
+                font-weight: 600;
+                color: #e8a33d;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            TouchArea { clicked => { Home.set-up(); } }
         }
-        if !root.status-top && Ctl.v == 0: Rectangle { height: 26px; }
-        // How agents can reach you, and under it the two Sleep modes.
-        if Ctl.v == 0: ModeRow { modes: Home.modes; sel: Home.index < 4 ? Home.index : -1; }
-        if Ctl.v == 0: Rectangle { height: 10px; }
-        if Ctl.v == 0: ModeRow { modes: Home.sleep-modes; sel: Home.index >= 4 ? Home.index - 4 : -1; }
-        if !Home.ready && Ctl.v == 0: Rectangle { height: 20px; }
-        if !Home.ready && Ctl.v == 0: SetupCard { }
     }
-    if Ctl.v == 1: Tuner { width: root.width; height: root.height; block-y: stage.y + block.y; }
-    if Ctl.v == 2: Amp { width: root.width; height: root.height; block-y: stage.y + block.y; }
-    if Ctl.v == 3: Type { width: root.width; height: root.height; block-y: stage.y + block.y; }
-    if Ctl.v == 4: Pucks { width: root.width; height: root.height; block-y: stage.y + block.y; }
+    // The one-time hint by Null's feet: his face rolls up or down.
+    Icon {
+        d: Icons.updown;
+        width: 18px;
+        height: 18px;
+        x: stage.x + pair.x + null.x + (null.width - self.width) / 2;
+        y: stage.y + pair.y + null.y + null.height + 4px + (Home.hint ? 3px * Math.sin(animation-tick() / 1400ms * 360deg) : 0px);
+        stroke: T.fg2;
+        stroke-width: 1.8px;
+        opacity: Home.hint && Home.shown < 0 ? 0.8 : 0;
+        animate opacity { duration: 600ms; easing: T.out; }
+    }
 
-    // The round buttons.
-    if Ctl.v == 0: HorizontalLayout {
-        x: 20px;
+    // The bottom row: Chats, Call, •••.
+    Rectangle {
+        x: 24px;
         y: root.row-y;
-        width: parent.width - 40px;
-        height: 88px;
-        Round { icon: Icons.bell; label: "Test ring"; label-color: T.fg2; clicked => { Home.test-ring(); } }
-        Round { icon: Icons.grid; label: "Widget"; label-color: T.fg2; pressed: Home.widgets || Home.channel; clicked => { Home.widgets = !Home.widgets && !Home.channel; Home.channel = false; Home.editing(false); } }
-        Round {
+        width: parent.width - 48px;
+        height: 56px;
+        opacity: root.rest;
+        RoundIcon {
+            x: 0;
+            y: 2px;
             icon: Icons.chat;
-            label: "Chats";
-            label-color: T.fg2;
-            pressed: Chats.open;
             dot: Chats.unread;
-            clicked => { Home.widgets = false; Home.channel = false; Home.editing(false); Chats.open = true; }
+            clicked => { Home.widgets = false; Home.channel = false; Home.more = false; Home.editing(false); Chats.open = true; }
         }
         // Asks Claude (or Codex, if Null is picked) to call you; it rings within a minute or so.
-        Round {
-            icon: Icons.phone;
-            label: Home.requested ? "Calling you…" : Home.caller == "codex" ? "Call Codex" : "Call Claude";
-            label-color: T.fg2;
-            pressed: Home.requested;
-            clicked => { if (!Home.requested) { Home.call(Home.caller); } }
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            width: min(208px, parent.width - 2 * 52px - 24px);
+            border-radius: self.height / 2;
+            background: Home.requested ? T.btn : call.pressed ? #c4664a : T.accent;
+            animate background { duration: 250ms; easing: T.out; }
+            transform-origin: { x: self.width / 2, y: self.height / 2 };
+            transform-scale: call.pressed && !Home.requested ? 0.96 : 1;
+            animate transform-scale { duration: 160ms; easing: T.out; }
+            SwapText {
+                x: 0;
+                width: parent.width;
+                height: parent.height;
+                text: Home.requested ? "Calling you…" : Home.caller == "codex" ? "Call Codex" : "Call Claude";
+                font-size: 16px;
+                weight: 600;
+                color: Home.requested ? T.fg2 : #ffffff;
+                align: center;
+            }
+            call := TouchArea { clicked => { if (!Home.requested) { Home.call(Home.caller); } } }
+        }
+        RoundIcon {
+            x: parent.width - self.width;
+            y: 2px;
+            icon: Icons.more;
+            dot: !Home.ready;
+            dot-color: #e8a33d;
+            clicked => { Home.widgets = false; Home.channel = false; Home.editing(false); Home.more = !Home.more; }
         }
     }
 
@@ -262,7 +212,8 @@ export component HomeScreen inherits Window {
             if (e.text == Key.Back && Chats.back()) {
                 return accept;
             }
-            if (e.text == Key.Back && (Home.widgets || Home.channel)) {
+            if (e.text == Key.Back && (Home.widgets || Home.channel || Home.more)) {
+                Home.more = false;
                 Home.widgets = false;
                 Home.channel = false;
                 Home.editing(false);
@@ -273,19 +224,41 @@ export component HomeScreen inherits Window {
     }
 
     // A tap outside an open sheet closes it.
-    if Home.widgets || Home.channel: TouchArea {
-        clicked => { Home.widgets = false; Home.channel = false; Home.editing(false); }
+    if Home.widgets || Home.channel || Home.more: TouchArea {
+        clicked => { Home.more = false; Home.widgets = false; Home.channel = false; Home.editing(false); }
+    }
+
+    // The ••• sheet: setup (while unfinished), Test ring and Widget.
+    Morph {
+        open: Home.more;
+        panel: #1c1d21;
+        fx: root.more-x;
+        fy: root.row-y + 2px;
+        fsize: 52px;
+        tx: root.sheet-x;
+        tw: root.sheet-w;
+        th: Home.ready ? 170px : 244px;
+        ty: root.sheet-bottom - self.th;
+        face: Icons.more;
+        VerticalLayout {
+            padding: 16px;
+            spacing: 10px;
+            if !Home.ready: Choice { icon: Icons.check; title: "Finish setting up"; desc: Home.missing; clicked => { Home.more = false; Home.set-up(); } }
+            Choice { icon: Icons.bell; title: "Test ring"; desc: "Rings like a real call, to check the sound."; clicked => { Home.more = false; Home.test-ring(); } }
+            Choice { icon: Icons.grid; title: "Widget"; desc: "The mode on your home screen, and the channel."; clicked => { Home.more = false; Home.widgets = true; } }
+        }
     }
 
     Morph {
         open: Home.widgets;
         panel: #1c1d21;
-        fx: root.widget-x - 32px;
-        fy: root.row-y + root.act-y - 32px;
+        fx: root.more-x;
+        fy: root.row-y + 2px;
+        fsize: 52px;
         tx: root.sheet-x;
         tw: root.sheet-w;
-        th: Home.can-pin ? 244px : 96px; // three (or one) rows, clear of the mode control
-        ty: root.sheet-bottom - self.th; // over the buttons, clear of the mode control
+        th: Home.can-pin ? 244px : 96px; // three (or one) rows
+        ty: root.sheet-bottom - self.th; // over the bottom row
         face: Icons.grid;
         VerticalLayout {
             padding: 16px;
@@ -304,12 +277,13 @@ export component HomeScreen inherits Window {
     Morph {
         open: Home.channel;
         panel: #1c1d21;
-        fx: root.widget-x - 32px; // opened from the Widget sheet
-        fy: root.row-y + root.act-y - 32px;
+        fx: root.more-x; // opened from the Widget sheet
+        fy: root.row-y + 2px;
+        fsize: 52px;
         tx: root.sheet-x;
         tw: root.sheet-w;
         th: 196px;
-        // Over the buttons; above the keyboard while typing.
+        // Over the bottom row; above the keyboard while typing.
         ty: min(root.sheet-bottom - self.th, root.height - Home.kb - self.th - 12px);
         face: Icons.hash;
         VerticalLayout {
@@ -368,8 +342,9 @@ export component HomeScreen inherits Window {
     Morph {
         open: Chats.open;
         panel: #1c1d21;
-        fx: root.chats-x - 32px;
-        fy: root.row-y + root.act-y - 32px;
+        fx: 24px;
+        fy: root.row-y + 2px;
+        fsize: 52px;
         tx: 0px;
         ty: 0px;
         tw: root.width;

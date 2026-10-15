@@ -7,7 +7,7 @@ precision highp float;
 uniform vec2 uRes;
 uniform vec4 uBody;  // height scale (squash), lift, lean, turn
 uniform vec4 uHead;  // roll, nod, turn (on top of the body's), laptop lift
-uniform vec4 uAnt;   // antenna bend sideways, bend forwards, stretch, -
+uniform vec4 uAnt;   // antenna bend sideways, bend forwards, stretch; the face rolled between two faces (-0.5..0.5, home's mode dial)
 uniform vec4 uEyes;  // look x, look y, open (blink), sleepy
 uniform vec4 uMood;  // happy, think (dots), talk (wave), time in seconds (wrapped at 120)
 uniform vec4 uHands; // tap left, tap right (typing), voice level, screen brightness
@@ -285,7 +285,9 @@ vec3 screenCol(vec3 h, vec3 n, vec3 v, float occ, float foot) {
     float ndv = max(dot(n, v), 0.0);
     float fr = 0.04 + 0.96 * pow(1.0 - ndv, 5.0);
     vec3 col = vec3(0.0012) + fr * studio(reflect(-v, n)) * 0.6 * occ;
-    vec2 dg = glyphs(h.xy);
+    // the mode dial: the face rolls up or down with the finger, and dims as it passes into the next face
+    vec2 dg = glyphs(h.xy + vec2(0.0, uAnt.w * 0.55));
+    float rolled = 1.0 - 0.85 * smoothstep(0.12, 0.5, abs(uAnt.w));
     float d = dg.x;
     float aa = foot * 1.2;
     float core = smoothstep(aa, -aa, d);
@@ -296,7 +298,7 @@ vec3 screenCol(vec3 h, vec3 n, vec3 v, float occ, float foot) {
     float wide = exp(-length(c - vec2(0.2, 0.0)) / 0.1) + exp(-length(c + vec2(0.2, 0.0)) / 0.1);
     float glow = min(dg.y, 1.5) * 0.45 + wide * 0.02;
     vec3 red = vec3(1.0, 0.09, 0.03);
-    col += (red * (core + glow) + vec3(1.0, 0.45, 0.3) * hot * 0.6) * uHands.w;
+    col += (red * (core + glow) + vec3(1.0, 0.45, 0.3) * hot * 0.6) * uHands.w * rolled;
     return col * (1.0 - 0.6 * smoothstep(0.3, 0.5, max(abs(h.x) - SCREEN.x + 0.45, abs(h.y) - SCREEN.y + 0.45))); // darker in the corners
 }
 

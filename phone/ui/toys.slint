@@ -15,8 +15,9 @@ export global Toys {
     in property <float> k: 1;
     in property <length> clawd-below;
     in property <length> null-below;
-    // PREVIEW (branch preview/home-controls, controls.slint): which home controls show (0: as shipped).
-    in property <int> controls;
+    // A vertical drag on Null rolls his face through the modes: how far from where it began, and its phase (0 moving,
+    // 1 the finger lifts, 2 cancelled).
+    callback roll(length, int);
     // How far right Null's middle stands from Clawd's (home.slint: Clawd's 230 px, a 4 px gap, half Null's 96 px).
     out property <length> null-dx: (230px / 2 + 4px + 96px / 2) * k;
 }
@@ -73,9 +74,13 @@ export component Clawd inherits Rectangle {
     }
 }
 
-// Null: the same, standing on the same floor line to Clawd's right.
+// Null: the same, standing on the same floor line to Clawd's right. A tap picks him; a vertical drag on him rolls his
+// face through the modes (a press that moves more than a fingertip is never a tap).
 export component Null inherits Rectangle {
     callback tapped;
+    property <bool> moved-off; // this press went further than a tap
+    property <bool> rolling; // ...upwards or downwards: it is rolling his face
+    property <length> from-y; // where the roll began (past the fingertip's slack, so the face doesn't jump)
     if !Toys.live: Sprite {
         width: root.width;
         height: root.height;
@@ -96,8 +101,37 @@ export component Null inherits Rectangle {
         function point(down: bool) {
             Toys.point(self.mouse-x - self.width / 2 + Toys.null-dx, self.mouse-y - self.height * 0.4, down);
         }
-        pointer-event(e) => { self.point(e.kind == PointerEventKind.down || e.kind == PointerEventKind.move); }
-        moved => { self.point(true); }
-        clicked => { root.tapped(); }
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                root.moved-off = false;
+                root.rolling = false;
+            }
+            self.point(e.kind == PointerEventKind.down || e.kind == PointerEventKind.move);
+            if (root.rolling && e.kind == PointerEventKind.up) {
+                Toys.roll(self.mouse-y - root.from-y, 1);
+            }
+            if (root.rolling && e.kind == PointerEventKind.cancel) {
+                root.rolling = false;
+                Toys.roll(0, 2);
+            }
+        }
+        moved => {
+            self.point(true);
+            let dx = self.mouse-x - self.pressed-x;
+            let dy = self.mouse-y - self.pressed-y;
+            if (!root.moved-off && (abs(dx) > 10px || abs(dy) > 10px)) {
+                root.moved-off = true;
+                root.rolling = abs(dy) > abs(dx);
+                root.from-y = self.mouse-y;
+            }
+            if (root.rolling) {
+                Toys.roll(self.mouse-y - root.from-y, 0);
+            }
+        }
+        clicked => {
+            if (!root.moved-off) {
+                root.tapped();
+            }
+        }
     }
 }

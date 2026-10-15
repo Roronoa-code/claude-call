@@ -158,6 +158,14 @@ pub fn ring(env: &mut JNIEnv, ctx: &JObject, link: &str, reason: &str) -> Result
     Ok(())
 }
 
+/// A light haptic tick (one per face as Null's face rolls through the modes on the home screen).
+pub fn tick(env: &mut JNIEnv, ctx: &JObject) -> Result<()> {
+    let vib = service(env, ctx, "vibrator")?;
+    let effect = env.call_static_method("android/os/VibrationEffect", "createPredefined", "(I)Landroid/os/VibrationEffect;", &[JValue::Int(2)])?.l()?; // EFFECT_TICK
+    env.call_method(&vib, "vibrate", "(Landroid/os/VibrationEffect;)V", &[JValue::Object(&effect)])?;
+    Ok(())
+}
+
 /// Stops ringing for `link` only: ending or touching one call must not silence another one that is ringing.
 /// An answered or declined call is remembered so its re-rings stay quiet.
 pub fn stop(env: &mut JNIEnv, ctx: &JObject, link: &str, handled: bool) -> Result<()> {

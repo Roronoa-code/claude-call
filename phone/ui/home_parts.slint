@@ -1,7 +1,7 @@
-// The home screen's state (set from Rust), the contact modes and the setup card.
-import { T, Icons } from "parts.slint";
+// The home screen's state (set from Rust), the contact modes and the bottom row's round buttons.
+import { T, Icon } from "parts.slint";
 
-export struct Mode { id: string, label: string, icon: string, title: string, desc: string }
+export struct Mode { id: string, title: string }
 
 export global Home {
     in property <bool> ready: true;
@@ -23,49 +23,39 @@ export global Home {
     callback pin(bool);
     callback save-topic(string);
     callback editing(bool);
+    in-out property <bool> more; // the ••• sheet is open
+    in property <int> shown: -1; // while Null is dragged: the mode his face shows (an index into modes), else -1
+    in property <bool> hint; // the one-time hint that Null can be dragged
+    // In the order Null's face rolls through them (settings.rs MODES), dragging up towards Calls only.
     out property <[Mode]> modes: [
-        { id: "call", label: "Calls", icon: Icons.phone, title: "Ready when they call", desc: "Calls only. No Discord messages." },
-        { id: "text", label: "Texts", icon: Icons.chat, title: "Messages only", desc: "They message you on Discord. No calls." },
-        { id: "both", label: "Both", icon: Icons.both, title: "Ready when they call", desc: "Calls and Discord messages." },
-        { id: "none", label: "Quiet", icon: Icons.moon, title: "Quiet for now", desc: "They keep working and save their questions." },
-    ];
-    // The two Sleep modes, in their own row under the four.
-    out property <[Mode]> sleep-modes: [
-        { id: "wake", label: "Wake me", icon: Icons.bell, title: "Asleep, wake me", desc: "Calls keep ringing, like an alarm, until you pick up." },
-        { id: "sleep", label: "Sleep", icon: Icons.zzz, title: "Asleep", desc: "No calls or texts. They decide for themselves and keep working." },
+        { id: "call", title: "Calls only" },
+        { id: "text", title: "Messages only" },
+        { id: "both", title: "Calls and messages" },
+        { id: "none", title: "Quiet for now" },
+        { id: "wake", title: "Asleep, wake me" },
+        { id: "sleep", title: "Asleep" },
     ];
     out property <int> index: mode == "call" ? 0 : mode == "text" ? 1 : mode == "both" ? 2 : mode == "none" ? 3 : mode == "wake" ? 4 : 5;
-    out property <Mode> current: index < 4 ? modes[index] : sleep-modes[index - 4];
+    out property <Mode> current: modes[shown >= 0 ? shown : index];
 }
 
-// The finish-setup card, only while something is missing.
-export component SetupCard {
-    height: 92px;
+// A round button for the home screen's bottom row, with an optional dot (something new, or setup to finish).
+export component RoundIcon {
+    in property <string> icon;
+    in property <bool> dot;
+    in property <color> dot-color: T.accent;
+    callback clicked;
+    width: 52px;
+    height: 52px;
     Rectangle {
-        border-radius: 20px;
-        background: #e8a33d14;
-        border-width: 1px;
-        border-color: #e8a33d55;
+        border-radius: self.height / 2;
+        background: touch.pressed ? #34363c : T.btn;
+        transform-origin: { x: self.width / 2, y: self.height / 2 };
+        transform-scale: touch.pressed ? 0.93 : 1;
+        animate background { duration: 200ms; easing: T.out; }
+        animate transform-scale { duration: 160ms; easing: T.out; }
+        Icon { d: root.icon; }
+        if root.dot: Rectangle { x: parent.width - 17px; y: 6px; width: 10px; height: 10px; border-radius: 5px; background: root.dot-color; }
     }
-    HorizontalLayout {
-        padding: 16px;
-        spacing: 14px;
-        VerticalLayout {
-            alignment: center;
-            spacing: 4px;
-            Text { text: "Finish setting up"; font-size: 16px; font-weight: 600; color: T.fg; }
-            Text { text: Home.missing; font-size: 13px; color: T.muted; wrap: word-wrap; }
-        }
-        Rectangle {
-            width: 84px;
-            Rectangle {
-                y: (parent.height - 40px) / 2;
-                height: 40px;
-                border-radius: 20px;
-                background: touch.pressed ? #c4664a : T.accent;
-                Text { text: "Set up"; font-size: 15px; font-weight: 600; color: white; }
-                touch := TouchArea { clicked => { Home.set-up(); } }
-            }
-        }
-    }
+    touch := TouchArea { clicked => { root.clicked(); } }
 }
