@@ -23,10 +23,12 @@ mod settings;
 mod shell;
 #[cfg(target_os = "android")]
 mod widget;
+mod alive;
 mod antics;
 mod chats;
 mod mascot;
 mod null;
+mod toys;
 mod view;
 
 slint::include_modules!();

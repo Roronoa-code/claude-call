@@ -1,0 +1,122 @@
+// The vinyl Clawd and Null on the home screen. Rust (toys.rs) picks each toy's pose and sets its squash, lift and
+// lean in timed steps; here they spring between those values, crossfade between pose frames, and breathe.
+
+export global Toys {
+    in property <int> clawd-pose;
+    in property <float> clawd-squash: 1;
+    in property <length> clawd-lift;
+    in property <angle> clawd-lean;
+    in property <int> null-pose;
+    in property <float> null-squash: 1;
+    in property <length> null-lift;
+    in property <angle> null-lean;
+    in property <bool> asleep;
+    callback tapped(string); // "claude" or "codex"
+    // The live 3D Clawd (alive.rs draws this texture every frame); false shows his sprites instead, to compare.
+    in property <image> clawd-live;
+    in-out property <bool> live: true;
+    // The finger, from Clawd's eyes; down false when it lifts. He watches it.
+    callback point(length, length, bool);
+    // Frame order matches toys.rs.
+    out property <[image]> clawd-frames: [
+        @image-url("toys/clawd-idle.png"), @image-url("toys/clawd-blink.png"), @image-url("toys/clawd-look-left.png"),
+        @image-url("toys/clawd-look-right.png"), @image-url("toys/clawd-listen.png"), @image-url("toys/clawd-think.png"),
+        @image-url("toys/clawd-talk.png"), @image-url("toys/clawd-happy.png"), @image-url("toys/clawd-sleep.png"),
+    ];
+    out property <[image]> null-frames: [
+        @image-url("toys/null-idle.png"), @image-url("toys/null-blink.png"), @image-url("toys/null-think.png"),
+        @image-url("toys/null-happy.png"), @image-url("toys/null-sleep.png"), @image-url("toys/null-talk.png"),
+    ];
+}
+
+// One toy. Frames swap instantly, like sprite animation (a crossfade showed two sets of eyes and arms at once); the
+// squash, lift and lean spring around each swap so it reads as movement. They pivot on the feet, like a toy on a table.
+export component Toy inherits Rectangle {
+    in property <[image]> frames;
+    in property <int> pose;
+    in property <float> squash: 1;
+    in property <length> lift;
+    in property <angle> lean;
+    in property <float> feet: 0.98; // the feet, as a fraction of the height
+    in property <duration> breath: 3200ms;
+    in property <float> breath-amount: 0.018;
+    in property <length> hover; // a gentle bob (Null)
+    callback tapped;
+
+    property <float> sq: squash;
+    animate sq { duration: 170ms; easing: cubic-bezier(0.34, 1.56, 0.64, 1); }
+    property <length> up: lift;
+    animate up { duration: 190ms; easing: cubic-bezier(0.34, 1.4, 0.64, 1); }
+    property <angle> tilt: lean;
+    animate tilt { duration: 420ms; easing: cubic-bezier(0.34, 1.3, 0.64, 1); }
+    property <float> wave: Math.sin(animation-tick() / root.breath * 360deg);
+    property <float> sy: sq * (1 + breath-amount * wave);
+    property <float> sx: 1 + (1 - sq) * 0.7 - breath-amount * 0.5 * wave;
+    property <length> bob: hover * Math.sin(animation-tick() / 2600ms * 360deg);
+
+    // The soft contact shadow: wider when squashed, smaller and fainter as the toy leaves the ground.
+    Rectangle {
+        property <float> away: Math.min(1, (root.up + root.bob) / 60px);
+        width: root.width * 0.62 * root.sx * (1 - away * 0.4);
+        height: 18px;
+        x: (root.width - self.width) / 2;
+        y: root.height * root.feet - 9px;
+        border-radius: 9px;
+        background: @radial-gradient(circle, #000000b0 0%, #00000000 70%);
+        opacity: 1 - away * 0.6;
+    }
+    Image {
+        source: root.frames[root.pose];
+        width: root.width;
+        height: root.height;
+        y: -root.up - root.bob;
+        image-fit: contain;
+        transform-origin: { x: self.width / 2, y: self.height * root.feet };
+        transform-scale-x: root.sx;
+        transform-scale-y: root.sy;
+        transform-rotation: root.tilt;
+    }
+    TouchArea { clicked => { root.tapped(); } }
+}
+
+// Clawd: alive in 3D, or his sprites while live is off. A tap hops him, a long press swaps the two for comparing, and
+// he watches a finger dragged over him. The live image is larger than his place, so a hop and raised arms fit; its
+// floor line sits where the sprite's feet do.
+export component Clawd inherits Rectangle {
+    callback tapped;
+    Toy {
+        visible: !Toys.live;
+        width: root.width;
+        height: root.height;
+        frames: Toys.clawd-frames;
+        pose: Toys.clawd-pose;
+        squash: Toys.clawd-squash;
+        lift: Toys.clawd-lift;
+        lean: Toys.clawd-lean;
+        feet: 0.967;
+        breath: Toys.asleep ? 5200ms : 3200ms;
+        breath-amount: Toys.asleep ? 0.028 : 0.016;
+    }
+    if Toys.live: Image {
+        source: Toys.clawd-live;
+        width: 300px; // alive.rs W and H
+        height: 250px;
+        x: (root.width - self.width) / 2;
+        y: root.height * 0.967 - self.height * 0.858;
+        image-fit: fill;
+    }
+    touch := TouchArea {
+        property <bool> held; // a long press swapped live and sprites: no hop as it lifts
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) { self.held = false; }
+            Toys.point(self.mouse-x - self.width / 2, self.mouse-y - self.height * 0.4, e.kind == PointerEventKind.down || e.kind == PointerEventKind.move);
+        }
+        moved => { Toys.point(self.mouse-x - self.width / 2, self.mouse-y - self.height * 0.4, true); }
+        clicked => { if (!self.held) { root.tapped(); } }
+    }
+    Timer {
+        interval: 650ms;
+        running: touch.pressed && !touch.held;
+        triggered => { touch.held = true; Toys.live = !Toys.live; }
+    }
+}

@@ -8,6 +8,7 @@ description = "The Claude Call screen and call audio for Android, drawn natively
 crate-type = ["cdylib"]
 
 [dependencies]
+glow = "0.18" # the live Clawd draws on Slint's own GL context (alive.rs)
 android-activity = { version = "0.6", features = ["native-activity"] }
 jni = "0.21"
 ndk = { version = "0.9", features = ["audio", "nativewindow", "api-level-28"] }
