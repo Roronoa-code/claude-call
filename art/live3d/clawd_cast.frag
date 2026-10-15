@@ -23,6 +23,7 @@ out vec4 outColor;
 #endif
 
 const float FL = 5.0; // lens: a long one, like a product shot
+const float BELLY = 0.75; // how strongly the floor under him mirrors his belly (of the floor's reflection strength)
 
 // Each material's proportions, from its reference art; set once at the start of main.
 int MAT;
@@ -194,6 +195,9 @@ vec3 studio(vec3 r) {
 }
 vec3 softClip(vec3 c) { return mix(c, 0.82 + 0.18 * (1.0 - exp(-(c - 0.82) / 0.18)), step(0.82, c)); } // no blown highlights
 
+float REFL = 0.0; // 1 while shading what the glossy floor mirrors
+float LOW = 0.0;  // how near the floor the point being lit is (1 at the floor, 0 from about his middle up)
+
 vec3 light(vec3 n, vec3 v, vec3 alb, float gloss, float occ) {
     vec3 l1 = KEY; // key: top left, in front (or the stage's)
     vec3 l2 = normalize(vec3(0.80, 0.30, 0.50));  // fill
@@ -206,13 +210,17 @@ vec3 light(vec3 n, vec3 v, vec3 alb, float gloss, float occ) {
     col += alb * max(dot(n, l2), 0.0) * 0.22;
     col += alb * (0.10 + 0.08 * n.y) * AMB;
     col += alb * KEYC * uShadow.w * max(-n.y, 0.0); // the stage's lit floor, from below
+    // ...and it lights his underside most, close above it: warm, so the floor's mirror of his belly isn't a black slab
+    col += alb * KEYC * uShadow.w * 2.0 * max(-n.y, 0.0) * LOW;
     col *= occ;
+    // the floor's mirror is soft: no crisp glints or bright fresnel rims in it (they drew a hard edge under him)
+    gloss *= 1.0 - 0.85 * REFL;
     float ndv = max(dot(n, v), 0.0);
     float fr = 0.04 + 0.96 * pow(1.0 - ndv, 5.0);
     vec3 h1 = normalize(l1 + v), h4 = normalize(l4 + v);
     float s = pow(max(dot(n, h1), 0.0), 60.0) * 0.9 + pow(max(dot(n, h4), 0.0), 120.0) * 0.45 + pow(max(dot(n, h1), 0.0), 20.0) * 0.35;
     col += vec3(1.0, 0.96, 0.92) * KEYC * s * gloss * mix(0.6, 1.0, occ);
-    col += vec3(0.55, 0.42, 1.0) * fr * 0.7 * RIM * smoothstep(0.0, 0.7, dot(n, l3)) * occ;
+    col += vec3(0.55, 0.42, 1.0) * fr * 0.7 * RIM * smoothstep(0.0, 0.7, dot(n, l3)) * occ * (1.0 - 0.85 * REFL);
     col += fr * env(reflect(-v, n)) * gloss * occ;
     return col;
 }
@@ -339,6 +347,7 @@ vec3 shade(vec3 p, vec3 rd, float foot, out float ink) {
     vec3 q = local(p);
     vec3 c = q - vec3(0.0, BODY_Y, 0.0);
     float occ = occlusion(p, n);
+    LOW = 1.0 - smoothstep(0.2, BODY_Y, p.y);
     vec4 g = parts(q);
     float isBody = step(g.x, min(min(g.y, g.z), g.w) + 0.02);
     float isLeg = step(min(g.y, g.z), min(g.x, g.w));
@@ -628,7 +637,24 @@ void main() {
             ra = clamp(1.0 - best / blur, 0.0, 1.0) * uStage.x * exp(-p.y * uStage.w);
             ra *= edge;
             float ink2;
+            REFL = 1.0;
             if (ra > 0.0) rcol = shade(p, r, pix * (tf + tBest), ink2);
+        }
+        // Under his body the mirrored ray mostly slips out under his belly and sees nothing, which left the floor's
+        // shadow there a dark slab, cut off by the hard mirrored edge of his front. A glossy floor blurs what is close
+        // above it, so there it shows his belly instead: its warm, floor-lit underside (the vinyl's, deeper underneath,
+        // as shade() has it), softly over his footprint.
+        vec3 lf = local(f);
+        vec2 fq = pow(abs(lf.xz) / BODY.xz, vec2(4.0));
+        float fp = 1.0 - smoothstep(0.45, 0.95 + 0.5 * uBody.y, pow(fq.x + fq.y, 0.25)); // a rounded box, blurring as he hops
+        float rv = fp * uStage.x * BELLY * edge * (1.0 - ra / uStage.x) / (1.0 + 3.0 * uBody.y);
+        if ((tf < tHit || cover < 1.0) && rv > 0.002) {
+            // seen from straight below, lit only by the floor: an even colour, so no rim or edge can show in it
+            LOW = 1.0;
+            rv *= exp(-(uBody.y + (BODY_Y - BODY.y) * uBody.x) * uStage.w * 0.5); // fainter the higher he is
+            vec3 bcol = light(vec3(0.0, -1.0, 0.0), vec3(0.0, -1.0, 0.0), vec3(0.95, 0.2, 0.011) * 0.62 * 0.6, 0.0, 1.0);
+            rcol = (rcol * ra + bcol * rv) / max(ra + rv, 1e-4);
+            ra += rv;
         }
     }
     // floor shadow, then the reflection, then him

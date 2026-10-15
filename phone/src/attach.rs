@@ -136,6 +136,11 @@ pub fn take() -> Option<Media> {
     Some(m)
 }
 
+/// Whether the file at `path` is what is picked to send (a deleted chat's file it shares must stay).
+pub fn holds(path: &str) -> bool {
+    matches!(&*PICK.lock().unwrap(), Pick::Ready(m) if m.path == path)
+}
+
 /// The chip above the field.
 pub fn show(ui: &HomeScreen) {
     let c = ui.global::<Chats>();

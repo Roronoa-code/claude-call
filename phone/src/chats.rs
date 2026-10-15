@@ -477,6 +477,31 @@ impl Store {
         }
     }
 
+    /// Takes a chat out (the PC's late replies to it then find nothing and are dropped); returns its place and the
+    /// chat, for Undo.
+    pub fn remove(&mut self, chat: &str) -> Option<(usize, Chat)> {
+        let i = self.chats.iter().position(|c| c.id == chat)?;
+        Some((i, self.chats.remove(i)))
+    }
+
+    /// Undo: the removed chat back where it was, exactly as it was.
+    pub fn restore(&mut self, at: usize, chat: Chat) {
+        if self.get(&chat.id).is_none() {
+            self.chats.insert(at.min(self.chats.len()), chat);
+        }
+    }
+
+    /// A removed chat's saved files that no chat left uses, by file name (they all live in one folder, named by their
+    /// sha256, so the same file sent twice is shared).
+    pub fn unused_files(&self, gone: &Chat) -> Vec<String> {
+        let file = |m: &Media| Path::new(&m.path).file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+        let used: std::collections::HashSet<String> = self.chats.iter().flat_map(|c| &c.lines).flat_map(|l| &l.media).map(file).collect();
+        let mut out: Vec<String> = gone.lines.iter().flat_map(|l| &l.media).map(file).filter(|f| !f.is_empty() && !used.contains(f)).collect();
+        out.sort();
+        out.dedup();
+        out
+    }
+
     pub fn mark_read(&mut self, chat: &str) {
         if let Some(c) = self.get_mut(chat) {
             c.unread = 0;
@@ -717,6 +742,34 @@ mod tests {
         assert_eq!(k(blocks("2024. was a year")), vec![("p", s("2024. was a year"), s(""), 0)]);
         assert!(blocks("").is_empty() && blocks("```\n```")[0].text.is_empty());
         assert_eq!(inline("Vec<u8> and `Vec<u8>` and a<b"), "Vec&lt;u8> and `Vec<u8>` and a&lt;b");
+    }
+
+    #[test]
+    fn delete_undo_and_late_reply() {
+        let (mut s, c, m) = store();
+        let pic = |path: &str| Media { path: path.into(), state: "ready".into(), ..Media::default() };
+        s.get_mut(&c).unwrap().lines[0].media = vec![pic("/m/shared.jpg"), pic("/m/only.jpg")];
+        let other = s.new_chat("codex", None);
+        let m2 = s.add_mine(&other, "hi", Some(pic("/other/spelling/shared.jpg"))).unwrap();
+        s.apply_reply(&reply(&c, &m, "working", "", 1, 1), None);
+        let before = s.clone();
+
+        let (at, gone) = s.remove(&c).unwrap();
+        assert_eq!((at, s.chats.len(), s.get(&c)), (0, 1, None));
+        assert_eq!(s.unused_files(&gone), vec!["only.jpg".to_string()], "a file the other chat uses stays");
+        assert!(s.remove(&c).is_none());
+        // the PC answers the deleted (busy) chat late: dropped, nothing comes back
+        assert!(s.apply_reply(&reply(&c, &m, "done", "late", 1, 1), None).is_none());
+        assert!(s.apply_reply(&reply(&c, &m, "working", "", 1, 1), None).is_none());
+        assert!(s.get(&c).is_none() && s.chats.len() == 1);
+
+        s.restore(at, gone.clone());
+        assert_eq!(s, before, "undo puts it back exactly, in its place");
+        s.restore(at, gone);
+        assert_eq!(s.chats.len(), 2, "never twice");
+        // once back, its replies land again
+        assert!(s.apply_reply(&reply(&c, &m, "done", "back", 1, 1), None).is_some());
+        assert!(s.apply_reply(&reply(&other, &m2, "done", "ok", 1, 1), None).is_some());
     }
 
     #[test]

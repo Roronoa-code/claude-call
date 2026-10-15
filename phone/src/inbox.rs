@@ -37,12 +37,20 @@ static LOCK: Mutex<()> = Mutex::new(());
 static HOME: Mutex<Option<GlobalRef>> = Mutex::new(None);
 /// Photo and video links being fetched right now, so each is fetched once.
 static FETCHING: Mutex<Vec<String>> = Mutex::new(Vec::new());
+/// The chat deleted last, with its place in the store, while "Chat deleted · Undo" can still bring it back.
+static DELETED: Mutex<Option<(usize, chats::Chat)>> = Mutex::new(None);
+/// How long Undo stays.
+const UNDO_FOR: Duration = Duration::from_secs(5);
 thread_local! {
     /// Thumbnails already drawn, by file (None: it couldn't be read).
     static THUMBS: RefCell<HashMap<String, Option<(slint::Image, f32)>>> = RefCell::new(HashMap::new());
     /// The open chat's lines, kept and changed in place: a new model would rebuild every row, and each would rise in
     /// again as if it had just arrived.
     static MSGS: std::rc::Rc<VecModel<ChatMsg>> = std::rc::Rc::new(VecModel::default());
+    /// The list's rows, kept in place the same way: a rebuilt row would cut short a row sliding out or opening back in.
+    static ROWS: std::rc::Rc<VecModel<ChatRow>> = std::rc::Rc::new(VecModel::default());
+    /// Hides the Undo bar and lets the deleted chat's files go.
+    static UNDO_TIMER: slint::Timer = slint::Timer::default();
 }
 
 /// The store changed: the home screen redraws.
@@ -242,7 +250,16 @@ fn fetch_media() {
             if saved.is_none() {
                 android::log("chats: a photo or video couldn't be fetched");
             }
-            update(|s| s.media_done(&m.url, saved.as_deref()));
+            // its chat was deleted while it came: the file goes too (Undo fetches it again)
+            let unused = update(|s| {
+                s.media_done(&m.url, saved.as_deref());
+                saved.as_ref().is_some_and(|p| !s.chats.iter().flat_map(|c| &c.lines).flat_map(|l| &l.media).any(|x| x.path == *p))
+            });
+            if let (Some(true), Some(p)) = (unused, &saved) {
+                if !attach::holds(p) {
+                    let _ = std::fs::remove_file(p);
+                }
+            }
             FETCHING.lock().unwrap().retain(|u| *u != m.url);
             changed();
         });
@@ -440,7 +457,32 @@ fn show(ui: &HomeScreen) {
             busy: chats::waiting(c),
         })
         .collect();
-    c.set_rows(ModelRc::new(VecModel::from(rows)));
+    ROWS.with(|model| {
+        // gone chats out; then row by row: the same chat changes in place, a chat that moved or came back goes in
+        for i in (0..model.row_count()).rev() {
+            if !rows.iter().any(|r| model.row_data(i).is_some_and(|m| m.id == r.id)) {
+                model.remove(i);
+            }
+        }
+        for (i, r) in rows.iter().enumerate() {
+            match model.row_data(i) {
+                Some(m) if m.id == r.id => {
+                    if m != *r {
+                        model.set_row_data(i, r.clone());
+                    }
+                }
+                _ => {
+                    if let Some(j) = (i + 1..model.row_count()).find(|&j| model.row_data(j).is_some_and(|m| m.id == r.id)) {
+                        model.remove(j);
+                    }
+                    model.insert(i, r.clone());
+                }
+            }
+        }
+        while model.row_count() > rows.len() {
+            model.remove(model.row_count() - 1);
+        }
+    });
     c.set_unread(st.chats.iter().any(|c| c.unread > 0));
     match st.get(&cur) {
         Some(chat) => {
@@ -528,6 +570,67 @@ impl Tracker {
     }
 }
 
+/// Deletes a chat (its notification goes too) and shows "Chat deleted · Undo" for UNDO_FOR. The PC's late replies to
+/// it are dropped, as for any chat the phone doesn't have (chats.rs apply_reply).
+fn delete(ui: &HomeScreen, chat: &str) {
+    forget(); // the one deleted before can't come back any more
+    let c = ui.global::<Chats>();
+    let Some(Some(gone)) = update(|s| s.remove(chat)) else {
+        c.set_leaving("".into()); // not deleted (the store can't be read): the row comes back
+        show(ui);
+        return;
+    };
+    *DELETED.lock().unwrap() = Some(gone);
+    android::with(|env, act| cancel(env, act, chat));
+    if c.get_current() == chat {
+        c.set_current("".into());
+    }
+    c.set_deleted(chat.into());
+    changed();
+    show(ui);
+    let ui = ui.as_weak();
+    UNDO_TIMER.with(|t| {
+        t.start(slint::TimerMode::SingleShot, UNDO_FOR, move || {
+            if let Some(ui) = ui.upgrade() {
+                ui.global::<Chats>().set_deleted("".into());
+            }
+            forget();
+        })
+    });
+}
+
+/// Undo: the deleted chat back where it was, exactly as it was; its row opens back in.
+fn undo(ui: &HomeScreen) {
+    UNDO_TIMER.with(slint::Timer::stop);
+    let c = ui.global::<Chats>();
+    c.set_deleted("".into());
+    let Some((at, chat)) = DELETED.lock().unwrap().take() else { return };
+    let id = chat.id.clone();
+    if update(|s| s.restore(at, chat.clone())).is_none() {
+        *DELETED.lock().unwrap() = Some((at, chat)); // kept: its files stay until it can be put back or is forgotten
+        return;
+    }
+    c.set_leaving("".into());
+    c.set_returning(id.into());
+    changed();
+    show(ui);
+    fetch_media(); // anything that was still on its way
+}
+
+/// Undo is over: the deleted chat's photos and videos go, unless another chat (or what is picked to send) uses them.
+// shortcut: if the app is killed during the Undo seconds its files stay behind in filesDir/media; sweep unused files
+// there on start if that ever matters.
+fn forget() {
+    let Some((_, gone)) = DELETED.lock().unwrap().take() else { return };
+    let Some(dir) = media_dir() else { return };
+    for name in update(|s| s.unused_files(&gone)).unwrap_or_default() {
+        let f = dir.join(name);
+        if !attach::holds(&f.to_string_lossy()) {
+            let _ = std::fs::remove_file(f);
+        }
+    }
+}
+
 /// Connects the Chats callbacks of the home screen.
 pub fn wire(ui: &HomeScreen) -> Tracker {
     android::with(|env, act| {
@@ -539,6 +642,7 @@ pub fn wire(ui: &HomeScreen) -> Tracker {
     crate::fake_chat::set(crate::stage::prop(c"debug.callme.fake", 2) > 0);
     let c = ui.global::<Chats>();
     MSGS.with(|m| c.set_msgs(ModelRc::from(m.clone())));
+    ROWS.with(|m| c.set_rows(ModelRc::from(m.clone())));
     c.on_open_chat({
         let ui = ui.as_weak();
         move |id| {
@@ -593,6 +697,22 @@ pub fn wire(ui: &HomeScreen) -> Tracker {
             let chat = ui.global::<Chats>().get_current().to_string();
             android::with(|env, act| post(env, act, &chat, |s| s.retry(&chat)));
             show(&ui);
+        }
+    });
+    c.on_delete_chat({
+        let ui = ui.as_weak();
+        move |id| {
+            if let Some(ui) = ui.upgrade() {
+                delete(&ui, &id);
+            }
+        }
+    });
+    c.on_undo({
+        let ui = ui.as_weak();
+        move || {
+            if let Some(ui) = ui.upgrade() {
+                undo(&ui);
+            }
         }
     });
     c.on_open_media({
