@@ -1,15 +1,15 @@
-//! In-app chats on the phone: the store file, sending, notifications for the PC's replies, and the Chats models of
-//! the home screen. The rules themselves (signing, replies, unread) are in chats.rs.
+//! In-app chats on the phone: the store file, sending, filing what the PC sends (replies, and threads it starts), and
+//! the Chats models of the home screen. The rules themselves (signing, replies, notes, unread) are in chats.rs.
 use crate::{
-    ChatMsg, Chats, ChatRow, HomeScreen, android, attach,
+    ChatMsg, ChatRow, Chats, HomeScreen, android, attach, chat_alert,
     chats::{self, Media, Store},
-    jx::{self, s, service},
-    net, ring, settings,
+    jx::{self, s},
+    net, settings,
 };
 use jni::{
     JNIEnv,
     errors::Result,
-    objects::{GlobalRef, JByteArray, JObject, JObjectArray, JValue},
+    objects::{GlobalRef, JByteArray, JObject, JValue},
 };
 use serde_json::Value;
 use slint::{ComponentHandle, Model, ModelRc, VecModel};
@@ -99,90 +99,34 @@ fn focused(env: &mut JNIEnv) -> bool {
     home.is_some_and(|h| env.call_method(&h, "hasWindowFocus", "()Z", &[]).and_then(|v| v.z()).unwrap_or(false))
 }
 
-fn notification_id(chat: &str) -> i32 {
-    100 + (chat.bytes().fold(0u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32)) & 0xf_ffff) as i32
-}
-
-/// Chat notifications are their own group, with a summary that opens the newest chat. Left ungrouped, Android bundled
-/// them with "Ready for Claude's calls", and a tap on the bundle opened the home screen instead of the chat.
-const GROUP: &str = "chats";
-const SUMMARY_ID: i32 = 99; // chat notifications are 100 and up
-
-/// A chat was read: its notification goes, and the summary too once no chat notification is left.
-fn cancel(env: &mut JNIEnv, ctx: &JObject, chat: &str) -> Result<()> {
-    let nm = service(env, ctx, "notification")?;
-    env.call_method(&nm, "cancel", "(I)V", &[JValue::Int(notification_id(chat))])?;
-    let all = JObjectArray::from(env.call_method(&nm, "getActiveNotifications", "()[Landroid/service/notification/StatusBarNotification;", &[])?.l()?);
-    for i in 0..env.get_array_length(&all)? {
-        let n = env.get_object_array_element(&all, i)?;
-        if env.call_method(&n, "getId", "()I", &[])?.i()? > SUMMARY_ID {
-            return Ok(());
-        }
-    }
-    env.call_method(&nm, "cancel", "(I)V", &[JValue::Int(SUMMARY_ID)])?;
-    Ok(())
-}
-
 /// The PC's reply arrived over ntfy: file it, and notify unless that chat is being looked at.
 pub fn reply_arrived(env: &mut JNIEnv, ctx: &JObject, body: &str) -> Result<()> {
+    arrived(env, ctx, body, "reply", chats::reply_signed, Store::apply_reply)
+}
+
+/// A thread the PC started arrived ("Chat note": an agent's question, or an update): file it (the thread opens if it
+/// is new), and notify like a reply.
+pub fn note_arrived(env: &mut JNIEnv, ctx: &JObject, body: &str) -> Result<()> {
+    arrived(env, ctx, body, "note", chats::note_signed, Store::apply_note)
+}
+
+type Apply = fn(&mut Store, &Value, Option<&str>) -> Option<(String, String, String)>;
+
+/// Checks the PC's signature, files the message, fetches its files and notifies, unless that chat is being looked at.
+fn arrived(env: &mut JNIEnv, ctx: &JObject, body: &str, what: &str, signed: fn(&str, &Value) -> bool, apply: Apply) -> Result<()> {
     path(env, ctx)?;
     let Ok(v) = serde_json::from_str::<Value>(body) else { return Ok(()) };
     let Some(key) = settings::chat_key(env, ctx)? else { return Ok(()) };
-    if !chats::reply_signed(&key, &v) {
-        android::log("chats: reply with a missing or wrong signature dropped");
+    if !signed(&key, &v) {
+        android::log(&format!("chats: {what} with a missing or wrong signature dropped"));
         return Ok(());
     }
     let open = if focused(env) { VIEWING.lock().unwrap().clone() } else { None };
-    let note = update(|s| s.apply_reply(&v, open.as_deref())).flatten();
+    let note = update(|s| apply(s, &v, open.as_deref())).flatten();
     changed();
     fetch_media();
     let Some((chat, name, text)) = note else { return Ok(()) };
-
-    let nm = service(env, ctx, "notification")?;
-    // Quiet modes post on a silent low-importance channel (Notification.Builder has no public setSilent: calling it
-    // threw, so no reply was ever shown).
-    let quiet = matches!(settings::mode(env, ctx)?.as_str(), "none" | "sleep");
-    let channel_id = if quiet { "chat_replies_quiet" } else { "chat_replies" };
-    if quiet {
-        ring::channel(env, &nm, channel_id, "Chat replies (quiet)", 2, true)?; // IMPORTANCE_LOW
-    } else {
-        ring::channel(env, &nm, channel_id, "Chat replies", 4, false)?; // IMPORTANCE_HIGH
-    }
-    let home = jx::intent(env, ctx, "MainActivity")?;
-    env.call_method(&home, "addFlags", "(I)Landroid/content/Intent;", &[JValue::Int(0x0400_0000 | 0x2000_0000 | 0x1000_0000)])?; // CLEAR_TOP | SINGLE_TOP | NEW_TASK
-    let c = s(env, &chat)?;
-    jx::put(env, &home, "chat", JValue::Object(&c))?;
-    let id = notification_id(&chat);
-    let tap = jx::pending(env, ctx, "getActivity", id, &home)?;
-    let builder = "Landroid/app/Notification$Builder;";
-    let (channel, group) = (s(env, channel_id)?, s(env, GROUP)?);
-    let icon = env.get_static_field("android/R$drawable", "sym_action_chat", "I")?.i()?;
-    // The reply, then the group's summary (silent: the reply alerts) with the same tap.
-    for summary in [false, true] {
-        let b = env.new_object("android/app/Notification$Builder", "(Landroid/content/Context;Ljava/lang/String;)V", &[JValue::Object(ctx), JValue::Object(&channel)])?;
-        jx::call(env, &b, "setSmallIcon", &format!("(I){builder}"), &[JValue::Int(icon)])?;
-        ring::set_text(env, &b, "setContentTitle", &name)?;
-        ring::set_text(env, &b, "setContentText", &text)?;
-        jx::call(env, &b, "setContentIntent", &format!("(Landroid/app/PendingIntent;){builder}"), &[JValue::Object(&tap)])?;
-        // A tapped summary stays (cancelling it would clear every chat's reply); reading the last chat removes it.
-        jx::call(env, &b, "setAutoCancel", &format!("(Z){builder}"), &[JValue::Bool(u8::from(!summary))])?;
-        jx::call(env, &b, "setGroup", &format!("(Ljava/lang/String;){builder}"), &[JValue::Object(&group)])?;
-        if summary {
-            jx::call(env, &b, "setGroupSummary", &format!("(Z){builder}"), &[JValue::Bool(1)])?;
-            jx::call(env, &b, "setGroupAlertBehavior", &format!("(I){builder}"), &[JValue::Int(2)])?; // GROUP_ALERT_CHILDREN
-        } else {
-            let big = env.new_object("android/app/Notification$BigTextStyle", "()V", &[])?;
-            let t = s(env, &text)?;
-            env.call_method(&big, "bigText", "(Ljava/lang/CharSequence;)Landroid/app/Notification$BigTextStyle;", &[JValue::Object(&t)])?;
-            jx::call(env, &b, "setStyle", &format!("(Landroid/app/Notification$Style;){builder}"), &[JValue::Object(&big)])?;
-            let cat = s(env, "msg")?;
-            jx::call(env, &b, "setCategory", &format!("(Ljava/lang/String;){builder}"), &[JValue::Object(&cat)])?;
-        }
-        let n = env.call_method(&b, "build", "()Landroid/app/Notification;", &[])?.l()?;
-        let nid = if summary { SUMMARY_ID } else { id };
-        env.call_method(&nm, "notify", "(ILandroid/app/Notification;)V", &[JValue::Int(nid), JValue::Object(&n)])?;
-    }
-    Ok(())
+    chat_alert::notify(env, ctx, &chat, &name, &text)
 }
 
 /// Adds or retries a message of mine (`f` says which) and sends it in the background.
@@ -359,9 +303,13 @@ fn media_msg(me: bool, m: &Media) -> ChatMsg {
 
 /// The open chat as the thread lays it out: my messages as bubbles (a photo or video above its text), the PC's as
 /// blocks of text (chats::blocks) then its files, each with the room above it (`gap`) and its place in its message
-/// (`n`, for the arrival's stagger). The first block of an answer that is the newest line is the `anchor`.
-fn thread(chat: &chats::Chat) -> Vec<ChatMsg> {
+/// (`n`, for the arrival's stagger). The first block of an answer that is the newest line is the `anchor`. An agent's
+/// question (`ask`: chats::ask_state) offers its answers under it as "choice" buttons (`mark` "on": the one I sent),
+/// and says "Expired" (a "tag") once nobody waits for it.
+fn thread(chat: &chats::Chat, ask: &str) -> Vec<ChatMsg> {
     let lines: Vec<_> = chat.lines.iter().filter(|l| l.me || l.state != "partial").collect();
+    let question = lines.iter().position(|l| !l.me).filter(|_| ask != "");
+    let sent = |c: &str| chat.lines.iter().any(|l| l.me && l.state != "not_sent" && l.text == c);
     let mut msgs: Vec<ChatMsg> = vec![];
     for (i, l) in lines.iter().enumerate() {
         let mut items: Vec<ChatMsg> = vec![];
@@ -384,6 +332,13 @@ fn thread(chat: &chats::Chat) -> Vec<ChatMsg> {
                 items.push(ChatMsg { text: b.text.into(), kind: b.kind.into(), body, mark: b.mark.into(), level: b.level as i32, ..ChatMsg::default() });
             }
             items.extend(l.media.iter().map(|m| media_msg(false, m)));
+            if question == Some(i) {
+                let choice = |c: &String| ChatMsg { text: c.into(), kind: "choice".into(), mark: if sent(c) { "on" } else { "" }.into(), ..ChatMsg::default() };
+                items.extend(l.choices.iter().map(choice));
+                if ask == "expired" {
+                    items.push(ChatMsg { text: "Expired".into(), kind: "tag".into(), ..ChatMsg::default() });
+                }
+            }
         }
         let mine_before = msgs.last().map(|m| m.me);
         for (n, mut m) in items.into_iter().enumerate() {
@@ -396,7 +351,8 @@ fn thread(chat: &chats::Chat) -> Vec<ChatMsg> {
                 _ => match (prev.as_str(), m.kind.as_str()) {
                     (_, "h") => 22.0,
                     ("h", _) => 8.0,
-                    ("li", "li") => 8.0,
+                    ("li", "li") | ("choice", "choice") => 8.0,
+                    (_, "tag") => 10.0,
                     _ if l.me => 6.0, // my photo, then its text
                     _ => 14.0,
                 },
@@ -422,7 +378,7 @@ fn show(ui: &HomeScreen) {
     let seen = android::with(|env, act| {
         let f = focused(env);
         if f && !cur.is_empty() {
-            cancel(env, act, &cur)?;
+            chat_alert::cancel(env, act, &cur)?;
         }
         Ok(f)
     })
@@ -447,14 +403,17 @@ fn show(ui: &HomeScreen) {
     };
     let rows: Vec<ChatRow> = all
         .iter()
+        // a thread the PC started shows once its first message is whole
+        .filter(|c| c.kind.is_empty() || c.lines.iter().any(|l| l.me || l.state != "partial"))
         .map(|c| ChatRow {
             id: c.id.clone().into(),
-            name: chats::name(&c.agent, c.model.as_deref()).into(),
+            name: chats::label(c).into(),
             face: chats::face(&c.agent, c.model.as_deref()).into(),
             preview: preview(c).into(),
             time: chats::ago(now - c.updated).into(),
             unread: c.unread > 0,
             busy: chats::waiting(c),
+            asks: chats::ask_state(c, now) == "waiting",
         })
         .collect();
     ROWS.with(|model| {
@@ -486,15 +445,28 @@ fn show(ui: &HomeScreen) {
     c.set_unread(st.chats.iter().any(|c| c.unread > 0));
     match st.get(&cur) {
         Some(chat) => {
-            let msgs = thread(chat);
-            let name = chats::name(&chat.agent, chat.model.as_deref());
-            c.set_short(name.rsplit(" · ").next().unwrap_or(&name).into());
+            let ask = chats::ask_state(chat, now);
+            let msgs = thread(chat, ask);
+            let name = chats::label(chat);
+            // "Opus" from "Claude · Opus"; a PC-started thread keeps its whole name ("Deploy · Notebook")
+            let short = if chat.kind.is_empty() { name.rsplit(" · ").next().unwrap_or(&name) } else { &name }.to_string();
+            c.set_hint(if ask == "waiting" { "Type your answer".into() } else { format!("Message {short}").into() });
+            c.set_short(short.into());
             c.set_name(name.into());
             c.set_face(chats::face(&chat.agent, chat.model.as_deref()).into());
             c.set_empty(msgs.is_empty());
             c.set_waiting(chats::waiting(chat));
             c.set_replies(chat.lines.iter().filter(|l| !l.me && l.state != "partial").count() as i32);
-            c.set_title(chat.title.clone().into());
+            // A PC-started thread is named after its task, so the line under the name says where it stands instead.
+            c.set_title(match (chat.kind.as_str(), ask) {
+                ("", _) => chat.title.clone().into(),
+                (_, "waiting") => "Waiting for your answer".into(),
+                (_, "answered") => "Answered".into(),
+                (_, "expired") => "Expired".into(),
+                _ => "From your PC".into(),
+            });
+            c.set_ask(ask.into());
+            c.set_readonly(chat.kind == "note");
             MSGS.with(|model| {
                 for (i, m) in msgs.iter().enumerate() {
                     if i >= model.row_count() {
@@ -523,7 +495,11 @@ fn status(ui: &HomeScreen) {
     let cur = c.get_current().to_string();
     if let Some(path) = PATH.get() {
         let _lock = LOCK.lock().unwrap();
-        let (text, action) = Store::load(path).unwrap_or_default().get(&cur).map_or(("", ""), |chat| chats::status(chat, chats::now()));
+        let store = Store::load(path).unwrap_or_default();
+        let (text, action) = store.get(&cur).map_or(("", ""), |chat| chats::status(chat, chats::now()));
+        if store.get(&cur).is_some_and(|chat| chats::ask_state(chat, chats::now()) != c.get_ask().as_str()) {
+            changed(); // a question just expired while open: redraw
+        }
         if c.get_status() != text {
             c.set_status(text.into());
         }
@@ -581,7 +557,7 @@ fn delete(ui: &HomeScreen, chat: &str) {
         return;
     };
     *DELETED.lock().unwrap() = Some(gone);
-    android::with(|env, act| cancel(env, act, chat));
+    android::with(|env, act| chat_alert::cancel(env, act, chat));
     if c.get_current() == chat {
         c.set_current("".into());
     }
@@ -670,6 +646,16 @@ pub fn wire(ui: &HomeScreen) -> Tracker {
             let chat = ui.global::<Chats>().get_current().to_string();
             let media = attach::take();
             android::with(|env, act| post(env, act, &chat, |s| s.add_mine(&chat, &text, media)));
+            show(&ui);
+        }
+    });
+    // A tapped answer to an agent's question: its text, as an ordinary message (what is picked stays picked).
+    c.on_choose({
+        let ui = ui.as_weak();
+        move |text| {
+            let Some(ui) = ui.upgrade() else { return };
+            let chat = ui.global::<Chats>().get_current().to_string();
+            android::with(|env, act| post(env, act, &chat, |s| s.add_mine(&chat, &text, None)));
             show(&ui);
         }
     });

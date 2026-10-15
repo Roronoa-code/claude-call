@@ -10,6 +10,8 @@ mod audio;
 #[cfg(target_os = "android")]
 mod caller;
 #[cfg(target_os = "android")]
+mod chat_alert;
+#[cfg(target_os = "android")]
 mod engine;
 #[cfg(target_os = "android")]
 mod faces;

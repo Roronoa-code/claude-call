@@ -31,7 +31,8 @@ fn start_since(cursor: i64) -> String {
 }
 
 /// Listens until `stop`: rings for fresh calls (ring.rs), stores contact-mode changes (settings.rs) and files chat
-/// replies (inbox.rs). Reconnects with backoff; after a drop it catches up on what it missed.
+/// replies and the threads the PC starts (inbox.rs). Reconnects with backoff; after a drop it catches up on what it
+/// missed.
 pub fn listen(env: &mut JNIEnv, ctx: &JObject, topic: String, generation: u64) {
     let alive = move || GEN.load(Ordering::Relaxed) == generation;
     let since = start_since(crate::settings::cursor(env, ctx).unwrap_or(0));
@@ -86,6 +87,7 @@ pub fn listen(env: &mut JNIEnv, ctx: &JObject, topic: String, generation: u64) {
                 crate::ring::ring(env, ctx, &link, &text)
             }
             Some("Chat reply") => crate::inbox::reply_arrived(env, ctx, &text),
+            Some("Chat note") => crate::inbox::note_arrived(env, ctx, &text),
             _ => Ok(()),
         });
         crate::jx::ok(env, |env| crate::settings::set_cursor(env, ctx, at / 1000));

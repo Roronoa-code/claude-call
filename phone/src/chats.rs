@@ -28,6 +28,7 @@ pub struct Line {
     pub state: String,
     pub parts: Vec<Option<String>>,
     pub media: Vec<Media>, // photos and videos sent with the PC's answer, in part order
+    pub choices: Vec<String>, // an agent's question: the answers it offers as buttons
 }
 
 /// The biggest photo or video the phone fetches (the PC sends up to this; ntfy.sh holds up to 15 MB).
@@ -147,13 +148,24 @@ pub struct Chat {
     pub updated: i64,
     pub unread: u32,
     pub lines: Vec<Line>,
+    /// "" a chat I started; a thread the PC started: "ask" (an agent's question, its own thread) or "note" (updates,
+    /// read-only). `asked`: when the PC sent it (ms, the PC's clock).
+    pub kind: String,
+    pub asked: i64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq)]
 #[serde(default)] // fields added later must not make older files unreadable
 pub struct Store {
     pub chats: Vec<Chat>,
+    /// "chat/line" of the PC's messages in PC-started threads deleted here, so their late parts and resends are
+    /// dropped instead of opening the thread again (the newest GONE_KEEP).
+    pub gone: Vec<String>,
 }
+
+const GONE_KEEP: usize = 500;
+/// An agent's question nobody answered in a day is closed on the PC.
+pub const ASK_FOR: i64 = 24 * 3600 * 1000;
 
 pub fn now() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64
@@ -188,29 +200,59 @@ pub fn sign(key: &str, chat: &str, msg: &str, agent: &str, model: Option<&str>, 
     hex(&mac.finalize().into_bytes())
 }
 
-/// Whether a "Chat reply" really came from the PC: signed with the same key (constant-time check). A fake reply
-/// from anyone who learns the topic would otherwise show as a notification and push out the real answer.
-pub fn reply_signed(key: &str, v: &Value) -> bool {
+/// `data` signed with the key as v["sig"] says (64 hex), checked in constant time.
+fn verify(key: &str, v: &Value, data: &str) -> bool {
     let sig = v["sig"].as_str().unwrap_or("");
     let Some(want) = (0..sig.len()).step_by(2).map(|i| sig.get(i..i + 2).and_then(|h| u8::from_str_radix(h, 16).ok())).collect::<Option<Vec<u8>>>()
     else {
         return false;
     };
-    let (n, s) = (|k: &str| v[k].as_i64().unwrap_or(-1), |k: &str| v[k].as_str().unwrap_or(""));
     let mut mac = Hmac::<Sha256>::new_from_slice(key.as_bytes()).expect("any key length");
-    let base = format!("{}\n{}\n{}\n{}\n{}\n{}", s("chat"), s("re"), s("state"), s("text"), n("part"), n("parts"));
-    // A part with a file ("att") is signed as v2, over the file's fields too.
-    let data = match v["att"].as_object() {
+    mac.update(data.as_bytes());
+    sig.len() == 64 && mac.verify_slice(&want).is_ok()
+}
+
+/// What a part's file adds to its signed string (url, name, type, size, sha256, each after a "\n"): None without a
+/// file, Err when "att" is there but not an object (never valid).
+fn att_signed(v: &Value) -> Result<Option<String>, ()> {
+    match v["att"].as_object() {
         Some(a) => {
             let f = |k: &str| a.get(k).and_then(Value::as_str).unwrap_or("");
             let size = a.get("size").and_then(Value::as_u64).map_or("-1".into(), |n| n.to_string());
-            format!("v2-reply\n{base}\n{}\n{}\n{}\n{size}\n{}", f("url"), f("name"), f("type"), f("sha256"))
+            Ok(Some(format!("\n{}\n{}\n{}\n{size}\n{}", f("url"), f("name"), f("type"), f("sha256"))))
         }
-        None if v.get("att").is_some() => return false,
-        None => format!("v1-reply\n{base}"),
+        None if v.get("att").is_some() => Err(()),
+        None => Ok(None),
+    }
+}
+
+/// Whether a "Chat reply" really came from the PC: signed with the same key (constant-time check). A fake reply
+/// from anyone who learns the topic would otherwise show as a notification and push out the real answer.
+pub fn reply_signed(key: &str, v: &Value) -> bool {
+    let (n, s) = (|k: &str| v[k].as_i64().unwrap_or(-1), |k: &str| v[k].as_str().unwrap_or(""));
+    let base = format!("{}\n{}\n{}\n{}\n{}\n{}", s("chat"), s("re"), s("state"), s("text"), n("part"), n("parts"));
+    // A part with a file ("att") is signed as v2, over the file's fields too.
+    match att_signed(v) {
+        Ok(Some(att)) => verify(key, v, &format!("v2-reply\n{base}{att}")),
+        Ok(None) => verify(key, v, &format!("v1-reply\n{base}")),
+        Err(()) => false,
+    }
+}
+
+/// Whether a "Chat note" (a thread the PC starts: an agent's question or an update) really came from the PC: signed
+/// like a reply over its own fields, the choices joined with U+001F ("v1-note", or "v2-note" with a file).
+pub fn note_signed(key: &str, v: &Value) -> bool {
+    let (n, s) = (|k: &str| v[k].as_i64().unwrap_or(-1), |k: &str| v[k].as_str().unwrap_or(""));
+    let Some(choices) = v["choices"].as_array().and_then(|a| a.iter().map(Value::as_str).collect::<Option<Vec<_>>>()) else {
+        return false;
     };
-    mac.update(data.as_bytes());
-    sig.len() == 64 && mac.verify_slice(&want).is_ok()
+    let (chat, note, title, kind, text) = (s("chat"), s("note"), s("title"), s("kind"), s("text"));
+    let base = format!("{chat}\n{note}\n{title}\n{kind}\n{}\n{}\n{text}\n{}\n{}", choices.join("\u{1f}"), n("ts"), n("part"), n("parts"));
+    match att_signed(v) {
+        Ok(Some(att)) => verify(key, v, &format!("v2-note\n{base}{att}")),
+        Ok(None) => verify(key, v, &format!("v1-note\n{base}")),
+        Err(()) => false,
+    }
 }
 
 /// "Claude · Haiku", "Codex".
@@ -222,6 +264,28 @@ pub fn name(agent: &str, model: Option<&str>) -> String {
             format!("Claude · {}{}", w.next().map(|c| c.to_uppercase().to_string()).unwrap_or_default(), w.as_str())
         }
         _ => "Claude".into(),
+    }
+}
+
+/// The chat's name: the agent's ("Claude · Haiku"), or a PC-started thread's own ("Weather app", "Updates").
+pub fn label(c: &Chat) -> String {
+    match c.kind.as_str() {
+        "" => name(&c.agent, c.model.as_deref()),
+        _ if c.title.trim().is_empty() => "Claude".into(),
+        _ => c.title.clone(),
+    }
+}
+
+/// An agent's question: "waiting" for my answer, "answered" or "expired" (unanswered after ASK_FOR); "" for any
+/// other chat. A message of mine answers it unless it didn't go or the PC turned it away as failed (a photo it
+/// couldn't get: the question still waits).
+pub fn ask_state(c: &Chat, now: i64) -> &'static str {
+    let failed = |id: &str| c.lines.iter().any(|l| !l.me && l.id == id && l.state == "failed");
+    match c.kind.as_str() {
+        "ask" if c.lines.iter().any(|l| l.me && l.state != "not_sent" && !failed(&l.id)) => "answered",
+        "ask" if now - c.asked > ASK_FOR => "expired",
+        "ask" => "waiting",
+        _ => "",
     }
 }
 
@@ -481,12 +545,20 @@ impl Store {
     /// chat, for Undo.
     pub fn remove(&mut self, chat: &str) -> Option<(usize, Chat)> {
         let i = self.chats.iter().position(|c| c.id == chat)?;
-        Some((i, self.chats.remove(i)))
+        let gone = self.chats.remove(i);
+        // a thread the PC started: its notes' late parts and resends must not open it again
+        if !gone.kind.is_empty() {
+            self.gone.extend(gone.lines.iter().filter(|l| !l.me).map(|l| format!("{}/{}", gone.id, l.id)));
+            let extra = self.gone.len().saturating_sub(GONE_KEEP);
+            self.gone.drain(..extra);
+        }
+        Some((i, gone))
     }
 
     /// Undo: the removed chat back where it was, exactly as it was.
     pub fn restore(&mut self, at: usize, chat: Chat) {
         if self.get(&chat.id).is_none() {
+            self.gone.retain(|g| !chat.lines.iter().any(|l| *g == format!("{}/{}", chat.id, l.id)));
             self.chats.insert(at.min(self.chats.len()), chat);
         }
     }
@@ -522,7 +594,6 @@ impl Store {
             }
             return None;
         }
-        let text = v["text"].as_str().unwrap_or("");
         let at = c.lines.iter().position(|l| !l.me && l.id == re);
         if at.is_some_and(|i| c.lines[i].state != "partial") {
             return None; // already have the final answer
@@ -533,23 +604,11 @@ impl Store {
         });
         let l = &mut c.lines[i];
         if state == "done" {
-            let n = v["parts"].as_u64().unwrap_or(1).clamp(1, 50) as usize;
-            let p = (v["part"].as_u64().unwrap_or(1) as usize).clamp(1, n) - 1;
-            l.state = "partial".into();
-            l.parts.resize(n, None);
-            l.parts[p] = Some(text.into());
-            // An unsafe or malformed file is left out; its part still counts.
-            if let Some(m) = Media::from(&v["att"], p + 1).filter(|m| !l.media.iter().any(|x| x.part == m.part)) {
-                l.media.push(m);
-                l.media.sort_by_key(|m| m.part);
-            }
-            if l.parts.iter().any(Option::is_none) {
+            if !file_part(l, v) {
                 return None;
             }
-            l.text = l.parts.drain(..).flatten().collect();
-            l.state = "done".into();
         } else {
-            (l.state, l.text) = (state.into(), text.into());
+            (l.state, l.text) = (state.into(), v["text"].as_str().unwrap_or("").into());
         }
         l.at = now;
         let shown = shown(l);
@@ -559,286 +618,81 @@ impl Store {
             return None;
         }
         c.unread += 1;
-        Some((c.id.clone(), name(&c.agent, c.model.as_deref()), shown))
+        Some((c.id.clone(), label(c), shown))
     }
+
+    /// A thread the PC started ("Chat note"): an agent's question (kind "ask", in its own thread "ask-<id>") or an
+    /// update ("updates", kind "note"). Makes the thread when it is new, then files the note like a reply, part by
+    /// part with its files; safe to apply twice. Dropped for a thread deleted here (late parts and resends). Returns
+    /// what to notify, as apply_reply does.
+    pub fn apply_note(&mut self, v: &Value, open: Option<&str>) -> Option<(String, String, String)> {
+        let id = |s: &str| (1..=40).contains(&s.len()) && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+        let (chat, note, title, kind) = (v["chat"].as_str()?, v["note"].as_str()?, v["title"].as_str()?, v["kind"].as_str()?);
+        let choices = v["choices"].as_array()?.iter().map(|c| c.as_str().map(String::from)).collect::<Option<Vec<_>>>()?;
+        let (ts, part, parts) = (v["ts"].as_i64()?, v["part"].as_u64()?, v["parts"].as_u64()?);
+        // Lengths counted loosely, in characters (the PC counts UTF-16 units, so whatever it sends fits), never bytes.
+        let ok = v["v"] == 1
+            && id(chat)
+            && id(note)
+            && title.chars().count() <= 100
+            && matches!(kind, "ask" | "note")
+            && choices.len() <= 6
+            && choices.iter().all(|c| (1..=80).contains(&c.chars().count()) && !c.chars().any(|ch| ch < ' '))
+            && v["text"].is_string()
+            && (1..=parts).contains(&part)
+            && parts <= 50;
+        if !ok || self.gone.iter().any(|g| *g == format!("{chat}/{note}")) {
+            return None;
+        }
+        let now = now();
+        if self.get(chat).is_none() {
+            let c = Chat { id: chat.into(), agent: "claude".into(), title: title.into(), kind: kind.into(), asked: ts, updated: now, ..Chat::default() };
+            self.chats.push(c);
+        }
+        let c = self.get_mut(chat)?;
+        let at = c.lines.iter().position(|l| !l.me && l.id == note);
+        if at.is_some_and(|i| c.lines[i].state != "partial") {
+            return None; // already whole
+        }
+        let i = at.unwrap_or_else(|| {
+            c.lines.push(Line { id: note.into(), at: now, choices, ..Line::default() });
+            c.lines.len() - 1
+        });
+        let l = &mut c.lines[i];
+        if !file_part(l, v) {
+            return None;
+        }
+        l.at = now;
+        let shown = shown(l);
+        c.updated = now;
+        if open == Some(chat) {
+            return None;
+        }
+        c.unread += 1;
+        Some((c.id.clone(), label(c), shown))
+    }
+}
+
+/// Files one part of the PC's message: its text, and its file when that is safe (an unsafe or malformed one is left
+/// out; its part still counts). True once every part is here: the line is "done", its text joined.
+fn file_part(l: &mut Line, v: &Value) -> bool {
+    let n = v["parts"].as_u64().unwrap_or(1).clamp(1, 50) as usize;
+    let p = (v["part"].as_u64().unwrap_or(1) as usize).clamp(1, n) - 1;
+    l.state = "partial".into();
+    l.parts.resize(n, None);
+    l.parts[p] = Some(v["text"].as_str().unwrap_or("").into());
+    if let Some(m) = Media::from(&v["att"], p + 1).filter(|m| !l.media.iter().any(|x| x.part == m.part)) {
+        l.media.push(m);
+        l.media.sort_by_key(|m| m.part);
+    }
+    if l.parts.iter().any(Option::is_none) {
+        return false;
+    }
+    l.text = l.parts.drain(..).flatten().collect();
+    l.state = "done".into();
+    true
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn store() -> (Store, String, String) {
-        let mut s = Store::default();
-        let chat = s.new_chat("claude", Some("haiku-5.5"));
-        let msg = s.add_mine(&chat, "hello", None).unwrap();
-        (s, chat, msg)
-    }
-
-    fn reply(chat: &str, re: &str, state: &str, text: &str, part: u32, parts: u32) -> Value {
-        json!({"v": 1, "chat": chat, "re": re, "state": state, "text": text, "part": part, "parts": parts})
-    }
-
-    #[test]
-    fn save_load_round_trip() {
-        let (s, ..) = store();
-        let path = std::env::temp_dir().join(format!("callme-chats-{}.json", std::process::id()));
-        s.save(&path).unwrap();
-        assert_eq!(Store::load(&path), Some(s));
-        std::fs::remove_file(path).unwrap();
-        assert_eq!(Store::load(Path::new("no/such/file")), Some(Store::default()));
-    }
-
-    #[test]
-    fn working_then_done_in_parts() {
-        let (mut s, c, m) = store();
-        assert!(s.apply_reply(&reply(&c, &m, "working", "", 1, 1), None).is_none());
-        assert_eq!(s.get(&c).unwrap().lines[0].state, "working");
-        for (p, t) in [(2, "world "), (1, "hello "), (2, "world "), (3, "!")] {
-            let r = s.apply_reply(&reply(&c, &m, "done", t, p, 3), None);
-            assert_eq!(r.is_some(), p == 3, "notifies once, when whole");
-        }
-        assert!(s.apply_reply(&reply(&c, &m, "done", "!", 3, 3), None).is_none(), "replay");
-        let chat = s.get(&c).unwrap();
-        assert_eq!((chat.lines[1].text.as_str(), chat.lines[1].state.as_str()), ("hello world !", "done"));
-        assert_eq!((chat.lines[0].state.as_str(), chat.unread, chat.lines.len()), ("answered", 1, 2));
-        assert_eq!(status(chat, now()), ("", ""));
-    }
-
-    #[test]
-    fn unread_only_when_not_open_and_mark_read() {
-        let (mut s, c, m) = store();
-        let m2 = s.add_mine(&c, "again", None).unwrap();
-        assert!(s.apply_reply(&reply(&c, &m, "done", "a", 1, 1), Some(&c)).is_none());
-        assert_eq!(s.get(&c).unwrap().unread, 0);
-        let (id, name, text) = s.apply_reply(&reply(&c, &m2, "failed", "", 1, 1), Some("other")).unwrap();
-        assert_eq!((id, name.as_str(), text.as_str()), (c.clone(), "Claude · Haiku", "Something went wrong."));
-        assert_eq!(s.get(&c).unwrap().unread, 1);
-        s.mark_read(&c);
-        assert_eq!(s.get(&c).unwrap().unread, 0);
-        assert!(s.apply_reply(&reply("nope", &m, "done", "a", 1, 1), None).is_none(), "unknown chat");
-    }
-
-    #[test]
-    fn reply_signature_matches_shared_vector() {
-        let good = json!({"v": 1, "chat": "c1", "re": "m1", "state": "done", "text": "héllo 👋", "part": 1, "parts": 1,
-            "sig": "260ceed955ae169bfb04cb73eff4e7d7a7faf95ca2abf61ab69fd69e8f1100be"});
-        assert!(reply_signed("test-key", &good));
-        let mut forged = good.clone();
-        forged["text"] = json!("pay me");
-        assert!(!reply_signed("test-key", &forged));
-        assert!(!reply_signed("other-key", &good));
-        let mut unsigned = good.clone();
-        unsigned.as_object_mut().unwrap().remove("sig");
-        assert!(!reply_signed("test-key", &unsigned));
-    }
-
-    fn att() -> Value {
-        json!({"url": "https://ntfy.sh/file/abc123.jpg", "name": "pic é.jpg", "type": "image/jpeg", "size": 1234, "sha256": "ab".repeat(32)})
-    }
-
-    #[test]
-    fn file_reply_signature_matches_shared_vector() {
-        let good = json!({"v": 1, "chat": "c1", "re": "m1", "state": "done", "text": "", "part": 2, "parts": 2, "att": att(),
-            "sig": "54b592109f701bf43a7e16049916d3ef5d0974179f835a7081500f2baa4d3d86"});
-        assert!(reply_signed("test-key", &good));
-        for (k, bad) in [("url", json!("https://ntfy.sh/file/evil.jpg")), ("name", json!("x")), ("type", json!("video/mp4")), ("size", json!(1)), ("sha256", json!("cd".repeat(32)))] {
-            let mut forged = good.clone();
-            forged["att"][k] = bad;
-            assert!(!reply_signed("test-key", &forged), "{k}");
-        }
-        let mut stripped = good.clone();
-        stripped.as_object_mut().unwrap().remove("att");
-        assert!(!reply_signed("test-key", &stripped), "a v2 sig is not a v1 sig");
-        let mut odd = good.clone();
-        odd["att"] = json!("https://ntfy.sh/file/abc123.jpg");
-        assert!(!reply_signed("test-key", &odd));
-    }
-
-    #[test]
-    fn only_safe_files_are_fetched() {
-        assert!(Media::from(&att(), 1).is_some());
-        for (k, bad) in [
-            ("url", json!("http://ntfy.sh/file/abc.jpg")),
-            ("url", json!("https://ntfy.sh.evil.com/file/abc.jpg")),
-            ("url", json!("https://ntfy.sh/file/../x")),
-            ("url", json!("https://ntfy.sh/file/")),
-            ("type", json!("application/pdf")),
-            ("size", json!(MEDIA_MAX + 1)),
-            ("size", json!(0)),
-            ("sha256", json!("zz".repeat(32))),
-        ] {
-            let mut a = att();
-            a[k] = bad;
-            assert!(Media::from(&a, 1).is_none(), "{a}");
-        }
-        let m = Media::from(&json!({"url": "https://ntfy.sh/file/x.mp4", "name": "../../a.exe", "type": "video/mp4", "size": 3,
-            "sha256": "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD"}), 1).unwrap();
-        assert_eq!(m.file_name(), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad.mp4");
-        assert!(m.matches(b"abc") && !m.matches(b"abd") && !m.matches(b"abcd"));
-    }
-
-    #[test]
-    fn text_then_files_in_parts() {
-        let (mut s, c, m) = store();
-        let video = json!({"url": "https://ntfy.sh/file/v.mp4", "name": "clip.mp4", "type": "video/mp4", "size": 9, "sha256": "cd".repeat(32)});
-        let mut r3 = reply(&c, &m, "done", "", 3, 3);
-        r3["att"] = video;
-        assert!(s.apply_reply(&r3, None).is_none());
-        assert_eq!(s.downloads().len(), 1, "fetch starts before the answer is whole");
-        let mut r2 = reply(&c, &m, "done", "", 2, 3);
-        r2["att"] = att();
-        assert!(s.apply_reply(&r2, None).is_none());
-        assert!(s.apply_reply(&r2, None).is_none(), "a repeated part is not added twice");
-        let (_, _, note) = s.apply_reply(&reply(&c, &m, "done", "Here.", 1, 3), None).unwrap();
-        assert_eq!(note, "Here.");
-        let l = &s.get(&c).unwrap().lines[1];
-        assert_eq!((l.text.as_str(), l.media.iter().map(|m| m.name.as_str()).collect::<Vec<_>>()), ("Here.", vec!["pic é.jpg", "clip.mp4"]));
-        assert_eq!(s.downloads().len(), 2);
-        s.media_done("https://ntfy.sh/file/v.mp4", Some("/data/v.mp4"));
-        s.media_done("https://ntfy.sh/file/abc123.jpg", None);
-        let l = &s.get(&c).unwrap().lines[1];
-        assert_eq!((l.media[0].state.as_str(), l.media[1].state.as_str(), l.media[1].path.as_str()), ("failed", "ready", "/data/v.mp4"));
-        assert!(s.downloads().is_empty());
-    }
-
-    #[test]
-    fn files_only_reply_says_what_was_sent() {
-        let (mut s, c, m) = store();
-        let mut r = reply(&c, &m, "done", "", 1, 1);
-        r["att"] = att();
-        assert_eq!(s.apply_reply(&r, None).unwrap().2, "Sent a photo");
-        let line = |mimes: &[&str]| Line {
-            state: "done".into(),
-            media: mimes.iter().map(|m| Media { mime: m.to_string(), ..Media::default() }).collect(),
-            ..Line::default()
-        };
-        assert_eq!(shown(&line(&["video/mp4"])), "Sent a video");
-        assert_eq!(shown(&line(&["image/png", "image/gif"])), "Sent 2 photos");
-        assert_eq!(shown(&line(&["image/png", "video/webm", "video/mp4"])), "Sent a photo and 2 videos");
-        let mut bad = reply(&c, &m, "done", "", 1, 1);
-        bad["att"] = json!({"url": "https://example.com/x.png"});
-        let m2 = s.add_mine(&c, "again", None).unwrap();
-        bad["re"] = json!(m2);
-        assert_eq!(s.apply_reply(&bad, None).unwrap().2, "Done.", "an unsafe file is dropped");
-    }
-
-    #[test]
-    fn answers_split_into_blocks() {
-        let k = |v: Vec<Block>| v.iter().map(|b| (b.kind, b.text.clone(), b.mark.clone(), b.level)).collect::<Vec<_>>();
-        let s = |x: &str| x.to_string();
-        let text = "Two things:\nmore of it\n\n## Fix\n1. Set **it** back\n   still the same item\n2) Run `cargo`\n  - nested\n\n---\n> quoted\n> on\n```rust\nfn a() {\n\n    b();\n}\n```\nEnd.\n```sh\nopen fence";
-        assert_eq!(k(blocks(text)), vec![
-            ("p", s("Two things:\nmore of it"), s(""), 0),
-            ("h", s("Fix"), s(""), 0),
-            ("li", s("Set **it** back\nstill the same item"), s("1."), 0),
-            ("li", s("Run `cargo`"), s("2."), 0),
-            ("li", s("nested"), s("•"), 1),
-            ("quote", s("quoted\non"), s(""), 0),
-            ("code", s("fn a() {\n\n    b();\n}"), s("rust"), 0),
-            ("p", s("End."), s(""), 0),
-            ("code", s("open fence"), s("sh"), 0),
-        ]);
-        assert_eq!(k(blocks("*not a list* but text")), vec![("p", s("*not a list* but text"), s(""), 0)]);
-        assert_eq!(k(blocks("2024. was a year")), vec![("p", s("2024. was a year"), s(""), 0)]);
-        assert!(blocks("").is_empty() && blocks("```\n```")[0].text.is_empty());
-        assert_eq!(inline("Vec<u8> and `Vec<u8>` and a<b"), "Vec&lt;u8> and `Vec<u8>` and a&lt;b");
-    }
-
-    #[test]
-    fn delete_undo_and_late_reply() {
-        let (mut s, c, m) = store();
-        let pic = |path: &str| Media { path: path.into(), state: "ready".into(), ..Media::default() };
-        s.get_mut(&c).unwrap().lines[0].media = vec![pic("/m/shared.jpg"), pic("/m/only.jpg")];
-        let other = s.new_chat("codex", None);
-        let m2 = s.add_mine(&other, "hi", Some(pic("/other/spelling/shared.jpg"))).unwrap();
-        s.apply_reply(&reply(&c, &m, "working", "", 1, 1), None);
-        let before = s.clone();
-
-        let (at, gone) = s.remove(&c).unwrap();
-        assert_eq!((at, s.chats.len(), s.get(&c)), (0, 1, None));
-        assert_eq!(s.unused_files(&gone), vec!["only.jpg".to_string()], "a file the other chat uses stays");
-        assert!(s.remove(&c).is_none());
-        // the PC answers the deleted (busy) chat late: dropped, nothing comes back
-        assert!(s.apply_reply(&reply(&c, &m, "done", "late", 1, 1), None).is_none());
-        assert!(s.apply_reply(&reply(&c, &m, "working", "", 1, 1), None).is_none());
-        assert!(s.get(&c).is_none() && s.chats.len() == 1);
-
-        s.restore(at, gone.clone());
-        assert_eq!(s, before, "undo puts it back exactly, in its place");
-        s.restore(at, gone);
-        assert_eq!(s.chats.len(), 2, "never twice");
-        // once back, its replies land again
-        assert!(s.apply_reply(&reply(&c, &m, "done", "back", 1, 1), None).is_some());
-        assert!(s.apply_reply(&reply(&other, &m2, "done", "ok", 1, 1), None).is_some());
-    }
-
-    #[test]
-    fn signature_matches_shared_vector() {
-        let sig = sign("test-key", "c1", "m1", "claude", Some("haiku-5.5"), 1700000000000, "héllo 👋", None);
-        assert_eq!(sig, "ab529206c0c5da8e9c12efc38dac2b71aacc25df75a33f8d9c1b230be8b2f44e");
-    }
-
-    #[test]
-    fn file_signature_matches_shared_vector() {
-        let m = Media { url: "https://ntfy.sh/file/abc123.jpg".into(), name: "pic é.jpg".into(), mime: "image/jpeg".into(), size: 1234, sha256: "ab".repeat(32), ..Media::default() };
-        let sig = |m: &Media| sign("test-key", "c1", "m1", "claude", Some("haiku-5.5"), 1700000000000, "héllo 👋", Some(m));
-        assert_eq!(sig(&m), "f61fe75b634ec0074a302a1f927b60591ae6d5a1028b6cd8a4203befa10d0cf5");
-        assert_ne!(sig(&Media { size: 1, ..m.clone() }), sig(&m));
-    }
-
-    #[test]
-    fn picked_files_are_checked() {
-        let m = Media::picked(b"abc", "image/jpeg").unwrap();
-        assert_eq!((m.name.as_str(), m.size, m.state.as_str()), ("photo.jpg", 3, "ready"));
-        assert_eq!(m.sha256, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
-        assert_eq!(Media::picked(b"x", "video/quicktime").unwrap().name, "video.mov");
-        assert_eq!(Media::picked(b"x", "image/heic").unwrap_err(), "Only photos and videos can be sent (image/heic)");
-        assert_eq!(Media::picked(b"", "video/mp4").unwrap_err(), "That video is empty");
-        assert_eq!(Media::picked(&vec![0; MEDIA_MAX as usize + 1], "image/png").unwrap_err(), "That photo is over 10 MB");
-    }
-
-    #[test]
-    fn a_photo_goes_up_first_then_the_signed_message_carries_it() {
-        let (mut s, c, _) = store();
-        let c2 = s.new_chat("codex", None);
-        let pic = Media { path: "/data/x.jpg".into(), ..Media::picked(b"abc", "image/jpeg").unwrap() };
-        let m = s.add_mine(&c2, "", Some(pic)).unwrap();
-        assert_eq!(s.get(&c2).unwrap().title, "Photo");
-        assert_eq!(shown(&s.get(&c2).unwrap().lines[0]), "Sent a photo");
-        assert!(s.body(&c2, &m, "k").is_none(), "not before the upload");
-        assert_eq!(s.to_upload(&c2, &m).unwrap().path, "/data/x.jpg");
-        s.uploaded(&c2, &m, "https://ntfy.sh/file/up.jpg");
-        assert!(s.to_upload(&c2, &m).is_none());
-        let v: Value = serde_json::from_str(&s.body(&c2, &m, "k").unwrap()).unwrap();
-        assert_eq!(v["att"], json!({"url": "https://ntfy.sh/file/up.jpg", "name": "photo.jpg", "type": "image/jpeg", "size": 3,
-            "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}));
-        let l = &s.get(&c2).unwrap().lines[0];
-        assert_eq!(v["sig"], sign("k", &c2, &m, "codex", None, l.at, "", l.media.first()).as_str());
-        s.sent(&c2, &m, false);
-        assert_eq!(s.retry(&c2), Some(m.clone()));
-        assert!(s.to_upload(&c2, &m).is_some(), "a retry uploads again");
-        assert!(s.downloads().is_empty(), "my own file is never fetched");
-        let m2 = s.add_mine(&c, &"\"".repeat(5000), Some(Media::picked(b"abc", "video/webm").unwrap())).unwrap();
-        s.uploaded(&c, &m2, &format!("https://ntfy.sh/file/{}.webm", "a".repeat(20)));
-        assert!(s.body(&c, &m2, "k").unwrap().len() < 4000, "the longest text and a file still fit");
-    }
-
-    #[test]
-    fn body_fits_at_the_cap_and_retry_resends_the_same() {
-        let (mut s, c, _) = store();
-        for text in ["x".repeat(5000), "é".repeat(5000), "\"".repeat(5000)] {
-            let m = s.add_mine(&c, &text, None).unwrap();
-            let body = s.body(&c, &m, "k").unwrap();
-            assert!(body.len() < 4000, "{} bytes", body.len());
-            let v: Value = serde_json::from_str(&body).unwrap();
-            assert!(v["text"].as_str().unwrap().len() <= 2800);
-        }
-        let m = s.add_mine(&c, "retry me", None).unwrap();
-        let first = s.body(&c, &m, "k");
-        s.sent(&c, &m, false);
-        assert_eq!(status(s.get(&c).unwrap(), now()).1, "retry");
-        assert_eq!(s.retry(&c), Some(m.clone()));
-        assert_eq!(s.body(&c, &m, "k"), first);
-        assert!(s.add_mine(&c, "  ", None).is_none());
-    }
-}
+#[path = "chats_tests.rs"]
+mod tests;

@@ -1,18 +1,21 @@
-// In-app chats with the agents on the PC: the Chats screen (a list, and one chat's thread) and the new-chat picker.
+// In-app chats with the agents on the PC: one chat's thread and the new-chat picker (the list is chat_list.slint).
 // A dark messenger: my messages are small warm bubbles on the right; the agent's answers are open text across the
 // screen (paragraphs, headings, lists, quotes, code), its photos and videos rounded cards. Its character stands
-// alive by its name and thinks while the PC works.
+// alive by its name and thinks while the PC works. Threads the PC starts: an agent's question offers its answers as
+// buttons and waits for mine; the updates thread only shows (no field).
 import { T, Icon, Icons } from "parts.slint";
 import { Home } from "home_parts.slint";
 import { Actor } from "actor.slint";
 import "fonts/JetBrainsMonoNL-Regular.ttf";
 
-export struct ChatRow { id: string, name: string, face: string, preview: string, time: string, unread: bool, busy: bool }
+// asks: an agent's question waiting for my answer.
+export struct ChatRow { id: string, name: string, face: string, preview: string, time: string, unread: bool, busy: bool, asks: bool }
 // One piece of the thread (inbox.rs thread). kind: "" my text bubble; "note" a quiet line (downloading, couldn't load,
-// stopped); "image" or "video" a card (pic, ratio = height / width) that opens the file at path when tapped; and the
+// stopped); "image" or "video" a card (pic, ratio = height / width) that opens the file at path when tapped; the
 // PC's text as blocks: "p", "h", "li" (mark "1." or "•", level 0 or 1), "quote" (all with their inline markdown in
-// body) or "code" (text, mark its language). gap: px of room above it; n: its place in its message (the arrival's
-// stagger); anchor: the first block of the newest answer.
+// body) or "code" (text, mark its language); under an agent's question, a "choice" (an answer to tap; mark "on": the
+// one I sent) and a "tag" (a small grey word, "Expired"). gap: px of room above it; n: its place in its message (the
+// arrival's stagger); anchor: the first block of the newest answer.
 export struct ChatMsg {
     me: bool,
     text: string,
@@ -46,9 +49,15 @@ export global Chats {
     in property <[ChatMsg]> msgs; // the open chat
     in property <image> full; // the photo open full screen
     in-out property <bool> viewing; // ...while this is true
-    in property <string> name; // the open chat's agent, "Claude · Opus"
+    in property <string> name; // the open chat's agent, "Claude · Opus" (a PC-started thread: its task, "Weather app")
     in property <string> short; // ...in a word, "Opus"
-    in property <string> title; // ...and what it is about
+    in property <string> title; // ...and what it is about (a PC-started thread: where it stands)
+    in property <string> hint: "Message"; // the empty field's words
+    // An agent's question (chats.rs ask_state): "waiting" for my answer (its choices take a tap), "answered" or
+    // "expired"; "" any other chat.
+    in property <string> ask;
+    in property <bool> readonly; // the updates thread: no field
+    callback choose(string); // a tapped choice: sent as my message
     // Its character (actor.slint), alive: small by the name, big in the middle while the chat is empty (faces.rs).
     in property <string> face: "clawd";
     in property <bool> empty;
@@ -103,7 +112,7 @@ export global Chats {
 }
 
 // A round icon button with a soft press.
-component IconButton {
+export component IconButton {
     in property <string> icon;
     in property <brush> stroke: Ink.text;
     callback clicked;
@@ -121,7 +130,7 @@ component IconButton {
 }
 
 // The round arrow at the left of both headers.
-component BackButton inherits IconButton {
+export component BackButton inherits IconButton {
     x: 4px;
     y: 6px;
     icon: Icons.back;
@@ -129,233 +138,11 @@ component BackButton inherits IconButton {
 }
 
 // A screen coming in: rises a little and fades up over the panel (the list and a thread swap this way).
-component Arrive inherits Rectangle {
+export component Arrive inherits Rectangle {
     out property <float> k: 0;
     init => { self.k = 1; }
     animate k { duration: 380ms; easing: T.out; }
     opacity: k;
-}
-
-// The chats, newest first.
-export component ChatList inherits Rectangle {
-    Arrive {
-        y: (1 - self.k) * 14px;
-        Rectangle {
-            y: Home.sat;
-            height: 60px;
-            BackButton { }
-            IconButton {
-                x: parent.width - 52px; // the picker grows out of here
-                y: 6px;
-                icon: Icons.plus;
-                clicked => { Chats.picker = true; }
-            }
-        }
-        Text {
-            x: 20px;
-            y: Home.sat + 64px;
-            text: "Chats";
-            font-size: 30px;
-            font-weight: 700;
-            color: Ink.text;
-        }
-        if Chats.rows.length == 0: VerticalLayout {
-            y: Home.sat + 150px;
-            width: parent.width;
-            spacing: 6px;
-            Text { text: "No chats yet"; font-size: 17px; font-weight: 600; color: Ink.text; horizontal-alignment: center; }
-            Text { text: "Tap + to start one."; font-size: 14.5px; color: Ink.muted; horizontal-alignment: center; }
-        }
-        Flickable {
-            y: Home.sat + 116px;
-            width: parent.width;
-            height: parent.height - self.y;
-            content-height: list.preferred-height + Home.sab + 16px;
-            flicked => { Chats.revealed = ""; }
-            list := VerticalLayout {
-                padding-left: 8px;
-                padding-right: 8px;
-                for r in Chats.rows: row := Rectangle {
-                    property <length> reveal: 96px; // how far a row slides open: Delete and its margin
-                    property <bool> away: r.id == Chats.leaving;
-                    property <float> enter: r.id == Chats.returning ? 0 : 1; // 0 -> 1 as Undo brings it back
-                    property <float> hk: away ? 0 : 1; // the gap closes once the row is sliding out
-                    property <bool> sliding; // a finger is pulling it sideways
-                    property <bool> slid; // ...since this press, so letting go is not a tap
-                    property <bool> held; // a long press opened it, so letting go is not a tap
-                    property <bool> gone; // asked to delete
-                    property <length> from;
-                    property <length> drag;
-                    property <length> dx: away ? -(self.width + 24px) : sliding ? drag : Chats.revealed == r.id ? -reveal : 0px;
-                    animate dx { duration: sliding ? 0ms : away ? 300ms : 360ms; easing: away ? T.close : T.out; }
-                    animate hk { duration: 300ms; delay: 170ms; easing: T.close; }
-                    animate enter { duration: 440ms; easing: T.out; }
-                    init => {
-                        if (self.enter < 1) {
-                            self.enter = 1; // from 0: the row opens and slides back in
-                            Chats.returning = "";
-                        }
-                    }
-                    height: 78px * hk * enter;
-                    // Out and its gap closed: now the chat goes.
-                    Timer {
-                        interval: 480ms;
-                        running: row.away && !row.gone;
-                        triggered => { row.gone = true; Chats.delete-chat(r.id); }
-                    }
-                    // Long press: open it as a slide would.
-                    Timer {
-                        interval: 450ms;
-                        running: touch.pressed && !row.slid && !row.held && !row.away;
-                        triggered => { row.held = true; Chats.revealed = r.id; }
-                    }
-                    // Taps and the sideways pull, on the row itself (it stays put while what it shows slides).
-                    touch := TouchArea {
-                        enabled: !row.away;
-                        changed pressed => {
-                            if (self.pressed) {
-                                row.slid = false;
-                                row.held = false;
-                                row.from = Chats.revealed == r.id ? -row.reveal : 0px;
-                            } else if (row.sliding) {
-                                // let go: open past halfway (or flung open), else shut
-                                Chats.revealed = row.drag < -row.reveal / 2 ? r.id : Chats.revealed == r.id ? "" : Chats.revealed;
-                                row.sliding = false;
-                            }
-                        }
-                        moved => {
-                            if (!row.slid && !row.held && Math.abs(self.mouse-x - self.pressed-x) > 10px
-                                && Math.abs(self.mouse-x - self.pressed-x) > 1.3 * Math.abs(self.mouse-y - self.pressed-y)) {
-                                row.slid = true;
-                                row.drag = row.from;
-                                row.sliding = true;
-                                if (Chats.revealed != r.id) { Chats.revealed = ""; } // only one open at a time
-                            }
-                            if (row.sliding) {
-                                // follows the finger; past fully open it gives, a little
-                                row.drag = min(0px, row.from + self.mouse-x - self.pressed-x);
-                                if (row.drag < -row.reveal) { row.drag = -row.reveal + (row.drag + row.reveal) * 0.3; }
-                            }
-                        }
-                        clicked => {
-                            if (row.slid || row.held) { return; }
-                            if (Chats.revealed != "") { Chats.revealed = ""; return; } // a tap shuts an open row first
-                            Chats.open-chat(r.id);
-                        }
-                    }
-                    // What shows, clipped to the screen's edges (not the list's margin) as it slides and as the gap closes.
-                    Rectangle {
-                        x: -8px;
-                        width: row.width + 16px;
-                        clip: true;
-                        // Delete, under the row on the right; it comes up as the row slides off it.
-                        Rectangle {
-                            property <float> p: clamp(-row.dx / row.reveal, 0, 1);
-                            x: parent.width - self.width - 8px;
-                            y: 6px;
-                            width: row.reveal - 12px;
-                            height: 66px;
-                            border-radius: 18px;
-                            background: del.pressed ? #b53a31 : #d0473d;
-                            animate background { duration: 140ms; easing: T.out; }
-                            opacity: row.away ? 0 : min(1, p * 1.6);
-                            animate opacity { duration: row.away ? 180ms : 0ms; }
-                            transform-origin: { x: self.width / 2, y: self.height / 2 };
-                            transform-scale: 0.82 + 0.18 * p;
-                            Icon { d: "M4.5 7h15 M9.5 7V4.8h5V7 M6.5 7l1 12.2h9l1 -12.2 M10.2 10.8v4.8 M13.8 10.8v4.8"; x: (parent.width - 24px) / 2; y: 12px; stroke: #fff8f5; stroke-width: 1.8px; }
-                            Text { y: 41px; width: parent.width; text: "Delete"; font-size: 12.5px; font-weight: 600; color: #fff8f5; horizontal-alignment: center; }
-                            del := TouchArea {
-                                enabled: Chats.revealed == r.id && !row.away;
-                                clicked => { Chats.revealed = ""; Chats.leaving = r.id; }
-                            }
-                        }
-                        Rectangle {
-                            x: 8px + row.dx - (1 - row.enter) * (row.width + 24px);
-                            width: row.width;
-                            height: 78px;
-                            y: 0;
-                            border-radius: 18px;
-                            background: Ink.bg;
-                            Rectangle {
-                                border-radius: 18px;
-                                background: touch.pressed && !row.slid ? #ffffff0d : #ffffff00;
-                                animate background { duration: 160ms; easing: T.out; }
-                            }
-                            // The agent's character, a still picture (only the open chat's is alive), standing on the row.
-                            Actor { x: 6px; y: 1px; width: 60px; height: 62px; face: r.face; k: 0.21; }
-                            Text {
-                                x: 78px;
-                                y: 15px;
-                                width: parent.width - 78px - 70px;
-                                text: r.name;
-                                font-size: 16.5px;
-                                font-weight: 600;
-                                color: Ink.text;
-                                overflow: elide;
-                            }
-                            Text {
-                                x: parent.width - 72px;
-                                y: 17px;
-                                width: 58px;
-                                text: r.time;
-                                font-size: 12.5px;
-                                font-weight: r.unread ? 600 : 400;
-                                color: r.unread ? Ink.warm : Ink.muted;
-                                horizontal-alignment: right;
-                            }
-                            Text {
-                                x: 78px;
-                                y: 42px;
-                                width: parent.width - 78px - (r.unread ? 44px : 18px);
-                                text: r.busy ? "Thinking…" : r.preview;
-                                font-size: 14.5px;
-                                color: r.busy ? Ink.warm : r.unread ? Ink.text2 : Ink.muted;
-                                overflow: elide;
-                            }
-                            if r.unread: Rectangle {
-                                x: parent.width - 26px;
-                                y: 48px;
-                                width: 9px;
-                                height: 9px;
-                                border-radius: 4.5px;
-                                background: T.accent;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        // For a few seconds after a delete: "Chat deleted", and Undo.
-        Rectangle {
-            property <float> k: Chats.deleted != "" ? 1 : 0;
-            animate k { duration: Chats.deleted != "" ? 380ms : 240ms; easing: Chats.deleted != "" ? T.out : T.close; }
-            visible: self.k > 0.01;
-            x: 16px;
-            width: parent.width - 32px;
-            height: 52px;
-            y: parent.height - Home.sab - 16px - self.height + (1 - self.k) * 20px;
-            opacity: self.k;
-            border-radius: 18px;
-            background: Ink.raised;
-            border-width: 1px;
-            border-color: Ink.hair;
-            drop-shadow-blur: 18px;
-            drop-shadow-color: #00000080;
-            drop-shadow-offset-y: 4px;
-            TouchArea { } // the list under it takes no taps
-            Text { x: 18px; height: parent.height; text: "Chat deleted"; font-size: 15px; color: Ink.text; vertical-alignment: center; }
-            Rectangle {
-                x: parent.width - self.width - 6px;
-                width: 76px;
-                height: 40px;
-                border-radius: 14px;
-                background: undo.pressed ? #ffffff14 : #ffffff00;
-                animate background { duration: 140ms; easing: T.out; }
-                Text { text: "Undo"; font-size: 15px; font-weight: 600; color: Ink.warm; }
-                undo := TouchArea { enabled: Chats.deleted != ""; clicked => { Chats.undo(); } }
-            }
-        }
-    }
 }
 
 // The agent's text, at the thread's reading size.
@@ -428,7 +215,7 @@ export component ChatThread inherits Rectangle {
                 padding-left: 20px;
                 padding-right: 20px;
                 padding-top: 12px;
-                padding-bottom: root.height - field.y + 16px;
+                padding-bottom: Chats.readonly ? Home.sab + 28px : root.height - field.y + 16px;
                 for m in Chats.msgs: Rectangle {
                     // Laid out by hand (no nested layouts): wrapped text gets its height from its real width.
                     property <bool> bubble: m.me && m.kind == "";
@@ -436,10 +223,13 @@ export component ChatThread inherits Rectangle {
                     property <bool> code: m.kind == "code";
                     property <bool> media: m.kind == "image" || m.kind == "video";
                     property <bool> quiet: m.kind == "note";
+                    property <bool> choice: m.kind == "choice";
                     property <length> top: m.gap * 1px;
                     property <length> media-w: max(150px, min(self.width * (m.me ? 0.72 : 1), 380px / max(m.ratio, 0.01)));
                     property <length> bubble-w: min(self.width * 0.8, said.preferred-width + 30px);
                     property <length> h: bubble ? said.preferred-height + 21px
+                        : choice ? answer.preferred-height + 22px
+                        : m.kind == "tag" ? 18px
                         : prose ? words.preferred-height
                         : code ? lines.preferred-height + (m.mark != "" ? 45px : 26px)
                         : media ? max(110px, min(380px, self.media-w * m.ratio))
@@ -569,6 +359,41 @@ export component ChatThread inherits Rectangle {
                                 wrap: word-wrap;
                             }
                         }
+                        // An answer the agent offers: a warm outlined pill under its question, sent as my message when
+                        // tapped. Once answered (or expired) they all rest faded, the one I sent filled in.
+                        Rectangle {
+                            property <bool> live: Chats.ask == "waiting" && Chats.ready;
+                            property <bool> on: m.mark == "on";
+                            visible: choice;
+                            x: 0;
+                            width: min(parent.width * 0.86, answer.preferred-width + 36px);
+                            border-radius: 21px;
+                            border-width: 1px;
+                            border-color: on ? Ink.me : live ? #e3a48c59 : Ink.hair;
+                            background: on ? #b05a3f38 : tap.pressed ? #e3a48c26 : live ? #e3a48c0d : #ffffff00;
+                            animate background, border-color { duration: 200ms; easing: T.out; }
+                            opacity: live || on ? 1 : 0.45;
+                            animate opacity { duration: 260ms; easing: T.out; }
+                            transform-origin: { x: 0, y: self.height / 2 };
+                            transform-scale: tap.pressed ? 0.97 : 1;
+                            animate transform-scale { duration: 140ms; easing: T.out; }
+                            answer := Text {
+                                x: 18px;
+                                y: 11px;
+                                width: parent.width - 36px;
+                                text: choice ? m.text : "";
+                                font-size: 15.5px;
+                                font-weight: 500;
+                                color: on ? #fff8f5 : live ? Ink.warm : Ink.text2;
+                                wrap: word-wrap;
+                            }
+                            tap := TouchArea {
+                                enabled: choice && parent.live;
+                                clicked => { Chats.choose(m.text); }
+                            }
+                        }
+                        // A small grey word under a question: "Expired".
+                        if m.kind == "tag": Text { x: 2px; text: m.text; font-size: 12.5px; color: Ink.muted; vertical-alignment: center; }
                         // A photo or video: a rounded card, shown whole (narrower for a tall one, at most 380px high).
                         if media: Rectangle {
                             x: m.me ? parent.width - self.width : 0px;
@@ -706,19 +531,21 @@ export component ChatThread inherits Rectangle {
                     width: parent.width - 122px;
                     text: Chats.title;
                     font-size: 12.5px;
-                    color: Ink.muted;
+                    color: Chats.ask == "waiting" ? Ink.warm : Ink.muted;
                     overflow: elide;
                 }
             }
         }
         // The thread fades out under the field.
         Rectangle {
+            visible: !Chats.readonly;
             y: field.y - 30px;
             height: parent.height - self.y;
             background: @linear-gradient(180deg, #0e0e1000 0%, #0e0e10 46%);
         }
         // The field: what is picked sits inside it, above the line you type on.
         field := Rectangle {
+            visible: !Chats.readonly;
             x: 12px;
             width: parent.width - 24px;
             height: 52px + root.pick-h;
@@ -826,7 +653,7 @@ export component ChatThread inherits Rectangle {
                         }
                         Text {
                             visible: root.draft == "";
-                            text: "Message " + Chats.short;
+                            text: Chats.hint;
                             font-size: 16.5px;
                             color: #6f7178;
                             vertical-alignment: center;
