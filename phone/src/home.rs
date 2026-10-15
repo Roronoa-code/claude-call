@@ -138,6 +138,7 @@ pub fn run(_app: android_activity::AndroidApp) {
             let mut s = scene.borrow_mut();
             if show && (!s.show || now - drawn >= 1.0 / fps - 0.004) {
                 s.pose = t.0.pose();
+                s.fresh = true;
                 drawn = now;
                 ui.window().request_redraw();
             }

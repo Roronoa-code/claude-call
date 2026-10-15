@@ -458,11 +458,12 @@ mod gl {
     use slint::{ComponentHandle, GraphicsAPI, RenderingState};
     use std::{cell::RefCell, num::NonZeroU32, rc::Rc};
 
-    /// The shared frame: the pose to draw, and whether he is on screen at all.
+    /// The shared frame: the pose to draw, whether he is on screen at all, and whether that pose is not drawn yet.
     #[derive(Default)]
     pub struct Scene {
         pub pose: Pose,
         pub show: bool,
+        pub fresh: bool,
     }
 
     struct Gl {
@@ -597,9 +598,12 @@ mod gl {
                 }
             }
             RenderingState::BeforeRendering => {
-                let s = scene.borrow();
-                if let (Some(g), true) = (&gl, s.show) {
+                // Slint redraws the whole screen at the display rate while anything animates (Null's breathing),
+                // so only a new pose redraws him; otherwise the texture keeps his last frame.
+                let mut s = scene.borrow_mut();
+                if let (Some(g), true, true) = (&gl, s.show, s.fresh) {
                     unsafe { g.draw(&s.pose) };
+                    s.fresh = false;
                 }
             }
             RenderingState::RenderingTeardown => {
