@@ -82,7 +82,15 @@ export component Figure {
     @children
 }
 
-// A soft floor under a standing character: a dim warm pool, no beam.
+// A soft floor under a standing character: a dim warm pool, no beam. Drawn as a round pool squashed to this box's
+// height, fully transparent well inside its edges, so no edge of it ever shows.
 export component Floor inherits Rectangle {
-    background: @radial-gradient(circle, #2a221f 0%, #1a1716 38%, #0e0e1000 70%);
+    Rectangle {
+        y: (parent.height - self.height) / 2;
+        width: parent.width;
+        height: parent.width;
+        transform-origin: { x: self.width / 2, y: self.height / 2 };
+        transform-scale-y: parent.height / max(1px, parent.width) * 100%;
+        background: @radial-gradient(circle, #2a221f 0%, #1a171699 30%, #0e0e1000 55%);
+    }
 }

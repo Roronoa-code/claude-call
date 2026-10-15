@@ -8,6 +8,7 @@ import { Toys, Clawd, Null } from "toys.slint";
 import { Chats, NewChat, Ink } from "chat.slint";
 import { ChatList } from "chats/list.slint";
 import { ChatThread } from "chats/thread.slint";
+import { Sheet } from "chats/open.slint";
 import { StageBack, Look } from "stage.slint";
 
 // A choice in a sheet: icon, title and a line under it.
@@ -366,22 +367,18 @@ export component HomeScreen inherits Window {
         radius: 0px;
         face: Icons.chat;
         from: T.btn;
-        ChatList { width: root.width; height: root.height; visible: thread.g < 1; }
-        // A chat opens out of its row over the list, and closes back into it.
-        thread := Morph {
+        // The list sinks back a little under a chat rising over it (chats/open.slint).
+        ChatList {
+            width: root.width;
+            height: root.height;
+            visible: !thread.full;
+            transform-origin: { x: self.width * 0.5, y: self.height * 0.7 };
+            transform-scale: 1 - 0.06 * Chats.open-k;
+        }
+        thread := Sheet {
             open: Chats.current != "";
-            panel: Ink.bg;
-            fx: 8px;
-            fy: Chats.from-y;
-            fw: root.width - 16px;
-            fh: Chats.from-h;
-            fradius: 18px;
-            tx: 0px;
-            ty: 0px;
-            tw: root.width;
-            th: root.height;
-            radius: 0px;
-            zoom: false;
+            width: root.width;
+            height: root.height;
             if thread.shown: ChatThread { width: root.width; height: root.height; }
         }
     }

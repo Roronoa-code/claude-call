@@ -329,7 +329,8 @@ fn thread(chat: &chats::Chat, ask: &str) -> Vec<ChatMsg> {
                     "h" => styled(&format!("**{}**", b.text.replace("**", ""))),
                     _ => styled(&b.text),
                 };
-                items.push(ChatMsg { text: b.text.into(), kind: b.kind.into(), body, mark: b.mark.into(), level: b.level as i32, ..ChatMsg::default() });
+                let text = if b.kind == "code" { chat_view::soft_breaks(&b.text) } else { b.text.clone() };
+                items.push(ChatMsg { text: text.into(), kind: b.kind.into(), body, mark: b.mark.into(), level: b.level as i32, ..ChatMsg::default() });
             }
             items.extend(l.media.iter().map(|m| media_msg(false, m)));
             if question == Some(i) {

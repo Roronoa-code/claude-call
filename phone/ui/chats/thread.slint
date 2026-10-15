@@ -145,6 +145,7 @@ export component ChatThread inherits Rectangle {
             y: 0;
             width: parent.width;
             height: 74px;
+            visible: !Chats.flying; // on its way from the list (open.slint)
             face: Chats.face;
             pose: Chats.waiting ? "think" : "idle";
             k: 0.26; // faces.rs SMALL_K

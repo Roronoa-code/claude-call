@@ -53,3 +53,33 @@ pub fn arrange(mut rows: Vec<ChatRow>, hero: &str) -> Vec<ChatRow> {
     }
     rows
 }
+
+/// A code block's text with a zero-width break after `_ . / : (` inside long words, so a line that has to wrap breaks
+/// there ("BOOT_ / COMPLETED") rather than mid-word.
+pub fn soft_breaks(code: &str) -> String {
+    let mut out = String::with_capacity(code.len() + 16);
+    for (i, word) in code.split(' ').enumerate() {
+        if i > 0 {
+            out.push(' ');
+        }
+        if word.chars().count() < 16 {
+            out.push_str(word);
+            continue;
+        }
+        for c in word.chars() {
+            out.push(c);
+            if matches!(c, '_' | '.' | '/' | ':' | '(') {
+                out.push('\u{200b}');
+            }
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn breaks_only_long_words_at_natural_points() {
+        assert_eq!(super::soft_breaks("a.b BOOT_COMPLETED_NOW"), "a.b BOOT_\u{200b}COMPLETED_\u{200b}NOW");
+    }
+}
