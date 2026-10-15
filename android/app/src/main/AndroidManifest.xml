@@ -23,7 +23,6 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:windowSoftInputMode="stateAlwaysHidden"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|density|uiMode">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

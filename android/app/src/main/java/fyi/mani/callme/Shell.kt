@@ -22,6 +22,7 @@ import android.text.Editable
 import android.view.Surface
 import android.view.inputmethod.InputMethodManager
 import android.view.SurfaceHolder
+import android.view.WindowManager
 import java.io.File
 import java.io.FileNotFoundException
 import android.window.OnBackInvokedDispatcher
@@ -55,6 +56,14 @@ object Native {
  * showed the launcher until the GPU's first frame popped the app in.
  */
 open class Shown : NativeActivity() {
+    // NativeActivity sets "keyboard: unspecified" here over the manifest's, which let Android raise the keyboard by
+    // itself on opening whenever Slint's always-focusable input view held the focus as the window got it (more often
+    // since the window now gets it only once drawn). Opening never shows it; a field tapped (or one that had it when
+    // the app was left) still does.
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN or WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+    }
     @JvmField @Volatile var waiting = false
     private var finish: Runnable? = null
     override fun surfaceRedrawNeededAsync(holder: SurfaceHolder, drawingFinished: Runnable) {
