@@ -63,7 +63,7 @@ fn path(env: &mut JNIEnv, ctx: &JObject) -> Result<()> {
 }
 
 /// Runs `f` on the stored chats and saves them.
-fn update<R>(f: impl FnOnce(&mut Store) -> R) -> Option<R> {
+pub(crate) fn update<R>(f: impl FnOnce(&mut Store) -> R) -> Option<R> {
     let path = PATH.get()?;
     let _lock = LOCK.lock().unwrap();
     let Some(mut store) = Store::load(path) else {
@@ -75,6 +75,11 @@ fn update<R>(f: impl FnOnce(&mut Store) -> R) -> Option<R> {
         android::log(&format!("chats: {e}"));
     }
     Some(r)
+}
+
+/// PREVIEW (fake_chat.rs): the chat on screen right now, if any.
+pub(crate) fn viewing() -> Option<String> {
+    VIEWING.lock().unwrap().clone()
 }
 
 /// Whether the home screen is in front and focused (a chat open behind the lock screen is not being read).
@@ -171,6 +176,11 @@ pub fn reply_arrived(env: &mut JNIEnv, ctx: &JObject, body: &str) -> Result<()> 
 
 /// Adds or retries a message of mine (`f` says which) and sends it in the background.
 fn post(env: &mut JNIEnv, ctx: &JObject, chat: &str, f: impl FnOnce(&mut Store) -> Option<String>) -> Result<()> {
+    if crate::fake_chat::on() {
+        path(env, ctx)?;
+        crate::fake_chat::post(chat, f);
+        return Ok(());
+    }
     let Some(key) = settings::chat_key(env, ctx)? else { return Ok(()) };
     let topic = settings::topic(env, ctx)?;
     path(env, ctx)?;
@@ -382,7 +392,10 @@ fn show(ui: &HomeScreen) {
                     msgs.extend(text.into_iter().chain(media));
                 }
             }
-            c.set_name(chats::name(&chat.agent, chat.model.as_deref()).into());
+            let name = chats::name(&chat.agent, chat.model.as_deref());
+            // PREVIEW (branch preview/chats): the agent in one word, for the directions' labels
+            ui.global::<crate::ChatLook>().set_short(name.rsplit(" · ").next().unwrap_or(&name).into());
+            c.set_name(name.into());
             c.set_face(chats::face(&chat.agent, chat.model.as_deref()).into());
             c.set_empty(msgs.is_empty());
             c.set_waiting(chats::waiting(chat));
@@ -413,7 +426,7 @@ fn status(ui: &HomeScreen) {
             c.set_action(action.into());
         }
     }
-    let ready = android::with(|env, act| settings::chat_key(env, act)).flatten().is_some();
+    let ready = crate::fake_chat::on() || android::with(|env, act| settings::chat_key(env, act)).flatten().is_some();
     if c.get_ready() != ready {
         c.set_ready(ready);
     }
@@ -459,6 +472,9 @@ pub fn wire(ui: &HomeScreen) -> Tracker {
         *HOME.lock().unwrap() = Some(env.new_global_ref(act)?);
         Ok(())
     });
+    // PREVIEW (branch preview/chats): the chats' direction, and the PC played here with debug.callme.fake (fake_chat.rs)
+    ui.global::<crate::ChatLook>().set_v(crate::faces::look() as i32);
+    crate::fake_chat::set(crate::stage::prop(c"debug.callme.fake", 2) > 0);
     let c = ui.global::<Chats>();
     c.on_open_chat({
         let ui = ui.as_weak();
@@ -500,7 +516,11 @@ pub fn wire(ui: &HomeScreen) -> Tracker {
         }
     });
     c.on_attach(|| {
-        android::with(attach::open);
+        if crate::fake_chat::on() {
+            crate::fake_chat::pick();
+        } else {
+            android::with(attach::open);
+        }
     });
     c.on_unpick(attach::clear);
     c.on_retry({

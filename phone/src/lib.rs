@@ -14,6 +14,8 @@ mod engine;
 #[cfg(target_os = "android")]
 mod faces;
 #[cfg(target_os = "android")]
+mod fake_chat; // PREVIEW: the PC played on the test emulator
+#[cfg(target_os = "android")]
 mod inbox;
 #[cfg(target_os = "android")]
 mod jx;

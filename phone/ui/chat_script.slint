@@ -1,0 +1,248 @@
+// PREVIEW (branch preview/chats) direction 3, Script: the chat reads like a script, the calmest and most readable.
+// Each speaker's cue is set centred in small capitals (the agent's in its light's colour, yours quieter) over its
+// lines; no bubbles. While the agent works its cue shows "(thinking)", breathing. The agent stands small
+// in its spotlight by the title; a new chat has it big in the light. The list is the cast: each chat's cue and its
+// last line.
+import { T, Icon, Icons } from "parts.slint";
+import { Home } from "home_parts.slint";
+import { Actor } from "actor.slint";
+import { Chats } from "chat.slint";
+import { ChatLook, PlayMark, Viewer, Arrival, Back, Spot, Composer, Plus, StopLink, TopFade } from "chat_kit.slint";
+
+export global Cue {
+    public pure function of(face: string) -> string {
+        return face == "haiku" ? "HAIKU" : face == "sonnet" ? "SONNET" : face == "opus" ? "OPUS" : face == "null" ? "CODEX" : "CLAUDE";
+    }
+}
+
+component CueText inherits Text {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.8px;
+    horizontal-alignment: center;
+}
+
+export component ScriptList inherits Rectangle {
+    background: ChatLook.bg;
+    Rectangle {
+        y: Home.sat;
+        height: 60px;
+        Back { }
+        Text { x: 66px; text: "Chats"; font-size: 17px; font-weight: 700; color: T.fg; vertical-alignment: center; height: parent.height; }
+        Plus { x: parent.width - 54px; y: 6px; }
+    }
+    if Chats.rows.length == 0: Text {
+        y: Home.sat + 60px + 48px;
+        width: parent.width;
+        text: "No chats yet.\nTap + to start one.";
+        font-size: 15px;
+        color: T.muted;
+        horizontal-alignment: center;
+    }
+    Flickable {
+        y: Home.sat + 64px;
+        width: parent.width;
+        height: parent.height - self.y;
+        content-height: list.preferred-height + Home.sab;
+        list := VerticalLayout {
+            for r[i] in Chats.rows: Rectangle {
+                height: 98px;
+                if i > 0: Rectangle { x: 24px; width: parent.width - 48px; y: 0; height: 1px; background: ChatLook.line; }
+                Rectangle { x: 8px; width: parent.width - 16px; border-radius: 14px; background: #ffffff; opacity: touch.pressed ? 0.04 : 0; }
+                CueText {
+                    x: 24px;
+                    y: 18px;
+                    text: Cue.of(r.face);
+                    horizontal-alignment: left;
+                    color: r.unread ? ChatLook.label : #b9b2a6;
+                }
+                Text { x: parent.width - 84px; y: 16px; width: 60px; text: r.time; font-size: 12px; color: r.unread ? ChatLook.label : T.muted; horizontal-alignment: right; }
+                if r.unread: Rectangle { x: 24px + cue-w.preferred-width + 10px; y: 21px; width: 7px; height: 7px; border-radius: 3.5px; background: T.accent; }
+                cue-w := CueText { visible: false; text: Cue.of(r.face); width: 0; }
+                Text {
+                    x: 24px;
+                    y: 40px;
+                    width: parent.width - 48px;
+                    height: 44px;
+                    text: r.preview;
+                    font-size: 15px;
+                    color: r.unread ? #f1eee8 : #b9b6b0;
+                    wrap: word-wrap;
+                    overflow: elide;
+                }
+                touch := TouchArea { clicked => { Chats.open-chat(r.id); } }
+            }
+        }
+    }
+}
+
+export component ScriptThread inherits Rectangle {
+    background: ChatLook.bg;
+    property <string> draft;
+    property <bool> working: Chats.action == "stop";
+    property <length> top: Home.sat + 80px;
+    property <length> fx: 90px; // the agent's feet, by the title
+    property <length> fy: Home.sat + 66px;
+    property <length> colw: self.width - 56px; // the lines' column
+    property <float> t: animation-tick() / 1s;
+    arrive := Arrival { }
+    composer := Composer {
+        x: 16px;
+        width: root.width - 32px;
+        height: root.height;
+        draft <=> root.draft;
+        bottom: root.height - max(Home.kb, Home.sab) - 12px;
+    }
+
+    log := Flickable {
+        y: root.top;
+        width: parent.width;
+        height: composer.top - 8px - self.y;
+        content-height: rows.preferred-height;
+        property <length> bottom: Math.min(0px, self.height - rows.preferred-height);
+        init => { self.content-y = self.bottom; }
+        changed bottom => { self.content-y = self.bottom; }
+        rows := VerticalLayout {
+            width: parent.width;
+            padding-left: 28px;
+            padding-right: 28px;
+            padding-top: 18px;
+            padding-bottom: 14px;
+            spacing: 8px;
+            for m[i] in Chats.msgs: msg := VerticalLayout {
+                property <bool> first: i == 0 || Chats.msgs[i - 1].me != m.me;
+                property <float> a: i == Chats.msgs.length - 1 && !m.me ? arrive.k : 1;
+                padding-top: self.first && i > 0 ? 18px : 0px;
+                spacing: 8px;
+                opacity: min(1, msg.a * 1.4);
+                // the cue
+                if self.first: CueText { text: m.me ? "YOU" : Cue.of(Chats.face); color: m.me ? ChatLook.you : ChatLook.label; }
+                if m.kind == "image" || m.kind == "video": HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: max(140px, min(root.colw * 0.86, 330px / max(m.ratio, 0.01)));
+                        height: max(100px, min(330px, self.width * m.ratio));
+                        border-radius: 12px;
+                        background: #141416;
+                        clip: true;
+                        Image { width: parent.width; height: parent.height; source: m.pic; image-fit: cover; }
+                        if m.kind == "video": PlayMark { }
+                        TouchArea { clicked => { Chats.open-media(m.path, m.kind); } }
+                    }
+                }
+                if m.kind != "image" && m.kind != "video": Text {
+                    width: root.colw; // known up front, so its wrapped height is right
+                    text: m.text;
+                    wrap: word-wrap;
+                    font-size: m.kind == "note" ? 14px : 16.5px;
+                    font-italic: m.kind == "note";
+                    color: m.kind == "note" ? T.muted : m.me ? ChatLook.mine : ChatLook.words;
+                }
+            }
+            // while it works: its cue, "(thinking)" breathing in the light's colour, and Stop
+            if root.working: VerticalLayout {
+                padding-top: 24px;
+                spacing: 8px;
+                CueText { text: Cue.of(Chats.face); color: ChatLook.label; }
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 12px;
+                    height: 32px;
+                    Text { text: "(thinking)"; font-size: 15.5px; font-italic: true; color: ChatLook.mine; vertical-alignment: center; opacity: 0.55 + 0.45 * (0.5 + 0.5 * Math.sin(root.t * 2.4rad)); }
+                    StopLink { }
+                }
+            }
+            if Chats.status != "" && !root.working: HorizontalLayout {
+                alignment: center;
+                height: 22px;
+                Rectangle {
+                    width: note.preferred-width;
+                    note := Text { text: Chats.status; font-size: 13px; color: Chats.action == "retry" ? T.fg2 : #a9a39a; vertical-alignment: center; }
+                    TouchArea { enabled: Chats.action == "retry"; clicked => { Chats.retry(); } }
+                }
+            }
+        }
+    }
+    TopFade { x: 0; y: log.y; width: root.width; }
+
+    // ---- a new chat: the agent big in the light, its cue under it ----
+    empty := Rectangle {
+        property <length> room: composer.top - 8px - root.top;
+        property <length> efy: root.top + max(0px, (self.room - 270px) / 2) + 190px;
+        opacity: Chats.empty ? 1 : 0;
+        animate opacity { duration: 220ms; easing: T.out; }
+        visible: self.opacity > 0.01;
+        Spot { fx: root.width / 2; fy: empty.efy; k: 0.62; }
+        Actor {
+            x: root.width / 2 - 140px;
+            y: empty.efy - 200px;
+            width: 280px;
+            height: 200px;
+            face: Chats.face;
+            k: 0.62;
+            live: Chats.live;
+            source: Chats.big-live;
+            lw: Chats.big-w;
+            lh: Chats.big-h;
+            th: Chats.big-th;
+            TouchArea { x: 60px; width: 160px; y: 60px; height: 140px; enabled: Chats.empty; clicked => { Chats.poke(); } }
+        }
+        CueText { y: empty.efy + 46px; width: root.width; text: Cue.of(Chats.face); color: ChatLook.label; }
+        Text { y: empty.efy + 68px; width: root.width; text: "Your message goes to the PC."; font-size: 15px; font-italic: true; color: #c9c3b8; horizontal-alignment: center; }
+    }
+
+    // ---- the header: the agent small in its light, its cue and the title ----
+    Rectangle {
+        y: 0;
+        height: root.top;
+        background: Chats.empty ? transparent : ChatLook.bg;
+        clip: true;
+        Spot { fx: root.fx; fy: root.fy; k: 0.21; lit: Chats.empty ? 0 : 0.85; }
+        Actor {
+            x: root.fx - 40px;
+            y: root.fy - 64px;
+            width: 80px;
+            height: 64px;
+            face: Chats.face;
+            k: 0.21; // faces.rs SMALL_K for this direction
+            live: Chats.live;
+            source: Chats.face-live;
+            lw: Chats.face-w;
+            lh: Chats.face-h;
+            th: Chats.face-th;
+            opacity: Chats.empty ? 0 : 1;
+            animate opacity { duration: 300ms; easing: T.out; }
+            TouchArea { enabled: !Chats.empty; clicked => { Chats.poke(); } }
+        }
+        Back { y: Home.sat + 10px; }
+        CueText { x: 130px; y: Home.sat + 18px; height: 14px; text: Cue.of(Chats.face); color: ChatLook.label; horizontal-alignment: left; }
+        Text { x: 130px; y: Home.sat + 34px; width: root.width - 146px; height: 24px; text: Chats.title == "" ? Chats.name : Chats.title; font-size: 17px; font-weight: 650; color: T.fg; vertical-alignment: center; overflow: elide; }
+        Rectangle { x: 130px; y: parent.height - 1px; width: parent.width - 154px; height: 1px; background: ChatLook.line; opacity: Chats.empty ? 0 : 1; }
+    }
+    if Chats.viewing: Viewer { }
+}
+
+// The new-chat picker: the cast, by cue.
+export component ScriptPick inherits Rectangle {
+    background: #0b0b0d;
+    border-radius: 24px;
+    border-width: 1px;
+    border-color: ChatLook.line;
+    for a[i] in [
+        { face: "haiku", sub: "Agent 1", agent: "claude", model: "haiku-5.5" },
+        { face: "sonnet", sub: "Agent 2", agent: "claude", model: "sonnet-5.5" },
+        { face: "opus", sub: "Agent 3", agent: "claude", model: "opus-5.5" },
+        { face: "null", sub: "On the PC", agent: "codex", model: "" },
+    ]: Rectangle {
+        x: 8px;
+        y: 8px + i * 64px;
+        width: root.width - 16px;
+        height: 64px;
+        if i > 0: Rectangle { x: 14px; width: parent.width - 28px; y: 0; height: 1px; background: ChatLook.line; }
+        Rectangle { border-radius: 16px; background: #ffffff; opacity: pick.pressed ? 0.05 : 0; }
+        CueText { x: 18px; y: 17px; text: Cue.of(a.face); color: ChatLook.label; horizontal-alignment: left; }
+        Text { x: 18px; y: 35px; text: a.sub; font-size: 13px; color: T.muted; }
+        Actor { x: parent.width - 76px; y: 0; width: 64px; height: 56px; face: a.face; k: a.face == "null" ? 0.17 : 0.19; }
+        pick := TouchArea { clicked => { Chats.picker = false; Chats.new-chat(a.agent, a.model); Chats.want-focus = true; } }
+    }
+}

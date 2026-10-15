@@ -8,6 +8,11 @@ import { Chats, ChatList, ChatThread, PickRow } from "chat.slint";
 import { StageBack, Look } from "stage.slint";
 import { Ctl, Tuner, Amp } from "controls.slint";
 import { Type, Pucks } from "controls_b.slint";
+import { ChatLook } from "chat_kit.slint";
+import { StageList, StageThread, StagePick } from "chat_stage.slint";
+import { BesideList, BesideThread, BesidePick } from "chat_beside.slint";
+import { ScriptList, ScriptThread, ScriptPick } from "chat_script.slint";
+import { LightList, LightThread, LightPick } from "chat_light.slint";
 
 // A choice in a sheet: icon, title and a line under it.
 component Choice {
@@ -367,7 +372,7 @@ export component HomeScreen inherits Window {
     // The Chats screen grows out of its button and fills the screen; the new-chat picker grows out of its "+".
     Morph {
         open: Chats.open;
-        panel: #1c1d21;
+        panel: ChatLook.v == 0 ? #1c1d21 : ChatLook.bg;
         fx: root.chats-x - 32px;
         fy: root.row-y + root.act-y - 32px;
         tx: 0px;
@@ -376,15 +381,42 @@ export component HomeScreen inherits Window {
         th: root.height;
         radius: 0px;
         face: Icons.chat;
-        if Chats.current == "": ChatList { width: root.width; height: root.height; }
-        if Chats.current != "": ChatThread { width: root.width; height: root.height; }
+        // PREVIEW (branch preview/chats): the chats in the direction picked with debug.callme.chats (0 as shipped)
+        if ChatLook.v == 0 && Chats.current == "": ChatList { width: root.width; height: root.height; }
+        if ChatLook.v == 0 && Chats.current != "": ChatThread { width: root.width; height: root.height; }
+        if ChatLook.v == 1 && Chats.current == "": StageList { width: root.width; height: root.height; }
+        if ChatLook.v == 1 && Chats.current != "": StageThread { width: root.width; height: root.height; }
+        if ChatLook.v == 2 && Chats.current == "": BesideList { width: root.width; height: root.height; }
+        if ChatLook.v == 2 && Chats.current != "": BesideThread { width: root.width; height: root.height; }
+        if ChatLook.v == 3 && Chats.current == "": ScriptList { width: root.width; height: root.height; }
+        if ChatLook.v == 3 && Chats.current != "": ScriptThread { width: root.width; height: root.height; }
+        if ChatLook.v == 4 && Chats.current == "": LightList { width: root.width; height: root.height; }
+        if ChatLook.v == 4 && Chats.current != "": LightThread { width: root.width; height: root.height; }
     }
 
     if Chats.picker: TouchArea {
         clicked => { Chats.picker = false; }
     }
 
-    Morph {
+    // PREVIEW (branch preview/chats): each direction's picker grows out of today's +
+    if ChatLook.v > 0: Morph {
+        open: Chats.picker;
+        panel: #0b0b0d;
+        fx: root.width - 54px;
+        fy: Home.sat + 6px;
+        fsize: 48px;
+        tw: ChatLook.v == 3 ? min(root.width - 32px, 300px) : root.width - 32px;
+        tx: root.width - 16px - self.tw;
+        th: ChatLook.v == 3 ? 272px : ChatLook.v == 4 ? 296px : 222px;
+        ty: Home.sat + 60px;
+        face: Icons.plus;
+        if ChatLook.v == 1: StagePick { width: parent.width; height: parent.height; }
+        if ChatLook.v == 2: BesidePick { width: parent.width; height: parent.height; }
+        if ChatLook.v == 3: ScriptPick { width: parent.width; height: parent.height; }
+        if ChatLook.v == 4: LightPick { width: parent.width; height: parent.height; }
+    }
+
+    if ChatLook.v == 0: Morph {
         open: Chats.picker;
         panel: #26282d;
         fx: root.width - 54px;

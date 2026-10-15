@@ -1,0 +1,223 @@
+// PREVIEW (branch preview/chats) direction 2, Beside: the agent keeps you company. In the thread it stands in its
+// own small spotlight at the bottom left, beside today's field, alive the whole time; the conversation is open text
+// in the dark above it (no bubbles), yours to the right in a quieter tone. While it works its light dims and breathes
+// and it says it is thinking by its head; as an answer lands the light comes up. A new chat has it big in the light,
+// and the field slides over to make room for it when you send. The list is the cast waiting, each in its own light
+// (lit while it has something new); the picker is the whole cast in one light, as on the home screen.
+import { T, Icon, Icons } from "parts.slint";
+import { Home } from "home_parts.slint";
+import { Actor } from "actor.slint";
+import { Chats } from "chat.slint";
+import { ChatLook, Viewer, Arrival, Back, Spot, Composer, Plus, Lines, Thinking, StopLink, TopFade, BeamFade } from "chat_kit.slint";
+
+export component BesideList inherits Rectangle {
+    background: ChatLook.bg;
+    property <length> cw: (self.width - 32px - 12px) / 2;
+    property <length> ch: 252px;
+    Rectangle {
+        y: Home.sat;
+        height: 60px;
+        Back { }
+        Text { x: 66px; text: "Chats"; font-size: 17px; font-weight: 700; color: T.fg; vertical-alignment: center; height: parent.height; }
+        Plus { x: parent.width - 54px; y: 6px; }
+    }
+    if Chats.rows.length == 0: Text {
+        y: Home.sat + 60px + 48px;
+        width: parent.width;
+        text: "No chats yet.\nTap + to start one.";
+        font-size: 15px;
+        color: T.muted;
+        horizontal-alignment: center;
+    }
+    Flickable {
+        y: Home.sat + 60px;
+        width: parent.width;
+        height: parent.height - self.y;
+        content-height: ceil(Chats.rows.length / 2) * root.ch + Home.sab;
+        for r[i] in Chats.rows: Rectangle {
+            x: 16px + Math.mod(i, 2) * (root.cw + 12px);
+            y: floor(i / 2) * root.ch;
+            width: root.cw;
+            height: root.ch;
+            clip: true;
+            Rectangle { y: 8px; height: parent.height - 16px; border-radius: 20px; background: #ffffff; opacity: touch.pressed ? 0.05 : 0; }
+            Spot { fx: root.cw / 2; fy: 150px; k: 0.42; lit: r.unread ? 1 : 0.4; }
+            BeamFade { x: 0; y: 0; width: parent.width; }
+            Actor { x: root.cw / 2 - 100px; y: 150px - 130px; width: 200px; height: 130px; face: r.face; k: 0.42; }
+            HorizontalLayout {
+                x: 8px;
+                y: 174px;
+                width: root.cw - 16px;
+                height: 20px;
+                spacing: 6px;
+                Text { text: r.name; font-size: 14.5px; font-weight: 650; color: T.fg; overflow: elide; vertical-alignment: center; horizontal-stretch: 1; }
+                if r.unread: Rectangle { width: 8px; Rectangle { y: 6px; height: 8px; border-radius: 4px; background: T.accent; } }
+                Text { text: r.time; font-size: 12px; color: r.unread ? ChatLook.label : T.muted; vertical-alignment: center; horizontal-stretch: 0; }
+            }
+            Text {
+                x: 8px;
+                y: 198px;
+                width: root.cw - 16px;
+                height: 38px;
+                text: r.preview;
+                font-size: 13px;
+                color: r.unread ? T.fg2 : T.muted;
+                wrap: word-wrap;
+                overflow: elide;
+            }
+            touch := TouchArea { clicked => { Chats.open-chat(r.id); } }
+        }
+    }
+}
+
+export component BesideThread inherits Rectangle {
+    background: ChatLook.bg;
+    property <string> draft;
+    property <bool> working: Chats.action == "stop";
+    property <float> t: animation-tick() / 1s;
+    // beside the agent once the chat has started; the whole width while it is empty
+    property <float> side: Chats.empty ? 0 : 1;
+    animate side { duration: Chats.empty ? 300ms : 560ms; easing: Chats.empty ? T.close : T.spring; }
+    property <length> bottom: self.height - max(Home.kb, Home.sab) - 12px;
+    property <length> fx: 52px; // the agent's feet
+    property <length> fy: self.bottom - 6px;
+    property <float> think: root.working ? 1 : 0;
+    animate think { duration: root.working ? 480ms : 320ms; easing: T.out; }
+    // the words stop above its head, and above "thinking" while it works
+    property <length> log-bottom: min(composer.top - 8px, root.fy - 112px) - 40px * root.think * root.side;
+    arrive := Arrival { }
+
+    // the light it stands in, behind the words: dims and breathes while it works, comes up as an answer lands
+    Spot {
+        fx: root.fx;
+        fy: root.fy;
+        k: 0.36;
+        spread: 0.95;
+        lit: root.side * min(1, 1 - root.think * (0.42 + (root.working ? 0.12 * Math.sin(root.t * 2.4rad) : 0)) + 0.6 * max(0, 1 - arrive.k));
+    }
+
+    composer := Composer {
+        x: 16px + 88px * root.side;
+        width: root.width - 32px - 88px * root.side;
+        height: root.height;
+        draft <=> root.draft;
+        bottom: root.bottom;
+    }
+
+    log := Flickable {
+        y: Home.sat + 64px;
+        width: parent.width;
+        height: root.log-bottom - self.y;
+        content-height: rows.preferred-height;
+        property <length> bottom: Math.min(0px, self.height - rows.preferred-height);
+        init => { self.content-y = self.bottom; }
+        changed bottom => { self.content-y = self.bottom; }
+        rows := Lines { width: parent.width; colw: root.width - 48px; arrive: arrive.k; working: root.working; }
+    }
+    TopFade { x: 0; y: log.y; width: root.width; }
+
+    // while it works: it says so, by its head, with Stop
+    HorizontalLayout {
+        x: 104px;
+        y: root.fy - 112px - 40px;
+        width: root.width - 104px - 16px;
+        height: 34px;
+        spacing: 14px;
+        alignment: start;
+        opacity: root.think * root.side;
+        if root.think > 0.01: Thinking { vertical-alignment: center; }
+        if root.working: StopLink { }
+    }
+
+    // ---- the agent, by the field ----
+    Actor {
+        x: root.fx - 60px;
+        y: root.fy - 120px;
+        width: 120px;
+        height: 120px;
+        face: Chats.face;
+        k: 0.36; // faces.rs SMALL_K for this direction
+        live: Chats.live;
+        source: Chats.face-live;
+        lw: Chats.face-w;
+        lh: Chats.face-h;
+        th: Chats.face-th;
+        opacity: root.side;
+        TouchArea { x: 22px; width: 76px; y: 36px; height: 84px; enabled: !Chats.empty; clicked => { Chats.poke(); } }
+    }
+
+    // ---- a new chat: the agent big in the light ----
+    empty := Rectangle {
+        property <length> room: composer.top - 8px - Home.sat - 64px;
+        property <length> efy: Home.sat + 64px + max(0px, (self.room - 260px) / 2) + 180px;
+        opacity: Chats.empty ? 1 : 0;
+        animate opacity { duration: 220ms; easing: T.out; }
+        visible: self.opacity > 0.01;
+        Spot { fx: root.width / 2; fy: empty.efy; k: 0.62; }
+        Actor {
+            x: root.width / 2 - 140px;
+            y: empty.efy - 200px;
+            width: 280px;
+            height: 200px;
+            face: Chats.face;
+            k: 0.62;
+            live: Chats.live;
+            source: Chats.big-live;
+            lw: Chats.big-w;
+            lh: Chats.big-h;
+            th: Chats.big-th;
+            TouchArea { x: 60px; width: 160px; y: 60px; height: 140px; enabled: Chats.empty; clicked => { Chats.poke(); } }
+        }
+        Text { y: empty.efy + 44px; width: root.width; text: Chats.name; font-size: 20px; font-weight: 700; color: T.fg; horizontal-alignment: center; }
+        Text { y: empty.efy + 74px; width: root.width; text: "Your message goes to the PC."; font-size: 14px; color: T.muted; horizontal-alignment: center; }
+    }
+
+    // ---- the header, over the words ----
+    Rectangle {
+        x: 0;
+        y: 0;
+        height: Home.sat + 64px;
+        background: Chats.empty ? transparent : ChatLook.bg;
+        Back { y: Home.sat + 8px; }
+        Text { x: 60px; y: Home.sat + (Chats.title == "" ? 20px : 10px); width: root.width - 120px; height: 22px; text: Chats.name; font-size: 17px; font-weight: 700; color: T.fg; horizontal-alignment: center; vertical-alignment: center; overflow: elide; }
+        if Chats.title != "": Text { x: 60px; y: Home.sat + 33px; width: root.width - 120px; height: 16px; text: Chats.title; font-size: 12.5px; color: T.muted; horizontal-alignment: center; vertical-alignment: center; overflow: elide; }
+    }
+    if Chats.viewing: Viewer { }
+}
+
+// The new-chat picker: the whole cast in one light, as on the home screen; tap who you want.
+export component BesidePick inherits Rectangle {
+    background: #0b0b0d;
+    border-radius: 24px;
+    border-width: 1px;
+    border-color: ChatLook.line;
+    clip: true;
+    property <length> fy: 150px;
+    Spot { fx: root.width / 2; fy: root.fy; k: 0.3; spread: 2.5; }
+    for a[i] in [
+        { face: "haiku", name: "Haiku", sub: "Agent 1", agent: "claude", model: "haiku-5.5" },
+        { face: "sonnet", name: "Sonnet", sub: "Agent 2", agent: "claude", model: "sonnet-5.5" },
+        { face: "opus", name: "Opus", sub: "Agent 3", agent: "claude", model: "opus-5.5" },
+        { face: "null", name: "Codex", sub: "On the PC", agent: "codex", model: "" },
+    ]: Rectangle {
+        property <length> cx: root.width / 2 + (i - 1.5) * 82px;
+        x: self.cx - 41px;
+        y: 0;
+        width: 82px;
+        height: root.height;
+        Actor {
+            x: 41px - 50px;
+            y: root.fy - 100px - 6px * (1 - Math.abs(i - 1.5) / 1.5); // the middle two stand a little further back
+            width: 100px;
+            height: 100px;
+            face: a.face;
+            k: a.face == "null" ? 0.27 : 0.3;
+            transform-origin: { x: 50px, y: 100px };
+            transform-scale: pick.pressed ? 1.06 : 1;
+            animate transform-scale { duration: 200ms; easing: T.spring; }
+        }
+        Text { y: root.fy + 26px; width: parent.width; text: a.name; font-size: 14.5px; font-weight: 650; color: T.fg; horizontal-alignment: center; }
+        Text { y: root.fy + 45px; width: parent.width; text: a.sub; font-size: 11.5px; color: T.muted; horizontal-alignment: center; }
+        pick := TouchArea { clicked => { Chats.picker = false; Chats.new-chat(a.agent, a.model); Chats.want-focus = true; } }
+    }
+}

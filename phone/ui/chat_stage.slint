@@ -1,0 +1,222 @@
+// PREVIEW (branch preview/chats) direction 1, Stage: the home screen's spotlight carried into the chats. The agent
+// stands in its light at the top of the thread, its name over the beam; its words are set open in the dark under it
+// (no bubbles), yours to the right in a quieter tone. While it works the light dims and breathes and it says it is
+// thinking; as an answer lands the light comes up. With the keyboard up the stage tucks up to give the words room.
+// In the list the newest chat takes the stage; the rest stand in small lights, lit while they have something new.
+import { T, Icon, Icons } from "parts.slint";
+import { Home } from "home_parts.slint";
+import { Actor } from "actor.slint";
+import { Chats } from "chat.slint";
+import { ChatLook, Viewer, Arrival, Back, Spot, Composer, Plus, Lines, Thinking, StopLink, TopFade, BeamFade } from "chat_kit.slint";
+
+export component StageList inherits Rectangle {
+    background: ChatLook.bg;
+    property <length> stage-h: 330px;
+    Rectangle {
+        y: Home.sat;
+        height: 60px;
+        Back { }
+        Text { x: 66px; text: "Chats"; font-size: 17px; font-weight: 700; color: T.fg; vertical-alignment: center; height: parent.height; }
+        Plus { x: parent.width - 54px; y: 6px; }
+    }
+    if Chats.rows.length == 0: Text {
+        y: Home.sat + 60px + 48px;
+        width: parent.width;
+        text: "No chats yet.\nTap + to start one.";
+        font-size: 15px;
+        color: T.muted;
+        horizontal-alignment: center;
+    }
+    Flickable {
+        y: Home.sat + 60px;
+        width: parent.width;
+        height: parent.height - self.y;
+        content-height: list.preferred-height + Home.sab;
+        list := VerticalLayout {
+            for r[i] in Chats.rows: Rectangle {
+                height: i == 0 ? root.stage-h : 76px;
+                clip: true;
+                // the newest chat on the stage
+                if i == 0: Rectangle {
+                    Spot { fx: root.width / 2; fy: 214px; k: 0.5; }
+                    BeamFade { x: 0; y: 0; width: parent.width; }
+                    Actor { x: root.width / 2 - 120px; y: 214px - 160px; width: 240px; height: 160px; face: r.face; k: 0.5; }
+                    HorizontalLayout {
+                        y: 246px;
+                        height: 22px;
+                        alignment: center;
+                        spacing: 8px;
+                        Text { text: r.name; font-size: 17px; font-weight: 700; color: T.fg; vertical-alignment: center; }
+                        Text { text: r.time; font-size: 12px; color: r.unread ? ChatLook.label : T.muted; vertical-alignment: center; }
+                        if r.unread: Rectangle { width: 8px; Rectangle { y: 7px; height: 8px; border-radius: 4px; background: T.accent; } }
+                    }
+                    Text {
+                        x: 40px;
+                        y: 274px;
+                        width: root.width - 80px;
+                        height: 40px;
+                        text: r.preview;
+                        font-size: 14px;
+                        color: r.unread ? T.fg2 : T.muted;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                        overflow: elide;
+                    }
+                }
+                // the rest, each in a small light: lit while it has something new
+                if i > 0: Rectangle {
+                    Rectangle { x: 20px; width: parent.width - 40px; height: 1px; background: ChatLook.line; }
+                    Spot { fx: 46px; fy: 64px; k: 0.22; lit: r.unread ? 1 : 0.32; }
+                    BeamFade { x: 0; y: 0; width: 92px; height: 30px; }
+                    Actor { x: 46px - 40px; y: 0; width: 80px; height: 64px; face: r.face; k: 0.22; }
+                    Text { x: 92px; y: 16px; width: parent.width - 92px - 72px; text: r.name; font-size: 15.5px; font-weight: 650; color: T.fg; overflow: elide; }
+                    Text { x: parent.width - 80px; y: 18px; width: 60px; text: r.time; font-size: 12px; color: r.unread ? ChatLook.label : T.muted; horizontal-alignment: right; }
+                    Text { x: 92px; y: 40px; width: parent.width - 92px - 40px; text: r.preview; font-size: 13.5px; color: r.unread ? T.fg2 : T.muted; overflow: elide; }
+                    if r.unread: Rectangle { x: parent.width - 28px; y: 44px; width: 8px; height: 8px; border-radius: 4px; background: T.accent; }
+                }
+                Rectangle { background: #ffffff; opacity: touch.pressed ? 0.04 : 0; }
+                touch := TouchArea { clicked => { Chats.open-chat(r.id); } }
+            }
+        }
+    }
+}
+
+export component StageThread inherits Rectangle {
+    background: ChatLook.bg;
+    property <string> draft;
+    property <bool> working: Chats.action == "stop";
+    property <float> t: animation-tick() / 1s;
+    // with the keyboard up the stage tucks up (its title goes) to give the words room
+    property <float> tuck: Home.kb > 0 ? 1 : 0;
+    animate tuck { duration: 320ms; easing: T.out; }
+    property <float> think: root.working ? 1 : 0;
+    animate think { duration: root.working ? 600ms : 420ms; easing: T.out; }
+    property <length> fx: self.width / 2; // the agent's feet
+    property <length> fy: Home.sat + 186px - 62px * self.tuck;
+    property <length> top: self.fy + 28px + 34px * self.think;
+    arrive := Arrival { }
+    composer := Composer {
+        x: 16px;
+        width: root.width - 32px;
+        height: root.height;
+        draft <=> root.draft;
+        bottom: root.height - max(Home.kb, Home.sab) - 12px;
+    }
+
+    log := Flickable {
+        y: root.top;
+        width: parent.width;
+        height: composer.top - 8px - self.y;
+        content-height: rows.preferred-height;
+        property <length> bottom: Math.min(0px, self.height - rows.preferred-height);
+        init => { self.content-y = self.bottom; }
+        changed bottom => { self.content-y = self.bottom; }
+        rows := Lines { width: parent.width; colw: root.width - 48px; arrive: arrive.k; working: root.working; }
+    }
+    TopFade { x: 0; y: log.y; width: root.width; }
+
+    // ---- a new chat: the agent big in the full light ----
+    empty := Rectangle {
+        property <length> room: composer.top - 8px - Home.sat - 60px;
+        property <length> efy: Home.sat + 60px + max(0px, (self.room - 260px) / 2) + 180px;
+        opacity: Chats.empty ? 1 : 0;
+        animate opacity { duration: 220ms; easing: T.out; }
+        visible: self.opacity > 0.01;
+        Spot { fx: root.width / 2; fy: empty.efy; k: 0.62; }
+        Actor {
+            x: root.width / 2 - 140px;
+            y: empty.efy - 200px;
+            width: 280px;
+            height: 200px;
+            face: Chats.face;
+            k: 0.62;
+            live: Chats.live;
+            source: Chats.big-live;
+            lw: Chats.big-w;
+            lh: Chats.big-h;
+            th: Chats.big-th;
+            TouchArea { x: 60px; width: 160px; y: 60px; height: 140px; enabled: Chats.empty; clicked => { Chats.poke(); } }
+        }
+        Text { y: empty.efy + 44px; width: root.width; text: Chats.name; font-size: 20px; font-weight: 700; color: T.fg; horizontal-alignment: center; }
+        Text { y: empty.efy + 74px; width: root.width; text: "Your message goes to the PC."; font-size: 14px; color: T.muted; horizontal-alignment: center; }
+    }
+
+    // ---- the stage at the top: who, and the agent in its light ----
+    Rectangle {
+        x: 0;
+        y: 0;
+        height: root.top;
+        background: Chats.empty ? transparent : ChatLook.bg;
+        clip: true;
+        Rectangle {
+            opacity: Chats.empty ? 0 : 1;
+            animate opacity { duration: Chats.empty ? 160ms : 420ms; delay: Chats.empty ? 0ms : 120ms; easing: T.out; }
+            // the light: dims and breathes while it works, comes up as an answer lands
+            Spot {
+                fx: root.fx;
+                fy: root.fy;
+                k: 0.36;
+                spread: 0.95;
+                lit: min(1, 1 - root.think * (0.42 + (root.working ? 0.12 * Math.sin(root.t * 2.4rad) : 0)) + 0.6 * max(0, 1 - arrive.k));
+            }
+            Actor {
+                x: root.fx - 70px;
+                y: root.fy - 120px;
+                width: 140px;
+                height: 120px;
+                face: Chats.face;
+                k: 0.36; // faces.rs SMALL_K for this direction
+                live: Chats.live;
+                source: Chats.face-live;
+                lw: Chats.face-w;
+                lh: Chats.face-h;
+                th: Chats.face-th;
+                TouchArea { x: 30px; width: 80px; y: 30px; height: 90px; enabled: !Chats.empty; clicked => { Chats.poke(); } }
+            }
+            // while it works: it says so under its light, with Stop
+            HorizontalLayout {
+                y: root.fy + 22px;
+                height: 32px;
+                alignment: center;
+                spacing: 14px;
+                opacity: root.think;
+                if root.think > 0.01: Thinking { vertical-alignment: center; }
+                if root.working: StopLink { }
+            }
+        }
+        Back { y: Home.sat + 6px; }
+        Rectangle {
+            opacity: 1 - root.tuck;
+            Text { x: 60px; y: Home.sat + 10px; width: root.width - 120px; height: 22px; text: Chats.name; font-size: 17px; font-weight: 700; color: T.fg; horizontal-alignment: center; vertical-alignment: center; overflow: elide; }
+            if Chats.title != "": Text { x: 60px; y: Home.sat + 33px; width: root.width - 120px; height: 16px; text: Chats.title; font-size: 12.5px; color: T.muted; horizontal-alignment: center; vertical-alignment: center; overflow: elide; }
+        }
+    }
+    if Chats.viewing: Viewer { }
+}
+
+// The new-chat picker: the four agents side by side, each in its own light.
+export component StagePick inherits Rectangle {
+    background: #0b0b0d;
+    border-radius: 24px;
+    border-width: 1px;
+    border-color: ChatLook.line;
+    clip: true;
+    property <length> cw: (self.width - 16px) / 4;
+    for a[i] in [
+        { face: "haiku", name: "Haiku", sub: "Agent 1", agent: "claude", model: "haiku-5.5" },
+        { face: "sonnet", name: "Sonnet", sub: "Agent 2", agent: "claude", model: "sonnet-5.5" },
+        { face: "opus", name: "Opus", sub: "Agent 3", agent: "claude", model: "opus-5.5" },
+        { face: "null", name: "Codex", sub: "On the PC", agent: "codex", model: "" },
+    ]: Rectangle {
+        x: 8px + i * root.cw;
+        y: 0;
+        width: root.cw;
+        height: root.height;
+        Spot { fx: root.cw / 2; fy: 150px; k: 0.25; lit: pick.pressed ? 1 : 0.85; }
+        BeamFade { x: 0; y: 0; width: parent.width; dark: #0b0b0d; }
+        Actor { x: root.cw / 2 - 50px; y: 150px - 90px; width: 100px; height: 90px; face: a.face; k: a.face == "null" ? 0.22 : 0.25; }
+        Text { y: 172px; width: parent.width; text: a.name; font-size: 14.5px; font-weight: 650; color: T.fg; horizontal-alignment: center; }
+        Text { y: 192px; width: parent.width; text: a.sub; font-size: 11.5px; color: T.muted; horizontal-alignment: center; }
+        pick := TouchArea { clicked => { Chats.picker = false; Chats.new-chat(a.agent, a.model); Chats.want-focus = true; } }
+    }
+}

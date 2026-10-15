@@ -1,0 +1,370 @@
+// PREVIEW (branch preview/chats, not for main): pieces every chat direction shares (chat_stage, chat_beside,
+// chat_script, chat_light): which direction shows, its colours, the home screen's spotlight the agents stand in, the
+// message field and today's composer round it, the photo viewer, the picked file, a video's play mark, today's +,
+// and the newest answer's arrival.
+import { T, Icon, Icons } from "parts.slint";
+import { Home } from "home_parts.slint";
+import { Chats } from "chat.slint";
+
+export global ChatLook {
+    // 0: the chats as shipped; 1 Stage, 2 Beside, 3 Script, 4 In the light (debug.callme.chats)
+    in property <int> v;
+    in property <string> short; // the open chat's agent in one word: Haiku, Sonnet, Opus, Codex or Claude
+    out property <color> bg: #000000; // the spotlight's void
+    out property <color> line: #ffffff12;
+    out property <color> words: #efe9df; // the agent's words, in its warm light
+    out property <color> mine: #b4ada2; // yours: quieter, the same warmth
+    out property <color> label: #f0a27e; // the agent's name, the light's colour
+    out property <color> you: #8d877d;
+    out property <color> warm: #ffcf9e;
+}
+
+// The message field: one line that slides left so the caret (and the end of long text) stays in view. Back reaches
+// the screen even while it has the cursor; it takes focus once it is on screen when a new chat wants it.
+export component Field inherits FocusScope {
+    in-out property <string> draft;
+    in property <length> font-size: 17px;
+    in property <color> color: T.fg;
+    in property <string> placeholder: "Message";
+    in property <color> placeholder-color: #8c8f97;
+    callback accepted();
+    // Takes the room it is given and never grows with long text (it pushed the send button off).
+    horizontal-stretch: 1;
+    min-width: 0px;
+    preferred-width: 0px;
+    Timer { interval: 220ms; running: Chats.want-focus; triggered => { Chats.want-focus = false; input.focus(); } }
+    key-pressed(e) => {
+        if (e.text == Key.Back && Chats.back()) { return accept; }
+        reject
+    }
+    window := Rectangle {
+        clip: true;
+        property <length> scroll: 0px; // <= 0: how far the text is slid left
+        input := TextInput {
+            x: min(0px, max(parent.width - self.width, parent.scroll));
+            width: max(parent.width, self.preferred-width + 4px);
+            height: parent.height;
+            text <=> root.draft;
+            font-size: root.font-size;
+            color: root.color;
+            vertical-alignment: center;
+            single-line: true;
+            accepted => { root.accepted(); }
+            changed has-focus => { Home.editing(self.has-focus); }
+            cursor-position-changed(at) => {
+                if (at.x + window.scroll < 0px) {
+                    window.scroll = -at.x;
+                } else if (at.x + window.scroll > window.width - 4px) {
+                    window.scroll = window.width - 4px - at.x;
+                }
+            }
+        }
+        Text {
+            visible: root.draft == "";
+            text: root.placeholder;
+            font-size: root.font-size;
+            color: root.placeholder-color;
+            vertical-alignment: center;
+            width: parent.width;
+            height: parent.height;
+        }
+    }
+}
+
+// A video's play mark, `size` across.
+export component PlayMark inherits Rectangle {
+    in property <length> size: 56px;
+    width: root.size;
+    height: root.size;
+    border-radius: root.size / 2;
+    background: #000000a6;
+    Path {
+        x: root.size * 0.375;
+        y: root.size * 0.3;
+        width: root.size * 0.36;
+        height: root.size * 0.4;
+        viewbox-width: 20;
+        viewbox-height: 22;
+        commands: "M2 2 L18 11 L2 20 Z";
+        fill: white;
+    }
+}
+
+// The picked photo or video, small (the chip's thumbnail).
+export component PickThumb inherits Rectangle {
+    in property <length> radius: 16px;
+    width: 56px;
+    height: 56px;
+    border-radius: root.radius;
+    background: #202227;
+    clip: true;
+    Image { width: parent.width; height: parent.height; source: Chats.pick-pic; image-fit: cover; }
+    if Chats.pick == "video": PlayMark { size: 28px; }
+}
+
+// A photo full screen; a tap or Back closes it.
+export component Viewer inherits Rectangle {
+    background: black;
+    TouchArea { clicked => { Chats.viewing = false; } }
+    Image {
+        y: Home.sat;
+        width: parent.width;
+        height: parent.height - Home.sat - Home.sab;
+        source: Chats.full;
+        image-fit: contain;
+    }
+    Rectangle {
+        x: 6px;
+        y: Home.sat + 6px;
+        width: 48px;
+        height: 48px;
+        Icon { d: Icons.back; x: 12px; y: 12px; }
+        TouchArea { clicked => { Chats.back(); } }
+    }
+}
+
+// The newest answer's arrival: `k` runs 0 to 1 (Liquid) each time the open chat gets a new answer, not when a chat
+// opens. A direction lets its newest bubble (or its character) arrive with it.
+export component Arrival {
+    out property <float> k: self.fresh ? 0 : 1;
+    property <bool> fresh;
+    property <string> chat;
+    property <int> n;
+    property <int> replies: Chats.replies;
+    changed replies => {
+        if (Chats.current == root.chat && root.replies > root.n) { root.fresh = true; go.running = true; }
+        root.chat = Chats.current;
+        root.n = root.replies;
+    }
+    property <string> current: Chats.current;
+    changed current => { root.chat = Chats.current; root.n = Chats.replies; }
+    init => { root.chat = Chats.current; root.n = Chats.replies; }
+    animate k { duration: root.fresh ? 0ms : 620ms; easing: T.spring; }
+    go := Timer { interval: 40ms; running: false; triggered => { self.running = false; root.fresh = false; } }
+}
+
+export component Back inherits Rectangle {
+    x: 6px;
+    y: 6px;
+    width: 48px;
+    height: 48px;
+    Icon { d: Icons.back; x: 12px; y: 12px; }
+    TouchArea { clicked => { Chats.back(); } }
+}
+
+// The home screen's spotlight (ui/chats/spot.png, art/live3d/chat_spot.py): a cone of warm light from above and its
+// pool on the glossy floor, for a character drawn at k with the middle of its feet at (fx, fy). `spread` sizes the
+// light to one character (the home pool holds two); `lit` dims or brightens it.
+export component Spot inherits Image {
+    in property <length> fx;
+    in property <length> fy;
+    in property <float> k: 1;
+    in property <float> spread: 0.78;
+    in property <float> lit: 1;
+    property <float> s: root.k * root.spread / 1.08;
+    source: @image-url("chats/spot.png");
+    x: root.fx - 250px * root.s;
+    y: root.fy - 640px * root.s;
+    width: 500px * root.s;
+    height: 1220.7px * root.s;
+    image-fit: fill;
+    opacity: root.lit;
+}
+
+// Today's composer, as shipped: the picked file's chip over the field, + to attach, the field, the send arrow. Its
+// field's bottom edge sits at `bottom`; `top` is the chip's top (or the field's).
+export component Composer inherits Rectangle {
+    in-out property <string> draft;
+    in property <length> bottom;
+    out property <length> field-y: root.bottom - 64px;
+    out property <length> chip-h: Chats.pick == "" || !Chats.ready ? 0px : 72px + 8px;
+    out property <length> top: root.field-y - root.chip-h;
+    property <bool> picked-media: Chats.pick == "image" || Chats.pick == "video";
+    property <bool> can-send: Chats.pick != "loading" && (root.draft != "" || root.picked-media);
+    function send() {
+        if (root.can-send) { Chats.send(root.draft); root.draft = ""; }
+    }
+    if root.chip-h > 0: Rectangle {
+        x: 0;
+        y: root.field-y - root.chip-h;
+        width: root.width;
+        height: 72px;
+        border-radius: 24px;
+        background: T.btn;
+        if root.picked-media: PickThumb { x: 8px; y: 8px; }
+        Text {
+            x: root.picked-media ? 76px : 20px;
+            width: parent.width - self.x - 56px;
+            height: parent.height;
+            text: Chats.pick-text;
+            font-size: 15px;
+            color: Chats.pick == "error" ? T.muted : T.fg;
+            vertical-alignment: center;
+            wrap: word-wrap;
+            overflow: elide;
+        }
+        Rectangle {
+            x: parent.width - 56px;
+            y: 12px;
+            width: 48px;
+            height: 48px;
+            border-radius: 24px;
+            background: unpick.pressed ? #3a3c42 : transparent;
+            Icon { d: Icons.close; x: 12px; y: 12px; stroke: T.muted; }
+            unpick := TouchArea { clicked => { Chats.unpick(); } }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: root.field-y;
+        width: root.width;
+        height: 64px;
+        border-radius: 32px;
+        background: T.btn;
+        if !Chats.ready: Text {
+            text: "Chat isn't set up on the PC yet";
+            font-size: 15px;
+            color: T.muted;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+        if Chats.ready: HorizontalLayout {
+            padding-left: 8px;
+            padding-right: 8px;
+            spacing: 4px;
+            Rectangle {
+                width: 48px;
+                height: 48px;
+                y: 8px;
+                border-radius: 24px;
+                background: plus.pressed ? #3a3c42 : transparent;
+                Icon { d: Icons.plus; x: 12px; y: 12px; stroke: T.fg2; }
+                plus := TouchArea { clicked => { Chats.attach(); } }
+            }
+            Field { draft <=> root.draft; accepted => { root.send(); } }
+            Rectangle {
+                width: 48px;
+                height: 48px;
+                y: 8px;
+                border-radius: 24px;
+                background: root.can-send ? T.accent : transparent;
+                Icon { d: Icons.send; x: 12px; y: 12px; stroke: root.can-send ? white : T.muted; }
+                TouchArea { enabled: root.can-send; clicked => { root.send(); } }
+            }
+        }
+    }
+}
+
+
+// Today's + in a header: opens the new-chat picker.
+export component Plus inherits Rectangle {
+    width: 48px;
+    height: 48px;
+    Icon { d: Icons.plus; x: 12px; y: 12px; }
+    TouchArea { clicked => { Chats.picker = true; } }
+}
+
+// "Sonnet is thinking", breathing in the light's colour (in place of a spinner).
+export component Thinking inherits Text {
+    property <float> t: animation-tick() / 1s;
+    text: ChatLook.short + " is thinking";
+    font-size: 14px;
+    font-weight: 600;
+    color: ChatLook.label;
+    opacity: 0.55 + 0.45 * (0.5 + 0.5 * Math.sin(self.t * 2.4rad));
+}
+
+// Stop, as a quiet text button.
+export component StopLink inherits Rectangle {
+    width: 56px;
+    height: 32px;
+    border-radius: 16px;
+    background: touch.pressed ? #ffffff14 : transparent;
+    Text { text: "Stop"; font-size: 14px; font-weight: 600; color: T.fg2; horizontal-alignment: center; vertical-alignment: center; }
+    touch := TouchArea { clicked => { Chats.stop(); } }
+}
+
+// The conversation as open text in the dark, no bubbles: the agent's words in its warm light under its name, yours
+// set right in a quieter tone under "You", photos and videos at their own side, the status under your last line.
+// Even spacing: 10 px within a run, 24 px between speakers. `arrive` brings the newest answer in.
+export component Lines inherits VerticalLayout {
+    in property <length> colw; // the width of the text column
+    in property <float> arrive: 1;
+    in property <bool> working;
+    padding-left: 24px;
+    padding-right: 24px;
+    padding-top: 20px;
+    padding-bottom: 16px;
+    spacing: 10px;
+    for m[i] in Chats.msgs: msg := VerticalLayout {
+        property <bool> first: i == 0 || Chats.msgs[i - 1].me != m.me;
+        property <float> a: i == Chats.msgs.length - 1 && !m.me ? root.arrive : 1;
+        padding-top: self.first && i > 0 ? 14px : 0px;
+        spacing: 7px;
+        opacity: min(1, msg.a * 1.5);
+        if self.first: Text {
+            text: m.me ? "You" : ChatLook.short;
+            font-size: 12.5px;
+            font-weight: 650;
+            letter-spacing: 0.3px;
+            color: m.me ? ChatLook.you : ChatLook.label;
+            horizontal-alignment: m.me ? right : left;
+        }
+        if m.kind == "image" || m.kind == "video": HorizontalLayout {
+            alignment: m.me ? end : start;
+            Rectangle {
+                width: max(140px, min(root.colw * 0.8, 330px / max(m.ratio, 0.01)));
+                height: max(100px, min(330px, self.width * m.ratio));
+                border-radius: 14px;
+                background: #141416;
+                clip: true;
+                Image { width: parent.width; height: parent.height; source: m.pic; image-fit: cover; }
+                if m.kind == "video": PlayMark { }
+                TouchArea { clicked => { Chats.open-media(m.path, m.kind); } }
+            }
+        }
+        if !m.me && m.kind != "image" && m.kind != "video": Text {
+            width: root.colw; // known up front, so its wrapped height is right
+            text: m.text;
+            wrap: word-wrap;
+            font-size: m.kind == "note" ? 14px : 16.5px;
+            font-italic: m.kind == "note";
+            color: m.kind == "note" ? T.muted : ChatLook.words;
+        }
+        if m.me && m.kind != "image" && m.kind != "video": HorizontalLayout {
+            alignment: end;
+            Text {
+                // its width known up front (its own line, or the column's 82%), so its wrapped height is right
+                width: min(root.colw * 0.82, self.preferred-width);
+                text: m.text;
+                wrap: word-wrap;
+                font-size: 16px;
+                color: m.kind == "note" ? T.muted : ChatLook.mine;
+                horizontal-alignment: right;
+            }
+        }
+    }
+    if Chats.status != "" && !root.working: HorizontalLayout {
+        alignment: end;
+        height: 22px;
+        Rectangle {
+            width: note.preferred-width;
+            note := Text { text: Chats.status; font-size: 13px; color: Chats.action == "retry" ? T.fg2 : ChatLook.you; vertical-alignment: center; }
+            TouchArea { enabled: Chats.action == "retry"; clicked => { Chats.retry(); } }
+        }
+    }
+}
+
+// The top of the words fades into the dark under a header, instead of a hard cut.
+export component TopFade inherits Rectangle {
+    height: 22px;
+    visible: !Chats.empty; // a new chat's light runs up through here
+    background: @linear-gradient(180deg, ChatLook.bg 0%, ChatLook.bg.with-alpha(0) 100%);
+}
+
+// Where a list row (or a picker cell) cuts a light off at its top, the beam fades in from the dark instead.
+export component BeamFade inherits Rectangle {
+    in property <color> dark: ChatLook.bg;
+    height: 44px;
+    background: @linear-gradient(180deg, root.dark 0%, root.dark.with-alpha(0) 100%);
+}
