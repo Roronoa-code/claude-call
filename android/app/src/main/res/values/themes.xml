@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- What Android shows the moment the icon is tapped, until the app's first frame is drawn (Shell.kt Shown): the
+         home stage's own black (stage.slint Look.bg, Spotlight) and nothing on it (the system put a blank white disc
+         there), so the stage simply comes up out of it. -->
+    <style name="Start" parent="@android:style/Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowBackground">@color/stage</item>
+        <item name="android:windowSplashScreenBackground">@color/stage</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@android:color/transparent</item>
+    </style>
+    <color name="stage">#010101</color>
+</resources>

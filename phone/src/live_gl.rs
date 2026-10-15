@@ -26,16 +26,19 @@ pub struct Slot {
 }
 
 /// A window's live pictures. `failed` turns true if the GPU can't draw them: the screen shows still pictures.
+/// `warm`: characters whose shaders are built ahead, one a frame, while nothing moves (so a chat opening later
+/// doesn't stall to build its character's).
 #[derive(Default)]
 pub struct Scene {
     pub slots: Vec<Slot>,
     pub failed: bool,
+    pub warm: Vec<Who>,
 }
 
 impl Scene {
     pub fn new(n: usize) -> Self {
         let slot = || Slot { who: Who::Null, res: (1, 1), view: (1, 1), frame: vec![], fresh: false };
-        Scene { slots: (0..n).map(|_| slot()).collect(), failed: false }
+        Scene { slots: (0..n).map(|_| slot()).collect(), failed: false, warm: vec![] }
     }
 }
 
@@ -288,6 +291,12 @@ pub fn attach<C: ComponentHandle + 'static>(ui: &C, scene: Rc<RefCell<Scene>>, s
                 // Slint redraws the whole screen at the display rate while anything animates: only fresh slots draw.
                 let Some(g) = &mut gl else { return };
                 let mut s = scene.borrow_mut();
+                if let Some(who) = s.warm.pop().filter(|w| !g.programs.iter().any(|p| p.who == *w)) {
+                    match unsafe { compile(&g.ctx, who) } {
+                        Ok(program) => g.programs.push(Program { who, program, u: vec![] }),
+                        Err(e) => log(&format!("live cast: {who:?}: {e}")), // tried again when it is drawn
+                    }
+                }
                 if s.failed || !s.slots.iter().any(|s| s.fresh) {
                     return;
                 }
@@ -295,6 +304,15 @@ pub fn attach<C: ComponentHandle + 'static>(ui: &C, scene: Rc<RefCell<Scene>>, s
                     drop(s);
                     fail(e);
                 }
+            }
+            // Android keeps its starting window up until a frame is drawn into a new surface (Shell.kt Shown).
+            RenderingState::AfterRendering => {
+                crate::android::with(|env, act| {
+                    if env.get_field(act, "waiting", "Z")?.z()? {
+                        env.call_method(act, "drawn", "()V", &[])?;
+                    }
+                    Ok(())
+                });
             }
             RenderingState::RenderingTeardown => {
                 if let Some(g) = gl.take() {

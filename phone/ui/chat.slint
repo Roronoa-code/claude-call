@@ -82,11 +82,14 @@ export global Chats {
     in property <string> pick-text; // "Photo · 1.2 MB", or why it can't be sent
     in-out property <bool> open; // the Chats screen
     in-out property <string> current; // the open chat's id ("" = the list)
+    in-out property <length> from-y: Home.sat + 116px; // where a chat opens out of (home.slint): the tapped row...
+    in-out property <length> from-h: 78px; // ...or the new-chat picker
     in-out property <bool> picker; // the new-chat picker
     in-out property <bool> want-focus; // put the cursor in the field once it is on screen
     callback open-chat(string);
     callback new-chat(string, string); // agent, model
     callback send(string); // with what is picked, if anything
+    callback clear-field(); // empties the keyboard's side of the field (Shell.kt clearField)
     callback stop(); // a bare "stop", never with what is picked
     callback retry();
     callback attach(); // opens the photo and video picker
@@ -137,12 +140,10 @@ export component BackButton inherits IconButton {
     clicked => { Chats.back(); }
 }
 
-// A screen coming in: rises a little and fades up over the panel (the list and a thread swap this way).
+// The list and a thread: they come in by growing out of what was tapped (Morph in home.slint), not by fading up on
+// their own, which showed two screens at once.
 export component Arrive inherits Rectangle {
-    out property <float> k: 0;
-    init => { self.k = 1; }
-    animate k { duration: 380ms; easing: T.out; }
-    opacity: k;
+    out property <float> k: 1;
 }
 
 // The agent's text, at the thread's reading size.
@@ -167,7 +168,8 @@ export component ChatThread inherits Rectangle {
     property <length> bottom: self.height - max(Home.kb, Home.sab) - 10px; // the field's lower edge
     property <bool> picked-media: Chats.pick == "image" || Chats.pick == "video";
     property <bool> has-pick: Chats.pick != "" && Chats.ready;
-    property <bool> can-send: Chats.pick != "loading" && (draft != "" || picked-media);
+    property <bool> composing; // the keyboard is still putting a word together (not in draft yet)
+    property <bool> can-send: Chats.pick != "loading" && (draft != "" || composing || picked-media);
     property <bool> can-stop: Chats.action == "stop" && !can-send;
     property <length> pick-h: has-pick ? (picked-media ? 76px : 48px) : 0px;
     // Rows that arrive once the thread is up rise in; the ones it opens with are simply there.
@@ -189,8 +191,8 @@ export component ChatThread inherits Rectangle {
             }
         }
     }
-    function send() {
-        if (can-send) { Chats.send(draft); draft = ""; }
+    function send(text: string) {
+        if (can-send) { Chats.send(text); draft = ""; }
     }
     Arrive {
         x: (1 - self.k) * 18px;
@@ -638,10 +640,26 @@ export component ChatThread inherits Rectangle {
                             text <=> root.draft;
                             font-size: 16.5px;
                             color: Ink.text;
-                            selection-background-color: #b05a3f80;
+                            // Also how the keyboard's word in progress shows: a faint warm wash, the letters as typed.
+                            selection-background-color: #e3a48c33;
+                            selection-foreground-color: Ink.text;
                             vertical-alignment: center;
                             single-line: true;
-                            accepted => { root.send(); }
+                            changed preedit-text => { root.composing = self.preedit-text != ""; }
+                            // The keyboard's word in progress goes too (it isn't in the text yet). The field is then
+                            // emptied on the keyboard's side, which hands the empty text back here: emptied here
+                            // instead, the keyboard kept the word and put it back in the field.
+                            // shortcut: the word is put at the end, where it almost always is; one typed in the middle
+                            // of the text would go at the end. Upgrade if a text slicing function is ever available.
+                            function send-all() {
+                                if (self.preedit-text == "") {
+                                    root.send(root.draft);
+                                } else if (root.can-send) {
+                                    Chats.send(root.draft + self.preedit-text);
+                                    Chats.clear-field();
+                                }
+                            }
+                            accepted => { self.send-all(); }
                             changed has-focus => { Home.editing(self.has-focus); }
                             cursor-position-changed(at) => {
                                 if (at.x + window.scroll < 0px) {
@@ -652,7 +670,7 @@ export component ChatThread inherits Rectangle {
                             }
                         }
                         Text {
-                            visible: root.draft == "";
+                            visible: root.draft == "" && input.preedit-text == "";
                             text: Chats.hint;
                             font-size: 16.5px;
                             color: #6f7178;
@@ -696,7 +714,7 @@ export component ChatThread inherits Rectangle {
                     go := TouchArea {
                         enabled: root.can-send || root.can-stop;
                         clicked => {
-                            if (root.can-stop) { Chats.stop(); } else { root.send(); }
+                            if (root.can-stop) { Chats.stop(); } else { input.send-all(); }
                         }
                     }
                 }
@@ -763,7 +781,13 @@ export component NewChat {
                     horizontal-alignment: center;
                 }
                 tile := TouchArea {
-                    clicked => { Chats.picker = false; Chats.new-chat(a.agent, a.model); Chats.want-focus = true; }
+                    clicked => {
+                        Chats.picker = false;
+                        Chats.from-y = Home.sat + 58px; // the picker itself (home.slint) opens into the chat
+                        Chats.from-h = 166px;
+                        Chats.new-chat(a.agent, a.model);
+                        Chats.want-focus = true;
+                    }
                 }
             }
         }

@@ -18,7 +18,7 @@
     <application
         android:label="Claude Call"
         android:icon="@drawable/ic_call_logo"
-        android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+        android:theme="@style/Start">
 
         <activity
             android:name=".MainActivity"

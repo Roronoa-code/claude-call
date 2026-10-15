@@ -34,7 +34,11 @@ fn refresh(ui: &HomeScreen, fake: usize, first: bool) {
     }
 }
 
-pub fn run(_app: android_activity::AndroidApp) {
+/// The most device px per logical px the pair is drawn at: past it (a very dense screen) the GPU's work grows with
+/// the square for detail the eye can't see; the picture is scaled up to its place instead.
+const PAIR_SF: f32 = 2.75;
+
+pub fn run(app: android_activity::AndroidApp) {
     let ui = HomeScreen::new().expect("home screen");
     let home = ui.global::<Home>();
     // PREVIEW (test emulator): `debug.callme.fake` set keeps mode changes and the Call button on this screen only
@@ -131,14 +135,6 @@ pub fn run(_app: android_activity::AndroidApp) {
             }
         }
     });
-    ui.global::<Toys>().on_point({
-        let (pair, ui) = (pair.clone(), ui.as_weak());
-        move |x, y, down| {
-            let Some(ui) = ui.upgrade() else { return };
-            let dx = ui.global::<Toys>().get_null_dx();
-            pair.borrow_mut().point(x, y, dx, down, start.elapsed().as_secs_f32())
-        }
-    });
     // The chat thread's character too (faces.rs): slots 0 and 1 are Clawd and Null, 2 and 3 the chat's, small and big.
     let faces = Rc::new(std::cell::RefCell::new(faces::Faces::new()));
     ui.global::<Chats>().on_poke({
@@ -159,12 +155,16 @@ pub fn run(_app: android_activity::AndroidApp) {
         t.set_clawd_below(below[0]);
         t.set_null_below(below[1]);
     }
+    // The pair's pictures are sized for at most PAIR_SF px per logical px (`r` of the screen's own).
+    let screen_sf = app.config().density().map_or(1.0, |dpi| dpi as f32 / 160.0);
+    let r = (PAIR_SF / screen_sf).min(1.0);
     let home_size = |i: usize, extra: f32| {
         let (w, h) = [alive::CLAWD_SIZE, alive::NULL_SIZE][i];
         (w * st.k, (h + extra) * st.k)
     };
     let sizes = [home_size(0, below[0]), home_size(1, below[1]), small, big];
-    live_gl::attach(&ui, scene.clone(), sizes.to_vec(), {
+    let tex = [(sizes[0].0 * r, sizes[0].1 * r), (sizes[1].0 * r, sizes[1].1 * r), small, big];
+    live_gl::attach(&ui, scene.clone(), tex.to_vec(), {
         let ui = ui.as_weak();
         move |images| {
             let Some(ui) = ui.upgrade() else { return };
@@ -181,12 +181,38 @@ pub fn run(_app: android_activity::AndroidApp) {
     let mut last_now = 0.0f32;
     let mut shown = false;
     let mut last_refresh = Instant::now();
-    let timer = slint::Timer::default();
+    let mut warmed = false; // the chats' characters' shaders built ahead (live_gl.rs Scene::warm)
+    let mut voted = (0.0f32, Instant::now()); // the frame rate last asked of the display (0: no preference)
+    let touched = Rc::new(Cell::new(Instant::now()));
+    ui.global::<Toys>().on_point({
+        let (pair, ui, touched) = (pair.clone(), ui.as_weak(), touched.clone());
+        move |x, y, down| {
+            touched.set(Instant::now());
+            let Some(ui) = ui.upgrade() else { return };
+            let dx = ui.global::<Toys>().get_null_dx();
+            pair.borrow_mut().point(x, y, dx, down, start.elapsed().as_secs_f32())
+        }
+    });
+    let timer = Rc::new(slint::Timer::default());
     // Every frame: the toys' springs need it; the rest is cheap.
     timer.start(slint::TimerMode::Repeated, Duration::from_millis(16), {
         let ui = ui.as_weak();
+        let tick = Rc::downgrade(&timer);
         move || {
             let Some(ui) = ui.upgrade() else { return };
+            // Away (another app in front, the screen off): nothing is drawn or polled; it only looks, ten times a
+            // second, for the app to come back.
+            let away = !android::home_shown();
+            if let Some(t) = tick.upgrade() {
+                let every = Duration::from_millis(if away { 100 } else { 16 });
+                if t.interval() != every {
+                    t.set_interval(every);
+                }
+            }
+            if away {
+                shown = false; // all drawn afresh on the way back
+                return;
+            }
             let home = ui.global::<Home>();
             chats.tick(&ui);
             // Permissions granted in Settings, or a mode changed elsewhere, show up within a second.
@@ -234,9 +260,9 @@ pub fn run(_app: android_activity::AndroidApp) {
                 ui.global::<Toys>().set_live(false); // still pictures instead
                 ui.global::<Chats>().set_live(false);
             }
-            // Each toy: a new frame at 60 fps while it moves, 30 while it only breathes, 15 asleep, none when hidden.
+            // Each toy: a new frame at 60 fps while it moves, 20 while it only breathes, 10 asleep, none when hidden.
             let show = !s.failed && !ui.global::<Chats>().get_open() && kb == 0.0;
-            let sf = ui.window().scale_factor();
+            let sf = ui.window().scale_factor() * r;
             let mut any = false;
             let codex = home.get_caller() == "codex";
             let ease = 1.0 - (-(now - last_now) * 12.0).exp(); // about 250 ms, as the opacity it replaces
@@ -256,10 +282,29 @@ pub fn run(_app: android_activity::AndroidApp) {
             }
             shown = show;
             if !s.failed {
-                any |= faces.borrow_mut().tick(&ui, &mut s.slots[2..], now, sf);
+                any |= faces.borrow_mut().tick(&ui, &mut s.slots[2..], now, ui.window().scale_factor());
             }
+            // The chats list at rest: the chats' characters' shaders are built now, unseen, one a frame.
+            let chats_open = ui.global::<Chats>().get_open();
+            if !warmed && chats_open && ui.global::<Chats>().get_current().is_empty() && !ui.window().has_active_animations() {
+                warmed = true;
+                s.warm = [cast::Mat::Cartoon, cast::Mat::Plush, cast::Mat::Chrome].map(cast::Who::Clawd).to_vec();
+            }
+            any |= !s.failed && !s.warm.is_empty() && chats_open;
             if any {
                 ui.window().request_redraw();
+            }
+            // The home stage at rest (nothing moving, animating or touched for a moment): the display is told the
+            // screen changes only at the pair's breathing rate, so it can run slower; anything else lifts that.
+            let rest = show
+                && !home.get_more() && !home.get_widgets() && !home.get_channel() && hint.get().is_none()
+                && !p.clawd.moving() && !p.null.moving()
+                && touched.get().elapsed() > Duration::from_secs(2)
+                && !ui.window().has_active_animations();
+            let want = if !rest { 0.0 } else if p.clawd.state() == cast::State::Sleep && p.null.state() == cast::State::Sleep { 10.0 } else { 20.0 };
+            if want != voted.0 || (want > 0.0 && voted.1.elapsed() > Duration::from_secs(1)) {
+                voted = (want, Instant::now());
+                android::with(|env, act| env.call_method(act, "rate", "(F)V", &[want.into()]).map(drop));
             }
         }
     });

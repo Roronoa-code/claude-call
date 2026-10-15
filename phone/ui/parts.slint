@@ -256,13 +256,17 @@ export component Round {
     }
 }
 
-// A surface that grows out of the button that opened it and goes back into it: it starts as exactly the button,
-// springs open, and closes back without a bounce. The button's face fades as the contents fade in.
+// A surface that grows out of the button that opened it and goes back into it: it starts as exactly the button
+// (its shape and colour), springs open, and closes back without a bounce. The button's face fades as the contents
+// fade in.
 export component Morph {
     in property <bool> open;
     in property <length> fx; // the button, in the morph's parent's coordinates
     in property <length> fy;
     in property <length> fsize: 64px;
+    in property <length> fw: fsize; // ...a button that isn't round (a row): its own size and corners
+    in property <length> fh: fsize;
+    in property <length> fradius: Math.min(fw, fh) / 2;
     in property <length> tx;
     in property <length> ty;
     in property <length> tw;
@@ -270,24 +274,31 @@ export component Morph {
     in property <length> radius: 24px;
     in property <string> face;
     in property <color> panel: T.btn;
+    in property <color> from: panel; // the button's colour, which the surface starts as
+    // A sheet's contents grow with it out of the button; false: they stay full size and the surface uncovers them,
+    // a window opening out of what was tapped (a row opening into a screen), which itself fades in over the row and
+    // out into it again.
+    in property <bool> zoom: true;
     // One value from shut (0, exactly the button) to open (1), so shape, place and corners always move together
     // and closing always lands back in the button, from wherever it was.
     property <float> k: open ? 1 : 0;
     animate k { duration: open ? 500ms : 300ms; easing: open ? T.spring : T.close; }
     // The spring's overshoot settles in place: a full-width sheet pushed past its spot ran off the screen's edges.
-    property <float> g: Math.min(1, k);
-    visible: open || k > 0.002; // visible at once when opening, so its text field can take focus
+    out property <float> g: Math.min(1, k);
+    out property <bool> shown: open || k > 0.002;
+    visible: shown; // at once when opening, so its text field can take focus
     x: fx + (tx - fx) * g;
     y: fy + (ty - fy) * g;
-    width: fsize + (tw - fsize) * g;
-    height: fsize + (th - fsize) * g;
+    width: fw + (tw - fw) * g;
+    height: fh + (th - fh) * g;
     Rectangle {
         x: 0;
         y: 0;
         width: parent.width;
         height: parent.height;
-        border-radius: root.fsize / 2 + (root.radius - root.fsize / 2) * root.g;
-        background: root.panel;
+        border-radius: root.fradius + (root.radius - root.fradius) * root.g;
+        background: root.panel.mix(root.from, root.g);
+        opacity: root.zoom ? 1 : Math.min(1, root.g * 5);
         clip: true;
         // The button's face fades as the contents fade in.
         Icon {
@@ -296,14 +307,17 @@ export component Morph {
             y: (parent.height - self.height) / 2;
             opacity: Math.max(0, 1 - root.k * 4);
         }
-        // The contents stay where they will be once open, and only show once the surface is nearly full size (and
-        // go first when closing), so no cut-off words show while it grows or shrinks.
+        // The contents are there from early on (no empty panel), small inside the growing surface and drawn back
+        // into the button as it closes; they fade out before it is button-sized again.
         Rectangle {
             x: root.tx - root.x;
             y: root.ty - root.y;
             width: root.tw;
             height: root.th;
-            opacity: Math.max(0, Math.min(1, (root.g - 0.85) * 6.7));
+            transform-origin: { x: root.fx + root.fw / 2 - root.tx, y: root.fy + root.fh / 2 - root.ty };
+            transform-scale: root.zoom ? Math.min(root.width / root.tw, root.height / root.th) : 1;
+            // (a window's contents leave just before it does, so they never show over the row it fades into)
+            opacity: Math.max(0, Math.min(1, root.zoom ? (root.g - 0.12) * 3 : (root.g - 0.2) * 5));
             TouchArea { } // a tap on the surface stays on it (never reaches what is behind)
             @children
         }

@@ -18,6 +18,16 @@ thread_local! {
     static CTX: OnceCell<Ctx> = const { OnceCell::new() };
 }
 static WAKE: Mutex<Option<GlobalRef>> = Mutex::new(None);
+/// The home screen is on screen (between onStart and onStop, Shell.kt): away, it draws and polls nothing.
+static HOME_SHOWN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+pub fn home_shown() -> bool {
+    HOME_SHOWN.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub fn set_home_shown(on: bool) {
+    HOME_SHOWN.store(on, std::sync::atomic::Ordering::Relaxed);
+}
 
 pub fn init(app: &android_activity::AndroidApp) {
     let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) }.expect("vm");

@@ -30,6 +30,7 @@ export component ChatList inherits Rectangle {
         if Chats.rows.length == 0: VerticalLayout {
             y: Home.sat + 150px;
             width: parent.width;
+            alignment: start;
             spacing: 6px;
             Text { text: "No chats yet"; font-size: 17px; font-weight: 600; color: Ink.text; horizontal-alignment: center; }
             Text { text: "Tap + to start one."; font-size: 14.5px; color: Ink.muted; horizontal-alignment: center; }
@@ -108,6 +109,8 @@ export component ChatList inherits Rectangle {
                         clicked => {
                             if (row.slid || row.held) { return; }
                             if (Chats.revealed != "") { Chats.revealed = ""; return; } // a tap shuts an open row first
+                            Chats.from-y = row.absolute-position.y;
+                            Chats.from-h = 78px;
                             Chats.open-chat(r.id);
                         }
                     }
