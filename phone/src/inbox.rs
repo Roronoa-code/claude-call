@@ -361,6 +361,7 @@ fn show(ui: &HomeScreen) {
         .map(|c| ChatRow {
             id: c.id.clone().into(),
             name: chats::name(&c.agent, c.model.as_deref()).into(),
+            face: chats::face(&c.agent, c.model.as_deref()).into(),
             preview: preview(c).into(),
             time: chats::ago(now - c.updated).into(),
             unread: c.unread > 0,
@@ -382,6 +383,10 @@ fn show(ui: &HomeScreen) {
                 }
             }
             c.set_name(chats::name(&chat.agent, chat.model.as_deref()).into());
+            c.set_face(chats::face(&chat.agent, chat.model.as_deref()).into());
+            c.set_empty(msgs.is_empty());
+            c.set_waiting(chats::waiting(chat));
+            c.set_replies(chat.lines.iter().filter(|l| !l.me && l.state != "partial").count() as i32);
             c.set_title(chat.title.clone().into());
             c.set_msgs(ModelRc::new(VecModel::from(msgs)));
             status(ui);

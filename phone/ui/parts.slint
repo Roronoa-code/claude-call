@@ -1,8 +1,6 @@
 // Building blocks of the call screen: colours, icons, crossfading text, Claude's spoken lines, the voice glow,
 // the thinking orb, round controls, and surfaces that grow out of their button.
 
-// One pixel of Clawd (or a particle), in px from the top-left of the mascot's box.
-export struct Px { x: length, y: length, w: length, h: length, c: color, o: float }
 // The big caption. `lit` is the part already spoken (the start of `text`); key changes swap it with a crossfade.
 export struct Cap { key: int, label: string, text: string, lit: string, size: int, tone: string, orb: bool }
 // A transcript row.

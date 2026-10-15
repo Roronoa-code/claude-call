@@ -1,10 +1,6 @@
 //! The home screen: whether calls can reach this phone, how agents may reach you, a test ring, the widget and the
 //! private channel (settings.rs, widget.rs, ring.rs).
-use crate::{
-    Chats, Home, HomeScreen, Toys, alive, android,
-    cast::{Cast, Mat, State, Who},
-    jx, live_gl, ring, service, settings,
-};
+use crate::{Chats, Home, HomeScreen, Toys, alive, android, faces, jx, live_gl, ring, service, settings};
 use slint::ComponentHandle;
 use std::{
     cell::Cell,
@@ -98,10 +94,29 @@ pub fn run(_app: android_activity::AndroidApp) {
             pair.borrow_mut().point(x, y, dx, down, start.elapsed().as_secs_f32())
         }
     });
-    let scene = Rc::new(std::cell::RefCell::new(live_gl::Scene::default()));
-    let names = [Who::Clawd(Mat::Vinyl), Who::Null].map(|w| Cast::new(w, 1).uniforms().into_iter().map(|u| u.0).collect());
-    live_gl::attach(&ui, scene.clone(), names);
+    // The chat thread's character too (faces.rs): slots 0 and 1 are Clawd and Null, 2 and 3 the chat's, small and big.
+    let faces = Rc::new(std::cell::RefCell::new(faces::Faces::new()));
+    ui.global::<Chats>().on_poke({
+        let faces = faces.clone();
+        move || faces.borrow_mut().poke(start.elapsed().as_secs_f32())
+    });
+    let scene = Rc::new(std::cell::RefCell::new(live_gl::Scene::new(4)));
+    let [small, big] = faces::sizes();
+    let sizes = [alive::CLAWD_SIZE, alive::NULL_SIZE, small, big];
+    live_gl::attach(&ui, scene.clone(), sizes.to_vec(), {
+        let ui = ui.as_weak();
+        move |images| {
+            let Some(ui) = ui.upgrade() else { return };
+            let t = ui.global::<Toys>();
+            t.set_clawd_live(images[0].clone());
+            t.set_null_live(images[1].clone());
+            let c = ui.global::<Chats>();
+            c.set_face_live(images[2].clone());
+            c.set_big_live(images[3].clone());
+        }
+    });
     let mut drawn = [0.0f32; 2];
+    let mut shown = false;
     let mut last_refresh = Instant::now();
     let timer = slint::Timer::default();
     // Every frame: the toys' springs need it; the rest is cheap.
@@ -132,19 +147,27 @@ pub fn run(_app: android_activity::AndroidApp) {
             let now = start.elapsed().as_secs_f32();
             let mut p = pair.borrow_mut();
             p.tick(now, asleep);
-            // Each toy: a new frame at 60 fps while it moves, 30 while it only breathes, 15 asleep, none when hidden.
-            let show = ui.global::<Toys>().get_live() && !ui.global::<Chats>().get_open() && kb == 0.0;
             let mut s = scene.borrow_mut();
+            if s.failed && ui.global::<Toys>().get_live() {
+                ui.global::<Toys>().set_live(false); // still pictures instead
+                ui.global::<Chats>().set_live(false);
+            }
+            // Each toy: a new frame at 60 fps while it moves, 30 while it only breathes, 15 asleep, none when hidden.
+            let show = !s.failed && !ui.global::<Chats>().get_open() && kb == 0.0;
+            let sf = ui.window().scale_factor();
             let mut any = false;
             for (i, c) in [&p.clawd, &p.null].into_iter().enumerate() {
-                let fps = if c.moving() { 60.0 } else if c.state() == State::Sleep { 15.0 } else { 30.0 };
-                if show && (!s.show || now - drawn[i] >= 1.0 / fps - 0.004) {
-                    s.frames[i] = (c.uniforms(), true);
+                if show && (!shown || alive::due(c, drawn[i], now)) {
+                    let px = live_gl::texture_px(sizes[i], sf);
+                    s.slots[i] = live_gl::Slot { who: c.who, res: px, view: px, frame: c.uniforms(), fresh: true };
                     drawn[i] = now;
                     any = true;
                 }
             }
-            s.show = show;
+            shown = show;
+            if !s.failed {
+                any |= faces.borrow_mut().tick(&ui, &mut s.slots[2..], now, sf);
+            }
             if any {
                 ui.window().request_redraw();
             }

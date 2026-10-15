@@ -1,0 +1,42 @@
+// A character of the live cast (cast.rs, drawn by the GPU in live_gl.rs) standing with the middle of its feet at the
+// bottom middle of this element, at k times its home size. While the GPU can't draw it (or for a list), its still
+// picture (ui/faces, made by art/live3d/stills.py) stands in the same place.
+
+export component Actor {
+    in property <string> face: "clawd"; // clawd, haiku, sonnet, opus or null
+    in property <float> k: 1;
+    in property <bool> live;
+    in property <image> source; // the live texture...
+    in property <int> lw; // ...of which this many px from its bottom-left corner are drawn
+    in property <int> lh;
+    in property <int> th; // its height in px
+    // The picture's framing at k = 1, in logical px (alive.rs frame, with HEAD = 40 of room above).
+    property <float> fw: root.face == "null" ? 150 : 300;
+    property <float> fh: (root.face == "null" ? 230 : 250) + 40;
+    property <float> cx: root.face == "null" ? 73 : 148;
+    property <float> feet: (root.face == "null" ? 194.6 : 221.25) + 40;
+    // On whole device pixels, so the picture is never resampled between them.
+    property <length> left: round((root.width / 2 - root.cx * root.k * 1px) / 1phx) * 1phx;
+    property <length> top: round((root.height - root.feet * root.k * 1px) / 1phx) * 1phx;
+    if root.live: Image {
+        source: root.source;
+        source-clip-x: 0;
+        source-clip-y: root.th - root.lh;
+        source-clip-width: root.lw;
+        source-clip-height: root.lh;
+        x: root.left;
+        y: root.top;
+        width: root.lw * 1phx;
+        height: root.lh * 1phx;
+        image-fit: fill;
+    }
+    if !root.live: Image {
+        source: root.face == "null" ? @image-url("faces/null.png") : root.face == "haiku" ? @image-url("faces/haiku.png") : root.face == "sonnet" ? @image-url("faces/sonnet.png") : root.face == "opus" ? @image-url("faces/opus.png") : @image-url("faces/clawd.png");
+        x: root.left;
+        y: root.top;
+        width: root.fw * root.k * 1px;
+        height: root.fh * root.k * 1px;
+        image-fit: fill;
+    }
+    @children
+}

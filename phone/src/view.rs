@@ -1,6 +1,16 @@
 //! The call as the states the design shows (incoming, connecting, talking, listening, hearing, thinking, hold,
 //! ended), built from the engine's events. The engine only ever changes the screen through these methods.
-use crate::mascot::Phase;
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Phase {
+    Incoming,
+    Connecting,
+    Talking,
+    Listening,
+    Hearing,
+    Thinking,
+    Hold,
+    Ended,
+}
 
 #[derive(Clone, Debug)]
 pub struct Msg {

@@ -19,6 +19,36 @@ pub enum Who {
     Clawd(Mat),
 }
 
+impl Who {
+    /// Whoever an agent or model name means: Codex is Null; Haiku, Sonnet and Opus are their Clawds; anything else
+    /// (Claude, unknown) the vinyl Clawd.
+    pub fn named(name: &str) -> Who {
+        let n = name.to_lowercase();
+        if n.contains("codex") || n.contains("null") {
+            Who::Null
+        } else if n.contains("haiku") {
+            Who::Clawd(Mat::Cartoon)
+        } else if n.contains("sonnet") {
+            Who::Clawd(Mat::Plush)
+        } else if n.contains("opus") {
+            Who::Clawd(Mat::Chrome)
+        } else {
+            Who::Clawd(Mat::Vinyl)
+        }
+    }
+
+    /// Its name in the UI (still pictures in ui/faces, actor.slint): null, clawd, haiku, sonnet or opus.
+    pub fn face(self) -> &'static str {
+        match self {
+            Who::Null => "null",
+            Who::Clawd(Mat::Vinyl) => "clawd",
+            Who::Clawd(Mat::Cartoon) => "haiku",
+            Who::Clawd(Mat::Plush) => "sonnet",
+            Who::Clawd(Mat::Chrome) => "opus",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum State {
     Idle,
@@ -108,6 +138,10 @@ pub struct Cast {
     voice: Spring,
     syllable: (f32, f32), // (level, until)
     syllables_left: i32,
+    level: Option<f32>, // a real voice's loudness (calls): it moves the mouth instead of made-up syllables
+    attend: bool,       // listening to you: eyes mostly on you, now and then a short glance away
+    nod: Spring,
+    nod_until: f32,
     arms: (Spring, Spring),
     arm_to: (Spring, Spring), // where the arms are heading, eased, so big swings start softly and still overshoot
     arm_kick: (f32, f32, f32), // extra target per arm, until
@@ -162,6 +196,10 @@ impl Cast {
             voice: Spring::default(),
             syllable: (0.0, 0.0),
             syllables_left: 0,
+            level: None,
+            attend: false,
+            nod: Spring::default(),
+            nod_until: 0.0,
             arms: (Spring::at(f.arm_rest), Spring::at(f.arm_rest)),
             arm_to: (Spring::at(f.arm_rest), Spring::at(f.arm_rest)),
             arm_kick: (0.0, 0.0, 0.0),
@@ -224,6 +262,24 @@ impl Cast {
         }
     }
 
+    /// The real voice's loudness, 0..1, while talking (None: made-up syllables).
+    pub fn set_voice(&mut self, level: Option<f32>) {
+        self.level = level;
+    }
+
+    /// Listening to you: the gaze stays on you.
+    pub fn attend(&mut self, on: bool) {
+        if on != self.attend {
+            self.attend = on;
+            self.next_saccade = self.t + 0.05;
+        }
+    }
+
+    /// A small nod: a dip of the eyes and body (Null's head), eased in and out.
+    pub fn nod(&mut self, now: f32) {
+        self.nod_until = now + 0.22;
+    }
+
     /// The finger, in logical pixels from the middle of the image; `down` false when it lifts.
     pub fn point(&mut self, x: f32, y: f32, down: bool, now: f32) {
         self.finger = Some((x, y));
@@ -249,6 +305,14 @@ impl Cast {
                 }
                 State::Happy => (self.range(-0.2, 0.2), self.range(0.0, 0.2), self.range(0.4, 1.0)),
                 State::Sleep => (0.0, -0.2, 3.0),
+                State::Idle if self.attend => {
+                    if self.rand() < 0.85 {
+                        (self.range(-0.12, 0.12), self.range(-0.1, 0.06), self.wait(1.8, 0.6, 4.0))
+                    } else {
+                        let side = if self.rand() < 0.5 { -1.0 } else { 1.0 };
+                        (side * self.range(0.3, 0.6), self.range(-0.2, 0.25), self.range(0.3, 0.7))
+                    }
+                }
                 State::Idle => {
                     let r = self.rand();
                     if r < 0.45 {
@@ -290,7 +354,9 @@ impl Cast {
             self.next_shift = now + self.range(2.2, 6.0);
         }
         // Clawds fidget an arm now and then, and gesture while talking.
-        if !null && now >= self.next_fidget {
+        if !null && now >= self.next_fidget && st == State::Talk && self.level.is_some_and(|l| l < 0.15) {
+            self.next_fidget = now + 0.1; // with a real voice, gestures land on words, not on pauses
+        } else if !null && now >= self.next_fidget {
             let side = self.rand();
             let amount = match st {
                 State::Talk => self.range(0.25, 0.6),
@@ -301,7 +367,7 @@ impl Cast {
             self.next_fidget = now + if st == State::Talk { self.range(0.9, 2.0) } else { self.range(3.5, 9.0) };
         }
         // Talking: syllables of uneven length and loudness, with short gaps and longer pauses between phrases.
-        if st == State::Talk && now >= self.syllable.1 {
+        if st == State::Talk && self.level.is_none() && now >= self.syllable.1 {
             if self.syllable.0 > 0.0 {
                 self.syllable = (0.0, now + self.range(0.04, 0.11));
             } else if self.syllables_left <= 0 {
@@ -359,7 +425,13 @@ impl Cast {
             (State::Sleep, true) => 1.0,
             _ => 0.0,
         };
-        let speaking = self.syllable.0;
+        // the real voice opens the mouth from a whisper's loudness (~0.05) to fully open near 0.6
+        let speaking = match self.level {
+            Some(l) if st == State::Talk => ((l - 0.05) * 1.8).clamp(0.0, 1.0),
+            _ => self.syllable.0,
+        };
+        let nod = self.nod.x;
+        gy -= 0.35 * nod;
         let arm_up = 0.5;
         let (mut arm_l, mut arm_r) = (f.arm_rest, f.arm_rest);
         match st {
@@ -382,7 +454,7 @@ impl Cast {
             State::Idle => 3.2,
         } * (1.0 + 0.12 * (now * 0.23).sin() * (now * 0.071 + 1.3).cos()); // never quite the same breath twice
         let sway = 0.012 * (now * 0.9).sin() + 0.008 * (now * 0.37 + 1.0).sin() + 0.005 * (now * 1.71 + 2.0).sin();
-        let squash_to = if self.launch_at.is_some() { 0.86 } else if self.y > 0.0 { 1.06 } else { 1.0 + 0.025 * speaking };
+        let squash_to = if self.launch_at.is_some() { 0.86 } else if self.y > 0.0 { 1.06 } else { 1.0 + 0.025 * speaking - 0.03 * nod };
         let (head_roll_to, head_nod_to) = match st {
             State::Think => (0.1 * gx.signum(), if gy < 0.0 { 0.22 } else { -0.08 }),
             State::Sleep => (0.06, 0.2),
@@ -428,6 +500,7 @@ impl Cast {
             self.think.step(if st == State::Think { 1.0 } else { 0.0 }, 3.0, 1.0, h);
             self.talk.step(if st == State::Talk { 1.0 } else { 0.0 }, 3.0, 1.0, h);
             self.voice.step(speaking, 7.5, 0.75, h);
+            self.nod.step(if self.t < self.nod_until { 1.0 } else { 0.0 }, 3.2, 0.8, h);
             self.arm_to.0.step(arm_l, 1.5, 1.0, h);
             self.arm_to.1.step(arm_r, 1.35, 1.0, h);
             self.arms.0.step(self.arm_to.0.x, f.arms.0, f.arms.1, h);
@@ -436,7 +509,7 @@ impl Cast {
             if null {
                 // the head trails the body's lean a little, then nods and tilts with the mood
                 self.head.0.step(head_roll_to - self.lean.x * 0.5, 2.2, 0.55, h);
-                self.head.1.step(head_nod_to, 2.5, 0.6, h);
+                self.head.1.step(head_nod_to + 0.16 * nod, 2.5, 0.6, h);
                 self.head.2.step(gx * 0.12, 1.8, 0.7, h);
                 self.laptop.step(laptop_to, 3.5, 0.5, h);
                 let tapping = self.t < self.tap_until;
@@ -464,7 +537,7 @@ impl Cast {
 
     /// True while anything is still moving beyond breathing and drifting: then draw at the full frame rate.
     pub fn moving(&self) -> bool {
-        let springs = [&self.squash, &self.look.0, &self.look.1, &self.open, &self.happy, &self.arms.0, &self.arms.1, &self.ant.0, &self.voice];
+        let springs = [&self.squash, &self.look.0, &self.look.1, &self.open, &self.happy, &self.arms.0, &self.arms.1, &self.ant.0, &self.voice, &self.nod];
         self.y > 0.0 || self.finger.is_some() || self.state == State::Talk || springs.iter().any(|s| s.v.abs() > 0.05)
     }
 
@@ -496,117 +569,5 @@ impl Cast {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn run(c: &mut Cast, from: f32, to: f32, mut each: impl FnMut(&Cast)) {
-        let mut now = from;
-        while now < to {
-            now += 1.0 / 60.0;
-            c.tick(now);
-            each(c);
-        }
-    }
-
-    #[test]
-    fn nothing_jumps_between_frames() {
-        // every uniform moves smoothly at 60 fps through every state change, a hop and sleep
-        for who in [Who::Null, Who::Clawd(Mat::Cartoon), Who::Clawd(Mat::Plush), Who::Clawd(Mat::Chrome)] {
-            let mut c = Cast::new(who, 11);
-            let mut prev: Option<Uniforms> = None;
-            let mut worst = 0.0f32;
-            let mut t = 0.0;
-            for (until, st) in [(4.0, State::Idle), (8.0, State::Think), (12.0, State::Talk), (14.0, State::Happy), (16.0, State::Idle), (24.0, State::Sleep), (28.0, State::Idle)] {
-                c.set_state(st);
-                if st == State::Idle && t > 1.0 {
-                    c.hop(t);
-                }
-                run(&mut c, t, until, |c| {
-                    let u = c.uniforms();
-                    if let Some(p) = &prev {
-                        for ((name, a), (_, b)) in u.iter().zip(p) {
-                            for k in 0..4 {
-                                if *name == "uMood" && k == 3 {
-                                    continue; // the clock
-                                }
-                                // blinks and the hop itself are meant to be quick
-                                // (a typing tap moves the hand only 0.05; a saccade and a syllable's mouth are quick darts)
-                                let limit = if *name == "uEyes" && k == 2 { 0.75 } else if *name == "uBody" && k == 1 { 0.1 } else if *name == "uHands" && k < 2 { 0.5 } else if *name == "uEyes" || (*name == "uMood" && k == 1 && c.who != Who::Null) { 0.45 } else { 0.35 };
-                                let d = (a[k] - b[k]).abs();
-                                worst = worst.max(d / limit);
-                                assert!(d < limit, "{who:?} {name}[{k}] jumped {d} at {:.2}s", c.t);
-                            }
-                        }
-                    }
-                    prev = Some(u);
-                });
-                t = until;
-            }
-            assert!(worst > 0.0);
-        }
-    }
-
-    #[test]
-    fn idle_is_never_frozen_and_never_repeats() {
-        let mut c = Cast::new(Who::Clawd(Mat::Cartoon), 5);
-        let mut looks = vec![];
-        let mut blinks = 0;
-        let mut was_open = true;
-        run(&mut c, 0.0, 30.0, |c| {
-            let u = c.uniforms();
-            looks.push(u[2].1[0]);
-            let open = u[2].1[2] > 0.5;
-            if was_open && !open {
-                blinks += 1;
-            }
-            was_open = open;
-        });
-        assert!((4..=20).contains(&blinks), "{blinks} blinks in 30 s");
-        // the gaze visits several places, and no two seconds look alike
-        let spread = looks.iter().cloned().fold(f32::MIN, f32::max) - looks.iter().cloned().fold(f32::MAX, f32::min);
-        assert!(spread > 0.6, "gaze spread {spread}");
-        let a: Vec<f32> = looks[600..660].to_vec();
-        let b: Vec<f32> = looks[1200..1260].to_vec();
-        assert!(a.iter().zip(&b).any(|(x, y)| (x - y).abs() > 0.02));
-    }
-
-    #[test]
-    fn a_hop_lands_squashed_and_settles() {
-        let mut c = Cast::new(Who::Clawd(Mat::Plush), 3);
-        run(&mut c, 0.0, 0.5, |_| {});
-        c.hop(0.5);
-        let (mut top, mut low) = (0.0f32, 2.0f32);
-        run(&mut c, 0.5, 3.5, |c| {
-            top = top.max(c.y);
-            low = low.min(c.squash.x);
-        });
-        assert!(top > 0.1 && top < 0.3, "hop {top}");
-        assert!(low < 0.93, "landing squash {low}");
-        assert!((c.squash.x - 1.0).abs() < 0.02 && c.y == 0.0);
-    }
-
-    #[test]
-    fn null_antenna_swings_after_a_hop_then_settles() {
-        let mut c = Cast::new(Who::Null, 9);
-        run(&mut c, 0.0, 1.0, |_| {});
-        c.hop(1.0);
-        let mut swing = 0.0f32;
-        run(&mut c, 1.0, 2.0, |c| swing = swing.max(c.ant.2.x.abs() + c.ant.0.x.abs()));
-        assert!(swing > 0.03, "antenna {swing}");
-        run(&mut c, 2.0, 8.0, |_| {});
-        assert!(c.ant.2.x.abs() < 0.01);
-    }
-
-    #[test]
-    fn sleep_closes_and_dims_then_a_tap_wakes() {
-        let mut c = Cast::new(Who::Null, 4);
-        c.set_state(State::Sleep);
-        run(&mut c, 0.0, 9.0, |_| {});
-        let u = c.uniforms();
-        assert!(u[3].1[3] > 0.9 && u[5].1[3] < 0.45 && u[2].1[0] > 0.9, "{u:?}");
-        c.hop(9.0);
-        run(&mut c, 9.0, 12.0, |_| {});
-        assert_eq!(c.state(), State::Idle);
-        assert!(c.uniforms()[5].1[3] > 0.8);
-    }
-}
+#[path = "cast_tests.rs"]
+mod tests;

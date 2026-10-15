@@ -225,6 +225,16 @@ pub fn name(agent: &str, model: Option<&str>) -> String {
     }
 }
 
+/// Its character (actor.slint): clawd, haiku, sonnet, opus or null.
+pub fn face(agent: &str, model: Option<&str>) -> &'static str {
+    crate::cast::Who::named(&format!("{agent} {}", model.unwrap_or(""))).face()
+}
+
+/// Whether the PC is still on my last message (sent, or being worked on).
+pub fn waiting(c: &Chat) -> bool {
+    c.lines.iter().rev().find(|l| l.me).is_some_and(|l| matches!(l.state.as_str(), "sending" | "sent" | "working"))
+}
+
 /// How long ago, short.
 pub fn ago(ms: i64) -> String {
     match ms / 1000 {

@@ -343,7 +343,7 @@ impl Engine {
         let now = self.now();
         {
             let mut s = self.lock();
-            if s.view.phase != crate::mascot::Phase::Incoming {
+            if s.view.phase != crate::view::Phase::Incoming {
                 return;
             }
             s.view.answered(now);
@@ -444,7 +444,7 @@ impl Engine {
     /// Called about once a second: puts the call audio back where it belongs if the system moved it.
     pub fn keep_route(&self) {
         let s = self.lock();
-        if s.view.phase != crate::mascot::Phase::Incoming && !s.ended {
+        if s.view.phase != crate::view::Phase::Incoming && !s.ended {
             let on = s.view.speaker;
             drop(s);
             android::route(on);

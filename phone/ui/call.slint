@@ -1,8 +1,9 @@
 // The Claude Call screen (design D: "Your mix"), drawn natively. Rust drives the call state; this file only lays it
 // out and animates it. Nothing here runs a per-frame loop: when nothing changes, nothing is redrawn.
 
-import { T, Icon, Icons, SwapText, Spoken, Glow, Orb, Round, Morph, Px, Cap, Msg } from "parts.slint";
-export { Px, Cap, Msg }
+import { T, Icon, Icons, SwapText, Spoken, Glow, Orb, Round, Morph, Cap, Msg } from "parts.slint";
+import { Actor } from "actor.slint";
+export { Cap, Msg }
 
 export component CallScreen inherits Window {
     // ---- From Rust ----
@@ -22,12 +23,17 @@ export component CallScreen inherits Window {
     in property <bool> me-live;
     in property <bool> show-me;
     in property <bool> show-pending;
-    in property <[Px]> pixels;
-    in property <length> perch-x: 24px; // where the mascot's box sits in the stage
-    in property <length> perch-y: 20px;
-    in property <length> mascot-h: 80px;
-    in property <int> null-frame; // Codex's pet: which frame of null.png (row * 6 + column)
-    in property <float> null-fade: 1;
+    // Whoever is calling, alive (caller.rs): the middle of its feet in the stage, its size, how visible it is.
+    in property <string> face: "clawd";
+    in property <float> face-x: 81;
+    in property <float> face-y: 108;
+    in property <float> face-k: 0.55;
+    in property <float> face-fade;
+    in property <bool> face-gpu: true; // false: the GPU can't draw it, so its still picture stands in
+    in property <image> face-live;
+    in property <int> face-w;
+    in property <int> face-h;
+    in property <int> face-th;
     in property <float> level; // whoever is talking, 0..1
     in property <float> me-level;
     in property <float> t; // seconds, advanced by Rust only while something moves
@@ -247,46 +253,25 @@ export component CallScreen inherits Window {
                 }
             }
 
-            // Clawd, on its own pixel grid. Nothing shows below the line it stands on (it can duck behind it).
-            mascot := Rectangle {
-                x: root.perch-x - 200px;
-                y: root.perch-y + root.mascot-h + 6px - 600px;
-                width: 600px;
-                height: 600px;
-                clip: true;
-                for p in root.pixels: Rectangle {
-                    x: 200px + p.x;
-                    y: 600px - 6px - root.mascot-h + p.y;
-                    width: p.w;
-                    height: p.h;
-                    background: p.c;
-                    opacity: p.o;
-                }
-                // Null, for calls from Codex: on the same footing as Clawd, about as tall. Its frames are made at the
-                // exact size they are shown (examples/null_atlas.rs), so they are drawn pixel for pixel: big, and small when
-                // perched (the one step between is the big frames at 3/4).
-                if root.agent == "Codex": Image {
-                    property <float> u: root.mascot-h / 20px;
-                    property <bool> small: u < 2.5;
-                    property <float> k: small || u > 3.5 ? 1 : 0.75;
-                    property <int> cw: small ? 144 : 252;
-                    property <int> ch: small ? 208 : 364;
-                    source: small ? @image-url("null-small.png") : @image-url("null.png");
-                    source-clip-x: Math.mod(root.null-frame, 6) * cw;
-                    source-clip-y: floor(root.null-frame / 6) * ch;
-                    source-clip-width: cw;
-                    source-clip-height: ch;
-                    width: cw * 1phx * k;
-                    height: ch * 1phx * k;
-                    x: 200px + 18px * u - (small ? 72 : 126) * 1phx * k;
-                    y: 600px - 6px - (small ? 198 : 346) * 1phx * k;
-                    opacity: root.null-fade;
-                }
+            // Whoever is calling: big over the caption, small on the bubble while the thread shows. A tap: a hop.
+            Actor {
+                x: root.face-x * 1px - 150px;
+                y: root.face-y * 1px - 300px;
+                width: 300px;
+                height: 300px;
+                face: root.face;
+                k: root.face-k;
+                live: root.face-gpu;
+                source: root.face-live;
+                lw: root.face-w;
+                lh: root.face-h;
+                th: root.face-th;
+                opacity: root.face-fade;
                 TouchArea {
-                    x: 200px;
-                    y: 600px - 6px - root.mascot-h;
-                    width: 144px;
-                    height: root.mascot-h;
+                    x: (parent.width - self.width) / 2;
+                    y: parent.height - self.height;
+                    width: 260px * root.face-k;
+                    height: 200px * root.face-k;
                     clicked => { root.poke(); }
                 }
             }

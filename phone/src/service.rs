@@ -56,11 +56,16 @@ fn end_action<'a>(env: &mut JNIEnv<'a>, end: &JObject) -> Result<JObject<'a>> {
 
 /// Android 16 QPR1+ shows an ongoing call as a Live Update; earlier versions don't have the call.
 fn can_promote(env: &mut JNIEnv) -> bool {
-    let full = env.get_static_field("android/os/Build$VERSION", "SDK_INT_FULL", "I").and_then(|v| v.i());
-    let baklava_1 = env.get_static_field("android/os/Build$VERSION_CODES_FULL", "BAKLAVA_1", "I").and_then(|v| v.i());
-    if env.exception_check().unwrap_or(false) {
-        let _ = env.exception_clear();
-    }
+    // Older Androids lack these fields: each miss leaves an exception, which must be cleared before the next JNI call.
+    let mut field = |class: &str, name: &str| {
+        let v = env.get_static_field(class, name, "I").and_then(|v| v.i());
+        if env.exception_check().unwrap_or(false) {
+            let _ = env.exception_clear();
+        }
+        v
+    };
+    let full = field("android/os/Build$VERSION", "SDK_INT_FULL");
+    let baklava_1 = field("android/os/Build$VERSION_CODES_FULL", "BAKLAVA_1");
     matches!((full, baklava_1), (Ok(f), Ok(b)) if f >= b)
 }
 

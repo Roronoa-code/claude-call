@@ -1,4 +1,5 @@
-//! The live Clawd and Null on the home screen: real 3D toys drawn by the GPU (live_gl.rs, shaders in art/live3d),
+//! The live cast's framing (where each character stands in its picture, for every screen that shows one), and the
+//! live Clawd and Null on the home screen: real 3D toys drawn by the GPU (live_gl.rs, shaders in art/live3d),
 //! not swapped sprites. Each is a Cast (cast.rs: springs, saccades, blinks, breathing, hops); this gives the pair
 //! their home life: asleep in the quiet modes (a tap wakes one for a while), Null now and then thinking at his laptop
 //! or giving a happy hop, Clawd now and then lost in thought, and both watching a finger.
@@ -7,6 +8,40 @@ use crate::cast::{Cast, Mat, State, Who};
 /// Each image's size in logical pixels; toys.slint draws them at exactly these sizes.
 pub const CLAWD_SIZE: (f32, f32) = (300.0, 250.0);
 pub const NULL_SIZE: (f32, f32) = (150.0, 230.0);
+
+/// A character's picture at home size (k = 1), in logical px: its size and its body's width. ui/actor.slint has the
+/// same picture sizes, and where the body stands in them.
+pub struct Frame {
+    pub w: f32,
+    pub h: f32,
+    pub body_w: f32,
+}
+
+pub fn frame(who: Who) -> Frame {
+    match who {
+        Who::Null => Frame { w: 150.0, h: 230.0, body_w: 80.0 },
+        Who::Clawd(_) => Frame { w: 300.0, h: 250.0, body_w: 208.0 },
+    }
+}
+
+/// Room above the picture for hops and Haiku's tufts. The shaders frame by height from the bottom, so drawing a
+/// taller view than `uRes` only adds sky; nothing moves or scales.
+pub const HEAD: f32 = 40.0;
+
+/// For drawing `who` at `k` times home size on a screen of `sf` px per logical px: its uRes and the viewport (the
+/// picture plus HEAD above it), in px.
+pub fn view(who: Who, k: f32, sf: f32) -> ((i32, i32), (i32, i32)) {
+    let f = frame(who);
+    let px = |v: f32| (v * k * sf).round().max(1.0) as i32;
+    ((px(f.w), px(f.h)), (px(f.w), px(f.h + HEAD)))
+}
+
+/// Whether a character last drawn at `last` needs a new frame at `now`: 60 fps while it moves, 30 while it only
+/// breathes, 15 asleep.
+pub fn due(c: &Cast, last: f32, now: f32) -> bool {
+    let fps = if c.moving() { 60.0 } else if c.state() == State::Sleep { 15.0 } else { 30.0 };
+    now - last >= 1.0 / fps - 0.004
+}
 
 const WAKE_FOR: f32 = 8.0; // a tap in a quiet mode wakes him this long
 

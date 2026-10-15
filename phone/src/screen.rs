@@ -1,13 +1,14 @@
-//! The call screen: draws the call (Clawd, captions, the thread, controls) from the engine's view, ~30 times a second.
+//! The call screen: draws the call (captions, the thread, controls) from the engine's view, ~30 times a second, and
+//! whoever is calling, alive in 3D (caller.rs, live_gl.rs), every frame it moves.
 use crate::{
-    Cap, CallScreen, Msg as UiMsg, Px, android,
+    Cap, CallScreen, Msg as UiMsg, alive, android,
+    caller::Caller,
     engine::Engine,
-    mascot::{Mascot, Phase},
-    null::Null,
-    view::{self, Msg, View, Voice, clock},
+    live_gl,
+    view::{self, Msg, Phase, View, Voice, clock},
 };
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
-use std::{rc::Rc, sync::Arc, time::Duration};
+use std::{cell::RefCell, rc::Rc, sync::Arc, time::Duration};
 
 const CLOSE_MS: f64 = 1100.0; // the screen fades out this long after the call ends...
 const FINISH_MS: f64 = 1200.0; // ...and closes here
@@ -25,14 +26,11 @@ struct Held {
 struct Frame {
     held: Held,
     cap: Option<Cap>,
-    mascot: Mascot,
-    null: Null, // Codex's pet, for calls from Codex
-    perch: (f64, f64, f64), // where the mascot's box bottom-left is easing to: x, bottom, start time
-    from: (f64, f64),
-    u: f64,
-    u_from: (f64, f64), // pixel size it is stepping from, and when it started
-    thread_was: bool,
-    last_pixels: Vec<Px>,
+    // what the caller's character follows (caller.rs), from the last frame
+    phase: Phase,
+    agent: String,
+    perched: bool,
+    me_level: f32,
     moving_until: f64,
     level: f32,
     finished: bool,
@@ -81,11 +79,6 @@ fn caption(v: &View, now: f64) -> Cap {
             None => plain("turn", "Your turn".into(), &format!("Go ahead, {} is listening.", v.agent), "dim", false),
         },
     }
-}
-
-fn ease_out(t: f64) -> f64 {
-    let t = t.clamp(0.0, 1.0);
-    1.0 - (1.0 - t).powi(3)
 }
 
 fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activity::AndroidApp) {
@@ -164,51 +157,12 @@ fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activi
     let (speaker, quiet, can_finish, ended_at) = (v.speaker, v.quiet, v.can_finish, v.ended_at);
     drop(s);
 
-    // ---- Clawd: whole pixels, perched small on Claude's bubble while the thread shows ----
-    let perched = thread && bubble.is_some();
-    if perched != f.thread_was {
-        f.thread_was = perched;
-        f.from = mascot_box(f, now);
-        f.perch = if perched { (30.0, 60.0, now) } else { (24.0, 108.0, now) };
-        f.u_from = (f.u, now);
+    // ---- The caller's character: big over the caption, small on the bubble while the thread shows ----
+    f.perched = thread && bubble.is_some();
+    (f.phase, f.me_level) = (phase, me_level);
+    if f.agent != agent {
+        f.agent = agent.clone();
     }
-    let (bx, bottom) = mascot_box(f, now);
-    // Pixel art only ever shows at whole pixels per cell: 4, then 3, then 2 (or back).
-    let target_u = if perched { 2.0 } else { 4.0 };
-    let steps = ((now - f.u_from.1) / 100.0).floor().min(2.0);
-    f.u = if f.u_from.0 == target_u { target_u } else { f.u_from.0 + (target_u - f.u_from.0).signum() * steps };
-    let u = f.u;
-    let cells = f.mascot.frame((now / 1000.0) as f32, phase, muted, if phase == Phase::Talking { claude_level } else { 0.0 }, me_level);
-    let fit = (22.0 / (9.0 * u)).min(1.0);
-    let shift = -2.0 * ((f.mascot.lift((now / 1000.0) as f32) as f64) * u * fit / 2.0).round();
-    let box_h = 20.0 * u;
-    let fade = f.mascot.fade();
-    let codex = agent == "Codex";
-    if codex {
-        let n = f.null.frame((now / 1000.0) as f32, phase);
-        if ui.get_null_frame() != n {
-            ui.set_null_frame(n);
-        }
-        ui.set_null_fade(fade);
-    }
-    let pixels: Vec<Px> = if codex { &[][..] } else { &cells[..] }
-        .iter()
-        .map(|c| Px {
-            x: (c.x as f64 * u) as f32,
-            y: (c.y as f64 * 2.0 * u + shift) as f32,
-            w: (c.w as f64 * u) as f32,
-            h: (c.h as f64 * 2.0 * u) as f32,
-            c: slint::Color::from_rgb_u8((c.c >> 16) as u8, (c.c >> 8) as u8, c.c as u8),
-            o: c.o * fade,
-        })
-        .collect();
-    if pixels != f.last_pixels {
-        ui.set_pixels(ModelRc::new(VecModel::from(pixels.clone())));
-        f.last_pixels = pixels;
-    }
-    ui.set_perch_x(bx.round() as f32);
-    ui.set_mascot_h(box_h as f32);
-    ui.set_perch_y((bottom - box_h).round() as f32);
 
     // ---- Everything else: set only what changed (an unchanged screen is never redrawn) ----
     let phase_name = format!("{phase:?}").to_lowercase();
@@ -288,11 +242,6 @@ fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activi
     }
 }
 
-fn mascot_box(f: &Frame, now: f64) -> (f64, f64) {
-    let k = ease_out((now - f.perch.2) / 500.0);
-    (f.from.0 + (f.perch.0 - f.from.0) * k, f.from.1 + (f.perch.1 - f.from.1) * k)
-}
-
 fn set_if(cur: SharedString, new: String, set: impl FnOnce(SharedString)) {
     if cur.as_str() != new {
         set(new.into());
@@ -346,30 +295,80 @@ pub fn run(app: android_activity::AndroidApp) {
     let frame = Rc::new(std::cell::RefCell::new(Frame {
         held: Held::default(),
         cap: None,
-        mascot: Mascot::new((now / 1000.0) as f32),
-        null: Null::default(),
-        perch: (24.0, 108.0, -1e9),
-        from: (24.0, 108.0),
-        u: 4.0,
-        u_from: (4.0, -1e9),
-        thread_was: false,
-        last_pixels: vec![],
+        phase: Phase::Incoming,
+        agent: String::new(),
+        perched: false,
+        me_level: 0.0,
         moving_until: 0.0,
         level: 0.0,
         finished: false,
         rate_set: false,
         last_route: -1e9,
     }));
+    let start = std::time::Instant::now();
+    let caller = Rc::new(RefCell::new(Caller::new(0x51ed_270b ^ now.to_bits())));
     ui.on_poke({
-        let (f, e) = (frame.clone(), e.clone());
-        move || {
-            let now = (e.now() / 1000.0) as f32;
-            let mut f = f.borrow_mut();
-            f.mascot.poke(now);
-            f.null.poke(now);
+        let caller = caller.clone();
+        move || caller.borrow_mut().poke(start.elapsed().as_secs_f32())
+    });
+    let scene = Rc::new(RefCell::new(live_gl::Scene::new(1)));
+    live_gl::attach(&ui, scene.clone(), vec![Caller::size()], {
+        let ui = ui.as_weak();
+        move |images| {
+            if let Some(ui) = ui.upgrade() {
+                ui.set_face_live(images[0].clone());
+            }
         }
     });
-    // 30 frames a second is plenty for pixel art and captions; properties that didn't change cost nothing.
+    // The character, every frame: its springs and the voice's level need it; it is drawn only when due.
+    let face_timer = slint::Timer::default();
+    face_timer.start(slint::TimerMode::Repeated, Duration::from_millis(16), {
+        let (ui, e, f) = (ui.as_weak(), e.clone(), frame.clone());
+        let mut drawn = -1.0f32;
+        let mut last = None;
+        move || {
+            let Some(ui) = ui.upgrade() else { return };
+            let now = start.elapsed().as_secs_f32();
+            let (phase, agent, perched, me) = {
+                let f = f.borrow();
+                (f.phase, f.agent.clone(), f.perched, f.me_level)
+            };
+            let voice = e.claude_level();
+            let mut c = caller.borrow_mut();
+            c.tick(now, &agent, phase, perched, voice, me);
+            let mut s = scene.borrow_mut();
+            if s.failed && ui.get_face_gpu() {
+                ui.set_face_gpu(false); // a still picture instead
+            }
+            let p = c.place(now);
+            let who = c.cast.who;
+            let fade = (c.fade(now) * 100.0).round() / 100.0;
+            if ui.get_face() != who.face() {
+                ui.set_face(who.face().into());
+            }
+            if ui.get_face_fade() != fade {
+                ui.set_face_fade(fade);
+            }
+            let moved = last != Some((p, who));
+            if fade > 0.0 && !s.failed && (moved || drawn < 0.0 || alive::due(&c.cast, drawn, now)) {
+                let sf = ui.window().scale_factor();
+                let (res, view) = alive::view(who, p.k, sf);
+                s.slots[0] = live_gl::Slot { who, res, view, frame: c.cast.uniforms(), fresh: true };
+                drawn = now;
+                last = Some((p, who));
+                ui.set_face_x(p.x);
+                ui.set_face_y(p.y);
+                ui.set_face_k(p.k);
+                ui.set_face_w(view.0);
+                ui.set_face_h(view.1);
+                ui.set_face_th(live_gl::texture_px(Caller::size(), sf).1);
+                ui.window().request_redraw();
+            } else if fade == 0.0 {
+                drawn = -1.0;
+            }
+        }
+    });
+    // 30 frames a second is plenty for captions; properties that didn't change cost nothing.
     let timer = slint::Timer::default();
     timer.start(slint::TimerMode::Repeated, Duration::from_millis(33), {
         let (ui, e, f, app) = (ui.as_weak(), e.clone(), frame.clone(), app.clone());
