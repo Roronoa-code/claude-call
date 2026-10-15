@@ -1,0 +1,385 @@
+// PREVIEW (branch preview/call-screen): pieces every call screen direction shares (call_looks.slint): the caption
+// that crossfades line to line, the transcript and the reply field that grow out of their buttons, the caller on
+// its record, and the record's lights.
+import { T, Icon, Icons, Spoken, Morph, Cap } from "parts.slint";
+import { Actor } from "actor.slint";
+import { Call } from "call_data.slint";
+
+// The caption: a new line crossfades in over the old one, the same line (more words said) updates in place. `hide`
+// moves it out of the way (the thread shows instead).
+export component CapView inherits Rectangle {
+    in property <bool> hide;
+    in property <length> hide-dy: -24px;
+    in property <length> s0: 30px; // short, longer and long lines
+    in property <length> s1: 24px;
+    in property <length> s2: 20px;
+    in property <bool> small; // the keyboard is up: the smallest size
+    in property <bool> show-label: true;
+    in property <length> label-size: 14px;
+    in property <length> gap: 14px;
+    in property <int> weight: 500;
+    in property <float> tracking: -0.012;
+    in property <color> talk-label: #e7a084;
+    in property <color> lit-color: T.fg;
+    in property <color> dim-color: T.unlit;
+    in property <LayoutAlignment> align: start; // end: the words sit on the bottom edge (subtitles)
+    property <Cap> cap: Call.cap;
+    property <Cap> a;
+    property <Cap> b;
+    property <int> pa: 1;
+    property <int> pb: 0;
+    init => { self.a = self.cap; }
+    changed cap => {
+        if (self.pa == 1 && self.a.key != self.cap.key) { self.b = self.cap; self.pb = 0; self.pb = 1; self.pa = 2; }
+        else if (self.pb == 1 && self.b.key != self.cap.key) { self.a = self.cap; self.pa = 0; self.pa = 1; self.pb = 2; }
+        else if (self.pa == 1) { self.a = self.cap; } else { self.b = self.cap; }
+    }
+    for slot in [0, 1]: VerticalLayout {
+        property <Cap> c: slot == 0 ? root.a : root.b;
+        property <int> p: slot == 0 ? root.pa : root.pb;
+        width: root.width;
+        height: root.height;
+        alignment: root.align;
+        spacing: root.gap;
+        opacity: (p == 1 ? 1 : 0) * (root.hide ? 0 : 1);
+        y: (p == 0 ? 6px : p == 1 ? 0 : -6px) + (root.hide ? root.hide-dy : 0);
+        animate opacity { duration: p == 0 ? 0ms : root.hide ? 140ms : p == 1 ? 280ms : 140ms; delay: p == 1 && !root.hide ? 112ms : 0ms; easing: T.out; }
+        animate y { duration: p == 0 ? 0ms : root.hide ? 420ms : p == 1 ? 280ms : 140ms; delay: p == 1 && !root.hide ? 112ms : 0ms; easing: T.out; }
+        if root.show-label: Text {
+            height: root.label-size * 1.45;
+            text: c.label;
+            font-size: root.label-size;
+            font-weight: 650;
+            letter-spacing: 0.02 * root.label-size;
+            vertical-alignment: center;
+            opacity: c.tone == "pre" ? 0 : 1;
+            color: c.tone == "rest" || c.tone == "dim" ? T.muted : c.tone == "hold" ? #c9b6ff : root.talk-label;
+        }
+        Spoken {
+            text: c.text;
+            lit: c.lit;
+            font-size: root.small || c.size == 2 ? root.s2 : c.size == 1 ? root.s1 : root.s0;
+            weight: root.weight;
+            tracking: root.tracking;
+            lit-color: c.tone == "dim" ? T.fg2 : root.lit-color;
+            dim-color: root.dim-color;
+            opacity: c.tone == "rest" ? 0.62 : 1;
+        }
+    }
+}
+
+// The transcript (out of the Captions button) and the reply field (out of the Type button), over the whole screen.
+export component Sheets inherits Rectangle {
+    in property <length> caps-x; // the buttons' top left corners, and their size
+    in property <length> caps-y;
+    in property <length> type-x;
+    in property <length> type-y;
+    in property <length> fsize: 58px;
+    in property <length> caps-size: self.fsize; // the Captions button, if not the same size
+    in property <length> keep: 268px; // room the transcript leaves at the bottom (the controls)
+    in property <length> lift: 188px; // how high the reply field sits over the bottom edge without a keyboard
+    in property <color> panel: #1c1d21;
+    property <bool> in-call: Call.phase != "incoming";
+    Morph {
+        open: Call.caps-open && root.in-call;
+        fx: root.caps-x;
+        fy: root.caps-y;
+        fsize: root.caps-size;
+        tx: 12px;
+        ty: Call.sat + 8px;
+        tw: root.width - 24px;
+        th: root.height - Call.sat - 8px - Call.sab - root.keep;
+        face: Icons.captions;
+        panel: root.panel;
+        VerticalLayout {
+            Rectangle {
+                height: 60px;
+                Text { x: 20px; text: "Transcript"; font-size: 17px; font-weight: 700; color: T.fg; vertical-alignment: center; height: parent.height; }
+                Rectangle {
+                    x: parent.width - 54px;
+                    y: 6px;
+                    width: 48px;
+                    height: 48px;
+                    Icon { d: Icons.close; x: 12px; y: 12px; }
+                    TouchArea { clicked => { Call.caps-open = false; } }
+                }
+                Rectangle { y: parent.height - 1px; height: 1px; background: #2a2c31; }
+            }
+            Flickable {
+                content-height: rows.preferred-height;
+                content-y: Math.min(0px, self.height - rows.preferred-height);
+                rows := VerticalLayout {
+                    width: root.width - 24px;
+                    padding: 16px;
+                    spacing: 12px;
+                    for m in Call.msgs: HorizontalLayout {
+                        alignment: m.me ? end : start;
+                        Rectangle {
+                            max-width: (root.width - 56px) * 0.8;
+                            background: m.me ? T.me : #202227;
+                            border-top-left-radius: 20px;
+                            border-top-right-radius: 20px;
+                            border-bottom-left-radius: m.me ? 20px : 6px;
+                            border-bottom-right-radius: m.me ? 6px : 20px;
+                            VerticalLayout {
+                                padding-left: 14px;
+                                padding-right: 14px;
+                                padding-top: 10px;
+                                padding-bottom: 10px;
+                                Spoken { text: m.text; lit: m.lit; lit-color: m.me ? white : T.fg; }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Morph {
+        open: Call.typing && root.in-call && Call.phase != "ended";
+        fx: root.type-x;
+        fy: root.type-y;
+        fsize: root.fsize;
+        tx: 16px;
+        ty: root.height - Call.kb - max(12px, Call.sab + root.lift - Call.kb) - 64px; // 12px above the keyboard
+        tw: root.width - 32px;
+        th: 64px;
+        radius: 32px;
+        face: Icons.keyboard;
+        panel: root.panel;
+        HorizontalLayout {
+            padding-left: 20px;
+            padding-right: 8px;
+            spacing: 4px;
+            alignment: stretch;
+            input := TextInput {
+                text <=> Call.draft;
+                font-size: 17px;
+                color: T.fg;
+                vertical-alignment: center;
+                single-line: true;
+                accepted => { if (Call.draft != "") { Call.send(Call.draft); Call.draft = ""; Call.typing = false; } }
+                Text {
+                    x: 0;
+                    width: parent.width;
+                    visible: Call.draft == "";
+                    text: "Type a reply";
+                    font-size: 17px;
+                    color: #8c8f97;
+                    vertical-alignment: center;
+                    height: parent.height;
+                }
+            }
+            Rectangle {
+                width: 48px;
+                height: 48px;
+                y: 8px;
+                border-radius: 24px;
+                background: Call.draft != "" ? T.accent : transparent;
+                animate background { duration: 200ms; easing: T.out; }
+                Icon { d: Icons.send; x: 12px; y: 12px; stroke: Call.draft != "" ? white : T.muted; }
+                TouchArea {
+                    enabled: Call.draft != "";
+                    clicked => { Call.send(Call.draft); Call.draft = ""; Call.typing = false; }
+                }
+            }
+            Rectangle {
+                width: 48px;
+                height: 48px;
+                y: 8px;
+                Icon { d: Icons.close; x: 12px; y: 12px; }
+                TouchArea { clicked => { Call.typing = false; } }
+            }
+        }
+    }
+    // Focus once the field has grown into view (Android won't raise the keyboard for a field still clipped away).
+    focusSoon := Timer { interval: 220ms; running: false; triggered => { self.running = false; if (Call.typing) { input.focus(); } } }
+    property <bool> typing: Call.typing;
+    changed typing => { if (self.typing) { focusSoon.running = true; } else { input.clear-focus(); } }
+}
+
+// The record the caller stands on (stage.rs, ui/stage/record.png drawn by art/live3d/stages.py for k = 0.84),
+// scaled to the caller's size with the middle of its feet on (fx, fy).
+export component RecordBack inherits Rectangle {
+    in property <length> fx;
+    in property <length> fy;
+    in property <float> k: 0.84;
+    in property <image> source: @image-url("stage/record.png");
+    in property <float> drawn-k: 0.84; // the k the picture was drawn for
+    property <float> s: root.k / root.drawn-k;
+    Image {
+        source: root.source;
+        x: root.fx - 250px * root.s;
+        y: root.fy - 640px * root.s;
+        width: 500px * root.s;
+        height: 1400px * root.s;
+        image-fit: fill;
+    }
+}
+
+// The record's edge as an ellipse round the caller's feet (stages.py's camera: at k = 1 its middle is 8.1 px under
+// the feet line, 190.3 px across and 62.6 px deep each way). `at(turn)` is a point on it, turn 0..1 from the front.
+export global Lip {
+    out property <float> cy: 8.09;
+    out property <float> a: 190.25;
+    out property <float> b: 62.57;
+    // a point on the edge, scaled by k; the front is turn 0, going round to the right
+    public pure function x(k: float, turn: float) -> length { return -Lip.a * k * Math.sin(turn * 360deg) * 1px; }
+    public pure function y(k: float, turn: float) -> length { return (Lip.cy + Lip.b * Math.cos(turn * 360deg)) * k * 1px; }
+}
+
+// Whoever is calling, alive, with the middle of its feet at (fx, fy). A tap: a hop.
+export component Caller inherits Rectangle {
+    in property <length> fx;
+    in property <length> fy;
+    Actor {
+        x: root.fx - 150px;
+        y: root.fy - 300px;
+        width: 300px;
+        height: 300px;
+        face: Call.face;
+        k: Call.face-k;
+        live: Call.face-gpu;
+        source: Call.face-live;
+        lw: Call.face-w;
+        lh: Call.face-h;
+        th: Call.face-th;
+        opacity: Call.face-fade;
+        TouchArea {
+            x: (parent.width - self.width) / 2;
+            y: parent.height - self.height;
+            width: 240px * Call.face-k;
+            height: 210px * Call.face-k;
+            clicked => { Call.poke(); }
+        }
+    }
+}
+
+// A glossy vinyl token with an icon and its name under it (the home screen's Pucks): on, it fills with Clawd's orange
+// from its middle; off, the colour shrinks back into it.
+export component Puck inherits Rectangle {
+    in property <string> icon;
+    in property <string> label;
+    in property <bool> on;
+    in property <bool> enabled: true;
+    in property <length> size: 52px;
+    callback clicked;
+    property <float> k: root.on ? 1 : 0;
+    animate k { duration: root.on ? 520ms : 300ms; easing: root.on ? T.spring : T.close; }
+    width: root.size + 24px;
+    height: root.size + 26px;
+    disc := Rectangle {
+        x: 12px;
+        y: 0;
+        width: root.size;
+        height: root.size;
+        border-radius: root.size / 2;
+        background: @linear-gradient(180deg, #2e2f35 0%, #16171a 100%);
+        border-width: 1px;
+        border-color: #ffffff0d;
+        drop-shadow-blur: 8px + 8px * root.k;
+        drop-shadow-offset-y: 4px + 4px * root.k;
+        drop-shadow-color: #000000b0;
+        opacity: root.enabled ? 1 : 0.4;
+        transform-origin: { x: root.size / 2, y: root.size / 2 };
+        transform-scale: touch.pressed && root.enabled ? 0.92 : 1;
+        animate transform-scale { duration: 160ms; easing: T.out; }
+        animate opacity { duration: 160ms; }
+        Rectangle {
+            x: root.size / 2 * (1 - min(1, root.k));
+            y: root.size / 2 * (1 - min(1, root.k));
+            width: root.size * min(1, root.k);
+            height: root.size * min(1, root.k);
+            border-radius: self.width / 2;
+            background: @linear-gradient(180deg, #f59c6c 0%, #d2602f 100%);
+            opacity: min(1, root.k * 3);
+        }
+        Rectangle {
+            x: root.size * 0.19;
+            y: 3px;
+            width: root.size * 0.62;
+            height: root.size * 0.33;
+            border-radius: self.height / 2;
+            background: @linear-gradient(180deg, #ffffff38 0%, #ffffff00 100%);
+            opacity: 0.45 + 0.55 * root.k;
+        }
+        Icon {
+            d: root.icon;
+            x: (root.size - 20px) / 2;
+            y: (root.size - 20px) / 2;
+            width: 20px;
+            height: 20px;
+            stroke: root.on ? #3a1607 : T.fg2;
+            animate stroke { duration: 240ms; }
+        }
+        touch := TouchArea {
+            enabled: root.enabled;
+            clicked => { root.clicked(); }
+        }
+    }
+    Text {
+        y: root.size + 8px;
+        width: root.width;
+        height: 16px;
+        text: root.label;
+        font-size: 12px;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        color: root.on ? T.fg : #878990;
+        opacity: root.enabled ? 1 : 0.5;
+        animate color { duration: 220ms; easing: T.out; }
+    }
+}
+
+// A tiny record that spins while the caller works (and slowly on hold): the thinking sign, in place of a spinner.
+export component MiniRecord inherits Rectangle {
+    in property <float> t;
+    in property <float> speed: 1; // turns a second
+    in property <color> label: #d97757;
+    in property <length> size: 16px;
+    width: root.size;
+    height: root.size;
+    Rectangle {
+        border-radius: root.size / 2;
+        background: #0b0b0d;
+        border-width: 1px;
+        border-color: #ffffff2a;
+    }
+    Rectangle {
+        x: root.size * 0.18;
+        y: root.size * 0.18;
+        width: root.size * 0.64;
+        height: root.size * 0.64;
+        border-radius: self.width / 2;
+        border-width: 0.8px;
+        border-color: #ffffff14;
+    }
+    // the light on the grooves: a sheen that turns with the record
+    Path {
+        width: root.size;
+        height: root.size;
+        viewbox-width: 16;
+        viewbox-height: 16;
+        commands: "M 8 8 L 8 0.6 A 7.4 7.4 0 0 1 12.4 2.1 Z M 8 8 L 8 15.4 A 7.4 7.4 0 0 1 3.6 13.9 Z";
+        fill: #ffffff30;
+        stroke: transparent;
+        transform-origin: { x: root.size / 2, y: root.size / 2 };
+        transform-rotation: root.t * root.speed * 360deg;
+    }
+    Rectangle {
+        x: root.size * 0.32;
+        y: root.size * 0.32;
+        width: root.size * 0.36;
+        height: root.size * 0.36;
+        border-radius: self.width / 2;
+        background: root.label;
+        Rectangle {
+            x: parent.width * 0.38;
+            y: parent.height * 0.38;
+            width: parent.width * 0.24;
+            height: parent.height * 0.24;
+            border-radius: self.width / 2;
+            background: #0b0b0d;
+        }
+    }
+}

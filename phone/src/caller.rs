@@ -11,8 +11,12 @@ use crate::{
 
 pub const BIG_K: f32 = 0.55; // the size over the caption: a Haiku's hop just clears the header
 const SMALL_K: f32 = 0.3; // perched on the bubble
+/// PREVIEW (branch preview/call-screen): its size on each call screen direction (debug.callme.call; 0 as shipped).
+/// The directions place it themselves (call_looks.slint) and never perch it.
+pub const LOOK_K: [f32; 5] = [BIG_K, 1.0, 1.5, 0.85, 0.6];
 const MOVE_S: f32 = 0.5; // the ease between the two
 const RING_EVERY: f32 = 1.5; // a hop per ring
+pub const FLOOR: f32 = 45.0; // PREVIEW: the most floor drawn under a picture at k = 1 (stage.rs, the record)
 const SHOW_AFTER: f32 = 0.6; // fades in once the call says who is calling, or after this long
 
 /// Where it stands, in the call stage's logical px: the middle of its feet, and its size (k times home size).
@@ -32,13 +36,17 @@ pub struct Caller {
     to: Place,
     moved_at: f32,
     perched: bool,
+    look: usize,
     phase: Option<Phase>,
     next_ring: f32,
     next_nod: f32,
     me: (f32, f32), // your voice: how loud lately, and when you last went quiet after speaking
 }
 
-fn place(who: Who, perched: bool) -> Place {
+fn place(who: Who, perched: bool, look: usize) -> Place {
+    if look > 0 {
+        return Place { x: 0.0, y: 0.0, k: LOOK_K[look] };
+    }
     let (k, left, y) = if perched { (SMALL_K, 30.0, 73.0) } else { (BIG_K, 24.0, 108.0) };
     Place { x: left + alive::frame(who).body_w * alive::solo(who, k) / 2.0, y, k }
 }
@@ -48,17 +56,18 @@ fn ease_out(t: f32) -> f32 {
 }
 
 impl Caller {
-    pub fn new(seed: u64) -> Self {
+    pub fn new(seed: u64, look: usize) -> Self {
         let who = Who::named("Claude");
         Caller {
             cast: Cast::new(who, seed),
             seed,
             shown_at: None,
             swap_at: None,
-            from: place(who, false),
-            to: place(who, false),
+            from: place(who, false, look),
+            to: place(who, false, look),
             moved_at: -1e9,
             perched: false,
+            look,
             phase: None,
             next_ring: 0.0,
             next_nod: 0.0,
@@ -66,9 +75,11 @@ impl Caller {
         }
     }
 
-    /// The texture's size (logical px): the widest and tallest picture at its big size, with room above.
-    pub fn size() -> (f32, f32) {
-        alive::solo_size(BIG_K)
+    /// The texture's size (logical px): the widest and tallest picture at its big size, with room above, and (the
+    /// preview directions) a record's floor below.
+    pub fn size(look: usize) -> (f32, f32) {
+        let (w, h) = alive::solo_size(LOOK_K[look]);
+        (w, h + if look > 0 { FLOOR * LOOK_K[look] * alive::NULL_SOLO } else { 0.0 })
     }
 
     pub fn poke(&mut self, now: f32) {
@@ -106,7 +117,7 @@ impl Caller {
         }
         if perched != self.perched {
             self.from = self.place(now);
-            self.to = place(self.cast.who, perched);
+            self.to = place(self.cast.who, perched, self.look);
             (self.perched, self.moved_at) = (perched, now);
         }
 
@@ -157,7 +168,43 @@ impl Caller {
             self.cast = Cast::new(who, self.seed);
             self.cast.tick(now);
         }
-        self.from = place(who, self.perched);
+        self.from = place(who, self.perched, self.look);
         self.to = self.from;
+    }
+}
+
+/// PREVIEW (call screen direction 2, Close-up): the light on the caller tells the call's state, easing between
+/// moods: warm while it talks (brighter with its voice), cool while it's your turn, dimmer while it works, lilac on
+/// hold, out at the end. Offsets to the record stage's key light colour and ambient (the shaders add them to 1).
+pub struct Mood {
+    now: [f32; 4],
+    at: f32,
+}
+
+impl Mood {
+    pub fn new() -> Self {
+        Mood { now: [0.06, -0.02, -0.14, -0.3], at: 0.0 }
+    }
+
+    pub fn ease(&mut self, phase: Phase, voice: f32, now: f32) {
+        let target = match phase {
+            Phase::Incoming | Phase::Connecting => [0.06, -0.02, -0.14, -0.3],
+            Phase::Talking => [0.12, 0.0, -0.12, -0.28 + 0.22 * voice.clamp(0.0, 1.0)],
+            Phase::Listening | Phase::Hearing => [-0.3, -0.1, 0.2, -0.3],
+            Phase::Thinking => [-0.18, -0.24, -0.1, -0.52],
+            Phase::Hold => [-0.2, -0.3, 0.22, -0.5],
+            Phase::Ended => [-0.55, -0.55, -0.5, -0.7],
+        };
+        let k = 1.0 - (-(now - self.at).clamp(0.0, 0.1) * 6.0).exp(); // about 400 ms
+        self.at = now;
+        for (v, t) in self.now.iter_mut().zip(target) {
+            *v += (t - *v) * k;
+        }
+    }
+
+    pub fn apply(&self, frame: &mut crate::cast::Uniforms) {
+        if let Some(u) = frame.iter_mut().find(|(n, _)| *n == "uKeyCol") {
+            u.1 = self.now;
+        }
     }
 }

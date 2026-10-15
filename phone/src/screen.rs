@@ -1,10 +1,10 @@
 //! The call screen: draws the call (captions, the thread, controls) from the engine's view, ~30 times a second, and
 //! whoever is calling, alive in 3D (caller.rs, live_gl.rs), every frame it moves.
 use crate::{
-    Cap, CallScreen, Msg as UiMsg, alive, android,
-    caller::Caller,
+    Call, Cap, CallScreen, Msg as UiMsg, alive, android,
+    caller::{Caller, LOOK_K},
     engine::Engine,
-    live_gl,
+    live_gl, stage,
     view::{self, Msg, Phase, View, Voice, clock},
 };
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
@@ -36,6 +36,7 @@ struct Frame {
     finished: bool,
     rate_set: bool,
     last_route: f64,
+    look: usize, // PREVIEW: debug.callme.call
 }
 
 fn hash(s: &str) -> i32 {
@@ -90,12 +91,20 @@ fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activi
             f.rate_set = true;
         }
     }
+    // PREVIEW: the directions wait (hidden) for the real bar sizes, so nothing jumps as they arrive
+    if !ui.global::<Call>().get_placed() {
+        if let Some((top, bottom)) = android::insets() {
+            ui.global::<Call>().set_sat(top);
+            ui.global::<Call>().set_sab(bottom);
+            ui.global::<Call>().set_placed(true);
+        }
+    }
     if now - f.last_route > 1000.0 {
         f.last_route = now;
         e.keep_route();
         if let Some((top, bottom)) = android::insets() {
-            ui.set_sat(top);
-            ui.set_sab(bottom);
+            ui.global::<Call>().set_sat(top);
+            ui.global::<Call>().set_sab(bottom);
         }
     }
     let claude_level = e.claude_level();
@@ -166,54 +175,54 @@ fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activi
 
     // ---- Everything else: set only what changed (an unchanged screen is never redrawn) ----
     let phase_name = format!("{phase:?}").to_lowercase();
-    if ui.get_phase() != phase_name.as_str() {
-        ui.set_phase(phase_name.into());
+    if ui.global::<Call>().get_phase() != phase_name.as_str() {
+        ui.global::<Call>().set_phase(phase_name.into());
     }
     let key = time.split(" · ").next().unwrap_or_default().to_string();
-    set_if(ui.get_time_key(), key, |t| ui.set_time_key(t));
-    set_if(ui.get_time_text(), time, |t| ui.set_time_text(t));
-    set_if(ui.get_status(), status, |t| ui.set_status(t));
-    set_if(ui.get_agent(), agent, |t| ui.set_agent(t));
+    set_if(ui.global::<Call>().get_time_key(), key, |t| ui.global::<Call>().set_time_key(t));
+    set_if(ui.global::<Call>().get_time_text(), time, |t| ui.global::<Call>().set_time_text(t));
+    set_if(ui.global::<Call>().get_status(), status, |t| ui.global::<Call>().set_status(t));
+    set_if(ui.global::<Call>().get_agent(), agent, |t| ui.global::<Call>().set_agent(t));
     let cap = f.cap.clone().unwrap();
-    if ui.get_cap() != cap {
-        ui.set_cap(cap);
+    if ui.global::<Call>().get_cap() != cap {
+        ui.global::<Call>().set_cap(cap);
     }
     let (btext, blit) = bubble.as_ref().map(|m| view::lit(m, None)).unwrap_or_default();
-    set_if(ui.get_bubble_text(), btext, |t| ui.set_bubble_text(t));
-    set_if(ui.get_bubble_lit(), blit, |t| ui.set_bubble_lit(t));
-    if ui.get_has_bubble() != bubble.is_some() {
-        ui.set_has_bubble(bubble.is_some());
+    set_if(ui.global::<Call>().get_bubble_text(), btext, |t| ui.global::<Call>().set_bubble_text(t));
+    set_if(ui.global::<Call>().get_bubble_lit(), blit, |t| ui.global::<Call>().set_bubble_lit(t));
+    if ui.global::<Call>().get_has_bubble() != bubble.is_some() {
+        ui.global::<Call>().set_has_bubble(bubble.is_some());
     }
-    set_if(ui.get_me_text(), f.held.me_text.clone().unwrap_or_default(), |t| ui.set_me_text(t));
+    set_if(ui.global::<Call>().get_me_text(), f.held.me_text.clone().unwrap_or_default(), |t| ui.global::<Call>().set_me_text(t));
     let show_me = thread || f.held.live || f.held.me_text.is_some();
-    if ui.get_show_me() != show_me {
-        ui.set_show_me(show_me);
+    if ui.global::<Call>().get_show_me() != show_me {
+        ui.global::<Call>().set_show_me(show_me);
     }
-    if ui.get_me_live() != f.held.live {
-        ui.set_me_live(f.held.live);
+    if ui.global::<Call>().get_me_live() != f.held.live {
+        ui.global::<Call>().set_me_live(f.held.live);
     }
-    if ui.get_show_pending() != f.held.pending {
-        ui.set_show_pending(f.held.pending);
+    if ui.global::<Call>().get_show_pending() != f.held.pending {
+        ui.global::<Call>().set_show_pending(f.held.pending);
     }
-    if ui.get_muted() != muted {
-        ui.set_muted(muted);
+    if ui.global::<Call>().get_muted() != muted {
+        ui.global::<Call>().set_muted(muted);
     }
-    if ui.get_speaker() != speaker {
-        ui.set_speaker(speaker);
+    if ui.global::<Call>().get_speaker() != speaker {
+        ui.global::<Call>().set_speaker(speaker);
     }
-    if ui.get_quiet() != quiet {
-        ui.set_quiet(quiet);
+    if ui.global::<Call>().get_quiet() != quiet {
+        ui.global::<Call>().set_quiet(quiet);
     }
-    if ui.get_can_finish() != can_finish {
-        ui.set_can_finish(can_finish);
+    if ui.global::<Call>().get_can_finish() != can_finish {
+        ui.global::<Call>().set_can_finish(can_finish);
     }
-    let old = ui.get_msgs();
+    let old = ui.global::<Call>().get_msgs();
     if old.row_count() != msgs.len() || old.iter().zip(&msgs).any(|(a, b)| a != *b) {
-        ui.set_msgs(ModelRc::new(VecModel::from(msgs)));
+        ui.global::<Call>().set_msgs(ModelRc::new(VecModel::from(msgs)));
     }
     let closed = ended && now - ended_at > CLOSE_MS;
-    if ui.get_closed() != closed {
-        ui.set_closed(closed);
+    if ui.global::<Call>().get_closed() != closed {
+        ui.global::<Call>().set_closed(closed);
     }
     if ended && now - ended_at > FINISH_MS && !f.finished {
         f.finished = true;
@@ -222,23 +231,23 @@ fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activi
     }
 
     // Levels and the clock only advance while something moves (the glow at rest is still).
-    let moving = f.level > 0.01 || matches!(phase, Phase::Incoming | Phase::Thinking | Phase::Hold) || (thread && f.held.me_text.is_none());
+    let moving = (f.look > 0 && phase != Phase::Ended) || f.level > 0.01 || matches!(phase, Phase::Incoming | Phase::Thinking | Phase::Hold) || (thread && f.held.me_text.is_none());
     if moving {
         f.moving_until = now + 600.0;
     }
     if now < f.moving_until {
-        ui.set_t((now / 1000.0) as f32);
+        ui.global::<Call>().set_t((now / 1000.0) as f32);
     }
     if f.level > 0.01 {
-        ui.set_glow_t((now / 1000.0) as f32);
+        ui.global::<Call>().set_glow_t((now / 1000.0) as f32);
     }
     let lv = (f.level * 100.0).round() / 100.0;
-    if ui.get_level() != lv {
-        ui.set_level(lv);
+    if ui.global::<Call>().get_level() != lv {
+        ui.global::<Call>().set_level(lv);
     }
     let ml = (me_level * 50.0).round() / 50.0;
-    if ui.get_me_level() != ml {
-        ui.set_me_level(ml);
+    if ui.global::<Call>().get_me_level() != ml {
+        ui.global::<Call>().set_me_level(ml);
     }
 }
 
@@ -258,40 +267,43 @@ pub fn run(app: android_activity::AndroidApp) {
     let ui = CallScreen::new().expect("call screen");
     let e = Engine::new(&link);
     e.peek();
-    ui.on_answer({
+    ui.global::<Call>().on_answer({
         let e = e.clone();
         move || e.answer()
     });
-    ui.on_done_talking({
+    ui.global::<Call>().on_done_talking({
         let e = e.clone();
         move || e.done_talking()
     });
     // Ends here; closing the screen tells the PC (service::call_closed).
-    ui.on_hang_up({
+    ui.global::<Call>().on_hang_up({
         let e = e.clone();
         move || e.hang_up()
     });
-    ui.on_toggle_mute({
+    ui.global::<Call>().on_toggle_mute({
         let e = e.clone();
         move || e.toggle_mute()
     });
-    ui.on_toggle_speaker({
+    ui.global::<Call>().on_toggle_speaker({
         let e = e.clone();
         move || e.toggle_speaker()
     });
-    ui.on_call_back({
+    ui.global::<Call>().on_call_back({
         let e = e.clone();
         move || e.call_back(5)
     });
-    ui.on_toggle_quiet({
+    ui.global::<Call>().on_toggle_quiet({
         let e = e.clone();
         move || e.toggle_quiet()
     });
-    ui.on_send({
+    ui.global::<Call>().on_send({
         let e = e.clone();
         move |t| e.send_typed(&t)
     });
     let now = e.now();
+    // PREVIEW (branch preview/call-screen): which call screen shows (call_looks.slint), 0 as shipped.
+    let look = stage::prop(c"debug.callme.call", LOOK_K.len() - 1);
+    ui.global::<Call>().set_look(look as i32);
     let frame = Rc::new(std::cell::RefCell::new(Frame {
         held: Held::default(),
         cap: None,
@@ -304,19 +316,20 @@ pub fn run(app: android_activity::AndroidApp) {
         finished: false,
         rate_set: false,
         last_route: -1e9,
+        look,
     }));
     let start = std::time::Instant::now();
-    let caller = Rc::new(RefCell::new(Caller::new(0x51ed_270b ^ now.to_bits())));
-    ui.on_poke({
+    let caller = Rc::new(RefCell::new(Caller::new(0x51ed_270b ^ now.to_bits(), look)));
+    ui.global::<Call>().on_poke({
         let caller = caller.clone();
         move || caller.borrow_mut().poke(start.elapsed().as_secs_f32())
     });
     let scene = Rc::new(RefCell::new(live_gl::Scene::new(1)));
-    live_gl::attach(&ui, scene.clone(), vec![Caller::size()], {
+    live_gl::attach(&ui, scene.clone(), vec![Caller::size(look)], {
         let ui = ui.as_weak();
         move |images| {
             if let Some(ui) = ui.upgrade() {
-                ui.set_face_live(images[0].clone());
+                ui.global::<Call>().set_face_live(images[0].clone());
             }
         }
     });
@@ -326,6 +339,7 @@ pub fn run(app: android_activity::AndroidApp) {
         let (ui, e, f) = (ui.as_weak(), e.clone(), frame.clone());
         let mut drawn = -1.0f32;
         let mut last = None;
+        let mut mood = crate::caller::Mood::new();
         move || {
             let Some(ui) = ui.upgrade() else { return };
             let now = start.elapsed().as_secs_f32();
@@ -337,31 +351,43 @@ pub fn run(app: android_activity::AndroidApp) {
             let mut c = caller.borrow_mut();
             c.tick(now, &agent, phase, perched, voice, me);
             let mut s = scene.borrow_mut();
-            if s.failed && ui.get_face_gpu() {
-                ui.set_face_gpu(false); // a still picture instead
+            if s.failed && ui.global::<Call>().get_face_gpu() {
+                ui.global::<Call>().set_face_gpu(false); // a still picture instead
             }
             let p = c.place(now);
             let who = c.cast.who;
             let fade = (c.fade(now) * 100.0).round() / 100.0;
-            if ui.get_face() != who.face() {
-                ui.set_face(who.face().into());
+            if ui.global::<Call>().get_face() != who.face() {
+                ui.global::<Call>().set_face(who.face().into());
             }
-            if ui.get_face_fade() != fade {
-                ui.set_face_fade(fade);
+            if ui.global::<Call>().get_face_fade() != fade {
+                ui.global::<Call>().set_face_fade(fade);
             }
             let moved = last != Some((p, who));
             if fade > 0.0 && !s.failed && (moved || drawn < 0.0 || alive::due(&c.cast, drawn, now)) {
                 let sf = ui.window().scale_factor();
-                let (res, view) = alive::view(who, alive::solo(who, p.k), sf);
-                s.slots[0] = live_gl::Slot { who, res, view, frame: c.cast.uniforms(), fresh: true };
+                let (res, mut view) = alive::view(who, alive::solo(who, p.k), sf);
+                let mut frame = c.cast.uniforms();
+                if look > 0 {
+                    // PREVIEW: on the record, lit by its lights, its shadow on the floor drawn under the picture
+                    let st = &stage::STAGES[4];
+                    let below = (st.below(who) * alive::solo(who, p.k) * sf).round() as i32;
+                    view.1 += below;
+                    frame.extend(st.uniforms(who, res.1, res.1 + below, sf, 1.0));
+                    if look == 2 {
+                        mood.ease(phase, voice, now);
+                        mood.apply(&mut frame);
+                    }
+                }
+                s.slots[0] = live_gl::Slot { who, res, view, frame, fresh: true };
                 drawn = now;
                 last = Some((p, who));
-                ui.set_face_x(p.x);
-                ui.set_face_y(p.y);
-                ui.set_face_k(p.k);
-                ui.set_face_w(view.0);
-                ui.set_face_h(view.1);
-                ui.set_face_th(live_gl::texture_px(Caller::size(), sf).1);
+                ui.global::<Call>().set_face_x(p.x);
+                ui.global::<Call>().set_face_y(p.y);
+                ui.global::<Call>().set_face_k(p.k);
+                ui.global::<Call>().set_face_w(view.0);
+                ui.global::<Call>().set_face_h(view.1);
+                ui.global::<Call>().set_face_th(live_gl::texture_px(Caller::size(look), sf).1);
                 ui.window().request_redraw();
             } else if fade == 0.0 {
                 drawn = -1.0;
@@ -385,20 +411,20 @@ pub fn run(app: android_activity::AndroidApp) {
         let mut had = false;
         move || {
             let Some(ui) = ui.upgrade() else { return };
-            if !ui.get_typing() && ui.get_kb() == 0.0 {
+            if !ui.global::<Call>().get_typing() && ui.global::<Call>().get_kb() == 0.0 {
                 had = false;
                 return;
             }
             let kb = android::keyboard();
-            if ui.get_kb() != kb {
-                ui.set_kb(kb);
+            if ui.global::<Call>().get_kb() != kb {
+                ui.global::<Call>().set_kb(kb);
             }
             // The keyboard was put away (Back, or swiped down): the reply field closes with it.
             if kb > 0.0 {
                 had = true;
-            } else if had && ui.get_typing() {
+            } else if had && ui.global::<Call>().get_typing() {
                 had = false;
-                ui.set_typing(false);
+                ui.global::<Call>().set_typing(false);
             }
         }
     });

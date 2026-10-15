@@ -1,0 +1,58 @@
+// The call, as Rust (screen.rs) sets it: one global, so the call screen and its preview directions (branch
+// preview/call-screen, debug.callme.call) all read the same state and send the same requests.
+import { Cap, Msg } from "parts.slint";
+
+export global Call {
+    in property <length> sat: 36px; // status bar and gesture bar
+    in property <length> sab: 24px;
+    in property <length> kb; // how far the keyboard reaches up from the bottom edge (0 when hidden)
+    in property <string> phase: "incoming"; // incoming connecting talking listening hearing thinking hold ended
+    in property <string> agent: "Claude"; // who is calling: Claude or Codex
+    in property <string> time-text: "Calling you";
+    in property <string> time-key: "Calling you"; // the header line animates only when this changes
+    in property <string> status;
+    in property <Cap> cap: { key: 0, label: "Calling now", text: "Claude would like to talk.", lit: "Claude would like to talk.", size: 0, tone: "", orb: false };
+    in property <string> bubble-text; // Claude's line in the thread
+    in property <string> bubble-lit;
+    in property <bool> has-bubble;
+    in property <string> me-text; // your words (live, then heard); empty = dots
+    in property <bool> me-live;
+    in property <bool> show-me;
+    in property <bool> show-pending;
+    // Whoever is calling, alive (caller.rs): the middle of its feet in the stage, its size, how visible it is.
+    in property <string> face: "clawd";
+    in property <float> face-x: 81;
+    in property <float> face-y: 108;
+    in property <float> face-k: 0.55;
+    in property <float> face-fade;
+    in property <bool> face-gpu: true; // false: the GPU can't draw it, so its still picture stands in
+    in property <image> face-live;
+    in property <int> face-w;
+    in property <int> face-h;
+    in property <int> face-th;
+    in property <float> level; // whoever is talking, 0..1
+    in property <float> me-level;
+    in property <float> t; // seconds, advanced by Rust only while something moves
+    in property <float> glow-t; // the glow drifts only while someone talks
+    in property <bool> muted;
+    in property <bool> speaker;
+    in property <bool> quiet;
+    in property <bool> can-finish;
+    in property <bool> closed;
+    in property <[Msg]> msgs;
+    in-out property <bool> caps-open;
+    in-out property <bool> typing;
+    in-out property <string> draft;
+    // PREVIEW (branch preview/call-screen): which call screen shows, from debug.callme.call (0: as shipped).
+    in property <int> look;
+    in property <bool> placed; // the real status and gesture bar sizes are known: the directions show only then
+    callback answer();
+    callback done-talking();
+    callback hang-up();
+    callback toggle-mute();
+    callback toggle-speaker();
+    callback toggle-quiet();
+    callback call-back();
+    callback send(string);
+    callback poke();
+}
