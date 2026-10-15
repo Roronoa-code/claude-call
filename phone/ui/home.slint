@@ -5,7 +5,7 @@
 import { T, Icon, Icons, Morph, SwapText } from "parts.slint";
 import { Home, RoundIcon } from "home_parts.slint";
 import { Toys, Clawd, Null } from "toys.slint";
-import { Chats, ChatList, ChatThread, PickRow } from "chat.slint";
+import { Chats, ChatList, ChatThread, NewChat, Ink } from "chat.slint";
 import { StageBack, Look } from "stage.slint";
 
 // A choice in a sheet: icon, title and a line under it.
@@ -342,7 +342,7 @@ export component HomeScreen inherits Window {
     // The Chats screen grows out of its button and fills the screen; the new-chat picker grows out of its "+".
     Morph {
         open: Chats.open;
-        panel: #1c1d21;
+        panel: Ink.bg;
         fx: 24px;
         fy: root.row-y + 2px;
         fsize: 52px;
@@ -356,28 +356,34 @@ export component HomeScreen inherits Window {
         if Chats.current != "": ChatThread { width: root.width; height: root.height; }
     }
 
+    // The list dims behind the picker; a tap there closes it.
+    Rectangle {
+        background: #000000;
+        opacity: Chats.picker ? 0.55 : 0;
+        animate opacity { duration: Chats.picker ? 300ms : Chats.current != "" ? 0ms : 220ms; easing: T.out; }
+    }
     if Chats.picker: TouchArea {
         clicked => { Chats.picker = false; }
     }
 
-    Morph {
-        open: Chats.picker;
-        panel: #26282d;
-        fx: root.width - 54px;
-        fy: Home.sat + 6px;
-        fsize: 48px;
-        tw: min(root.width - 32px, 280px);
-        tx: root.width - 16px - self.tw;
-        th: 272px;
-        ty: Home.sat + 60px;
-        face: Icons.plus;
-        VerticalLayout {
-            padding: 12px;
-            spacing: 8px;
-            PickRow { title: "Agent 1 · Haiku"; clicked => { Chats.picker = false; Chats.new-chat("claude", "haiku-5.5"); Chats.want-focus = true; } }
-            PickRow { title: "Agent 2 · Sonnet"; clicked => { Chats.picker = false; Chats.new-chat("claude", "sonnet-5.5"); Chats.want-focus = true; } }
-            PickRow { title: "Agent 3 · Opus"; clicked => { Chats.picker = false; Chats.new-chat("claude", "opus-5.5"); Chats.want-focus = true; } }
-            PickRow { title: "Codex"; clicked => { Chats.picker = false; Chats.new-chat("codex", ""); Chats.want-focus = true; } }
+    // Picking an agent opens its chat at once: the picker goes with a quick fade there, rather than shrinking back
+    // into a "+" that the chat doesn't have.
+    Rectangle {
+        opacity: Chats.current == "" ? 1 : 0;
+        animate opacity { duration: Chats.current == "" ? 0ms : 140ms; }
+        Morph {
+            open: Chats.picker;
+            panel: #1c1c20;
+            fx: root.width - 52px;
+            fy: Home.sat + 6px;
+            fsize: 48px;
+            tw: root.width - 24px;
+            tx: 12px;
+            th: 166px;
+            ty: Home.sat + 58px;
+            radius: 26px;
+            face: Icons.plus;
+            NewChat { width: parent.width; height: parent.height; }
         }
     }
 }

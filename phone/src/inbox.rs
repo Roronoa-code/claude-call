@@ -12,7 +12,7 @@ use jni::{
     objects::{GlobalRef, JByteArray, JObject, JObjectArray, JValue},
 };
 use serde_json::Value;
-use slint::{ComponentHandle, ModelRc, VecModel};
+use slint::{ComponentHandle, Model, ModelRc, VecModel};
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -40,6 +40,9 @@ static FETCHING: Mutex<Vec<String>> = Mutex::new(Vec::new());
 thread_local! {
     /// Thumbnails already drawn, by file (None: it couldn't be read).
     static THUMBS: RefCell<HashMap<String, Option<(slint::Image, f32)>>> = RefCell::new(HashMap::new());
+    /// The open chat's lines, kept and changed in place: a new model would rebuild every row, and each would rise in
+    /// again as if it had just arrived.
+    static MSGS: std::rc::Rc<VecModel<ChatMsg>> = std::rc::Rc::new(VecModel::default());
 }
 
 /// The store changed: the home screen redraws.
@@ -63,7 +66,7 @@ fn path(env: &mut JNIEnv, ctx: &JObject) -> Result<()> {
 }
 
 /// Runs `f` on the stored chats and saves them.
-fn update<R>(f: impl FnOnce(&mut Store) -> R) -> Option<R> {
+pub(crate) fn update<R>(f: impl FnOnce(&mut Store) -> R) -> Option<R> {
     let path = PATH.get()?;
     let _lock = LOCK.lock().unwrap();
     let Some(mut store) = Store::load(path) else {
@@ -75,6 +78,11 @@ fn update<R>(f: impl FnOnce(&mut Store) -> R) -> Option<R> {
         android::log(&format!("chats: {e}"));
     }
     Some(r)
+}
+
+/// PREVIEW (fake_chat.rs): the chat on screen right now, if any.
+pub(crate) fn viewing() -> Option<String> {
+    VIEWING.lock().unwrap().clone()
 }
 
 /// Whether the home screen is in front and focused (a chat open behind the lock screen is not being read).
@@ -171,6 +179,11 @@ pub fn reply_arrived(env: &mut JNIEnv, ctx: &JObject, body: &str) -> Result<()> 
 
 /// Adds or retries a message of mine (`f` says which) and sends it in the background.
 fn post(env: &mut JNIEnv, ctx: &JObject, chat: &str, f: impl FnOnce(&mut Store) -> Option<String>) -> Result<()> {
+    if crate::fake_chat::on() {
+        path(env, ctx)?;
+        crate::fake_chat::post(chat, f);
+        return Ok(());
+    }
     let Some(key) = settings::chat_key(env, ctx)? else { return Ok(()) };
     let topic = settings::topic(env, ctx)?;
     path(env, ctx)?;
@@ -327,6 +340,62 @@ fn media_msg(me: bool, m: &Media) -> ChatMsg {
     }
 }
 
+/// The open chat as the thread lays it out: my messages as bubbles (a photo or video above its text), the PC's as
+/// blocks of text (chats::blocks) then its files, each with the room above it (`gap`) and its place in its message
+/// (`n`, for the arrival's stagger). The first block of an answer that is the newest line is the `anchor`.
+fn thread(chat: &chats::Chat) -> Vec<ChatMsg> {
+    let lines: Vec<_> = chat.lines.iter().filter(|l| l.me || l.state != "partial").collect();
+    let mut msgs: Vec<ChatMsg> = vec![];
+    for (i, l) in lines.iter().enumerate() {
+        let mut items: Vec<ChatMsg> = vec![];
+        if l.me {
+            items.extend(l.media.iter().map(|m| media_msg(true, m)));
+            if !l.text.is_empty() || l.media.is_empty() {
+                items.push(ChatMsg { me: true, text: chats::shown(l).into(), ..ChatMsg::default() });
+            }
+        } else {
+            if l.text.is_empty() && l.media.is_empty() {
+                // "Something went wrong.", "Stopped." and the like: a quiet line, not an answer
+                items.push(ChatMsg { text: chats::shown(l).into(), kind: "note".into(), ..ChatMsg::default() });
+            }
+            for b in chats::blocks(&l.text) {
+                let body = match b.kind {
+                    "code" => slint::StyledText::default(),
+                    "h" => styled(&format!("**{}**", b.text.replace("**", ""))),
+                    _ => styled(&b.text),
+                };
+                items.push(ChatMsg { text: b.text.into(), kind: b.kind.into(), body, mark: b.mark.into(), level: b.level as i32, ..ChatMsg::default() });
+            }
+            items.extend(l.media.iter().map(|m| media_msg(false, m)));
+        }
+        let mine_before = msgs.last().map(|m| m.me);
+        for (n, mut m) in items.into_iter().enumerate() {
+            let prev = msgs.last().map_or(String::new(), |p| p.kind.to_string());
+            m.n = n as i32;
+            m.gap = match (mine_before, n) {
+                (None, 0) => 0.0,
+                (Some(true), 0) if l.me => 8.0, // my messages in a row
+                (Some(_), 0) => 26.0, // the other side speaks, or the PC's next answer
+                _ => match (prev.as_str(), m.kind.as_str()) {
+                    (_, "h") => 22.0,
+                    ("h", _) => 8.0,
+                    ("li", "li") => 8.0,
+                    _ if l.me => 6.0, // my photo, then its text
+                    _ => 14.0,
+                },
+            };
+            m.anchor = n == 0 && !l.me && i + 1 == lines.len();
+            msgs.push(m);
+        }
+    }
+    msgs
+}
+
+/// Inline markdown for the thread; text Slint's parser can't take shows as it is.
+fn styled(text: &str) -> slint::StyledText {
+    slint::StyledText::from_markdown(&chats::inline(text)).unwrap_or_else(|_| slint::StyledText::from_plain_text(text))
+}
+
 /// Redraws the Chats screen from the store: the list, the open chat's bubbles and status, and marks the open chat
 /// read when it is really in front.
 fn show(ui: &HomeScreen) {
@@ -352,9 +421,12 @@ fn show(ui: &HomeScreen) {
     let now = chats::now();
     let mut all: Vec<_> = st.chats.iter().collect();
     all.sort_by_key(|c| -c.updated);
+    // The last line in one line, without its markdown marks.
     let preview = |c: &chats::Chat| {
         let last = c.lines.iter().rev().find(|l| l.me || l.state != "partial");
-        last.map_or("New chat".to_string(), chats::shown).replace('\n', " ")
+        let t = last.map_or("New chat".to_string(), chats::shown);
+        let t: Vec<_> = chats::blocks(&t).iter().map(|b| b.text.replace("**", "").replace('`', "")).collect();
+        t.join(" ").replace('\n', " ")
     };
     let rows: Vec<ChatRow> = all
         .iter()
@@ -365,36 +437,40 @@ fn show(ui: &HomeScreen) {
             preview: preview(c).into(),
             time: chats::ago(now - c.updated).into(),
             unread: c.unread > 0,
+            busy: chats::waiting(c),
         })
         .collect();
     c.set_rows(ModelRc::new(VecModel::from(rows)));
     c.set_unread(st.chats.iter().any(|c| c.unread > 0));
     match st.get(&cur) {
         Some(chat) => {
-            let mut msgs: Vec<ChatMsg> = vec![];
-            for l in chat.lines.iter().filter(|l| l.me || l.state != "partial") {
-                // Only files: no text bubble, just theirs. Mine show the photo above its text; the PC's after it.
-                let text = (!l.text.is_empty() || l.media.is_empty()).then(|| ChatMsg { me: l.me, text: chats::shown(l).into(), ..ChatMsg::default() });
-                let media = l.media.iter().map(|m| media_msg(l.me, m));
-                if l.me {
-                    msgs.extend(media.chain(text));
-                } else {
-                    msgs.extend(text.into_iter().chain(media));
-                }
-            }
-            c.set_name(chats::name(&chat.agent, chat.model.as_deref()).into());
+            let msgs = thread(chat);
+            let name = chats::name(&chat.agent, chat.model.as_deref());
+            c.set_short(name.rsplit(" · ").next().unwrap_or(&name).into());
+            c.set_name(name.into());
             c.set_face(chats::face(&chat.agent, chat.model.as_deref()).into());
             c.set_empty(msgs.is_empty());
             c.set_waiting(chats::waiting(chat));
             c.set_replies(chat.lines.iter().filter(|l| !l.me && l.state != "partial").count() as i32);
             c.set_title(chat.title.clone().into());
-            c.set_msgs(ModelRc::new(VecModel::from(msgs)));
+            MSGS.with(|model| {
+                for (i, m) in msgs.iter().enumerate() {
+                    if i >= model.row_count() {
+                        model.push(m.clone());
+                    } else if model.row_data(i).as_ref() != Some(m) {
+                        model.set_row_data(i, m.clone());
+                    }
+                }
+                while model.row_count() > msgs.len() {
+                    model.remove(model.row_count() - 1);
+                }
+            });
             status(ui);
             attach::show(ui);
         }
         None => {
             c.set_current("".into());
-            c.set_msgs(ModelRc::default());
+            MSGS.with(|model| model.set_vec(vec![]));
         }
     }
 }
@@ -413,7 +489,7 @@ fn status(ui: &HomeScreen) {
             c.set_action(action.into());
         }
     }
-    let ready = android::with(|env, act| settings::chat_key(env, act)).flatten().is_some();
+    let ready = crate::fake_chat::on() || android::with(|env, act| settings::chat_key(env, act)).flatten().is_some();
     if c.get_ready() != ready {
         c.set_ready(ready);
     }
@@ -459,7 +535,10 @@ pub fn wire(ui: &HomeScreen) -> Tracker {
         *HOME.lock().unwrap() = Some(env.new_global_ref(act)?);
         Ok(())
     });
+    // PREVIEW: the PC played here with debug.callme.fake (the test emulator only; fake_chat.rs)
+    crate::fake_chat::set(crate::stage::prop(c"debug.callme.fake", 2) > 0);
     let c = ui.global::<Chats>();
+    MSGS.with(|m| c.set_msgs(ModelRc::from(m.clone())));
     c.on_open_chat({
         let ui = ui.as_weak();
         move |id| {
@@ -500,7 +579,11 @@ pub fn wire(ui: &HomeScreen) -> Tracker {
         }
     });
     c.on_attach(|| {
-        android::with(attach::open);
+        if crate::fake_chat::on() {
+            crate::fake_chat::pick();
+        } else {
+            android::with(attach::open);
+        }
     });
     c.on_unpick(attach::clear);
     c.on_retry({

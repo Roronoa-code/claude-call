@@ -257,6 +257,81 @@ pub fn shown(l: &Line) -> String {
     }
 }
 
+/// One piece of the PC's answer as the thread lays it out: kind "p" (a paragraph), "h" (a heading), "li" (a list
+/// item: `mark` "1." or "•", `level` 0 or 1 for a nested one), "quote", or "code" (`mark` its language, if given).
+/// `text` keeps its inline markdown (bold, `code`, links); a code block's is its lines exactly.
+#[derive(Debug, PartialEq, Clone)]
+pub struct Block {
+    pub kind: &'static str,
+    pub text: String,
+    pub mark: String,
+    pub level: u8,
+}
+
+/// Splits an answer's markdown into blocks, line by line: ``` fences, # headings, - * + and 1. 1) lists, > quotes;
+/// a blank line ends a paragraph, a rule (---) is dropped, and anything else is text. An unclosed fence runs to the end.
+pub fn blocks(text: &str) -> Vec<Block> {
+    let b = |kind, text: &str, mark: &str, level| Block { kind, text: text.into(), mark: mark.into(), level };
+    // an open fence: its language and lines so far
+    let (mut out, mut code, mut open): (Vec<Block>, Option<(&str, Vec<&str>)>, bool) = (vec![], None, false);
+    let fence = |(lang, lines): (&str, Vec<&str>)| b("code", &lines.join("
+"), lang, 0);
+    for line in text.lines() {
+        let t = line.trim_start();
+        if let Some((_, lines)) = code.as_mut() {
+            if t.starts_with("```") {
+                out.extend(code.take().map(fence));
+            } else {
+                lines.push(line.trim_end());
+            }
+            continue;
+        }
+        let indent = line.len() - t.len();
+        let level = u8::from(indent >= 2);
+        let hashes = t.chars().take_while(|&c| c == '#').count();
+        let digits = t.chars().take_while(char::is_ascii_digit).count();
+        if let Some(lang) = t.strip_prefix("```") {
+            code = Some((lang.trim(), vec![]));
+            open = false;
+        } else if t.is_empty() {
+            open = false;
+        } else if (1..=6).contains(&hashes) && t[hashes..].starts_with(' ') {
+            out.push(b("h", t[hashes..].trim(), "", 0));
+            open = false;
+        } else if let Some(rest) = ["- ", "* ", "+ "].iter().find_map(|p| t.strip_prefix(p)) {
+            out.push(b("li", rest.trim(), "•", level));
+            open = true;
+        } else if (1..=3).contains(&digits) && (t[digits..].starts_with(". ") || t[digits..].starts_with(") ")) {
+            out.push(b("li", t[digits + 2..].trim(), &format!("{}.", &t[..digits]), level));
+            open = true;
+        } else if t.len() >= 3 && ["-", "*", "_"].iter().any(|r| t.chars().all(|c| c.to_string() == *r || c == ' ')) {
+            open = false;
+        } else {
+            let (kind, t) = match t.strip_prefix('>') {
+                Some(q) => ("quote", q.trim()),
+                None => ("p", t.trim_end()),
+            };
+            match out.last_mut() {
+                // a line run on from the one before (a soft break): same paragraph, item or quote
+                Some(last) if open && (last.kind == kind || last.kind == "li" && kind == "p") => {
+                    last.text.push('\n');
+                    last.text.push_str(t);
+                }
+                _ => out.push(b(kind, t, "", 0)),
+            }
+            open = true;
+        }
+    }
+    out.extend(code.map(fence));
+    out
+}
+
+/// Inline markdown made safe for Slint's parser: a "<" outside `code` is written as an entity, so `Vec<u8>` or
+/// "a < b" stay text instead of being read as HTML (which fails the whole block).
+pub fn inline(text: &str) -> String {
+    text.split('`').enumerate().map(|(i, part)| if i % 2 == 0 { part.replace('<', "&lt;") } else { part.to_string() }).collect::<Vec<_>>().join("`")
+}
+
 /// The small grey line under my last message, and what tapping it does ("stop", "retry" or nothing).
 pub fn status(c: &Chat, now: i64) -> (&'static str, &'static str) {
     let Some(l) = c.lines.iter().rev().find(|l| l.me) else { return ("", "") };
@@ -620,6 +695,28 @@ mod tests {
         let m2 = s.add_mine(&c, "again", None).unwrap();
         bad["re"] = json!(m2);
         assert_eq!(s.apply_reply(&bad, None).unwrap().2, "Done.", "an unsafe file is dropped");
+    }
+
+    #[test]
+    fn answers_split_into_blocks() {
+        let k = |v: Vec<Block>| v.iter().map(|b| (b.kind, b.text.clone(), b.mark.clone(), b.level)).collect::<Vec<_>>();
+        let s = |x: &str| x.to_string();
+        let text = "Two things:\nmore of it\n\n## Fix\n1. Set **it** back\n   still the same item\n2) Run `cargo`\n  - nested\n\n---\n> quoted\n> on\n```rust\nfn a() {\n\n    b();\n}\n```\nEnd.\n```sh\nopen fence";
+        assert_eq!(k(blocks(text)), vec![
+            ("p", s("Two things:\nmore of it"), s(""), 0),
+            ("h", s("Fix"), s(""), 0),
+            ("li", s("Set **it** back\nstill the same item"), s("1."), 0),
+            ("li", s("Run `cargo`"), s("2."), 0),
+            ("li", s("nested"), s("•"), 1),
+            ("quote", s("quoted\non"), s(""), 0),
+            ("code", s("fn a() {\n\n    b();\n}"), s("rust"), 0),
+            ("p", s("End."), s(""), 0),
+            ("code", s("open fence"), s("sh"), 0),
+        ]);
+        assert_eq!(k(blocks("*not a list* but text")), vec![("p", s("*not a list* but text"), s(""), 0)]);
+        assert_eq!(k(blocks("2024. was a year")), vec![("p", s("2024. was a year"), s(""), 0)]);
+        assert!(blocks("").is_empty() && blocks("```\n```")[0].text.is_empty());
+        assert_eq!(inline("Vec<u8> and `Vec<u8>` and a<b"), "Vec&lt;u8> and `Vec<u8>` and a&lt;b");
     }
 
     #[test]

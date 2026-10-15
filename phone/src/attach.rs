@@ -108,6 +108,20 @@ fn set(p: Pick) {
     inbox::changed();
 }
 
+/// PREVIEW (fake_chat.rs): a pick under way, then its result, as `picked` does.
+pub fn set_loading() {
+    set(Pick::Loading);
+}
+
+pub fn set_result(r: std::result::Result<Media, String>) {
+    let mut p = PICK.lock().unwrap();
+    if matches!(*p, Pick::Loading) {
+        *p = r.map_or_else(Pick::Failed, Pick::Ready);
+    }
+    drop(p);
+    inbox::changed();
+}
+
 /// Removes what was picked (the × on the chip).
 pub fn clear() {
     set(Pick::None);
