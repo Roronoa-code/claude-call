@@ -352,7 +352,7 @@ pub fn run(app: android_activity::AndroidApp) {
             let moved = last != Some((p, who));
             if fade > 0.0 && !s.failed && (moved || drawn < 0.0 || alive::due(&c.cast, drawn, now)) {
                 let sf = ui.window().scale_factor();
-                let (res, view) = alive::view(who, p.k, sf);
+                let (res, view) = alive::view(who, alive::solo(who, p.k), sf);
                 s.slots[0] = live_gl::Slot { who, res, view, frame: c.cast.uniforms(), fresh: true };
                 drawn = now;
                 last = Some((p, who));

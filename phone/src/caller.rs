@@ -40,7 +40,7 @@ pub struct Caller {
 
 fn place(who: Who, perched: bool) -> Place {
     let (k, left, y) = if perched { (SMALL_K, 30.0, 73.0) } else { (BIG_K, 24.0, 108.0) };
-    Place { x: left + alive::frame(who).body_w * k / 2.0, y, k }
+    Place { x: left + alive::frame(who).body_w * alive::solo(who, k) / 2.0, y, k }
 }
 
 fn ease_out(t: f32) -> f32 {
@@ -68,8 +68,7 @@ impl Caller {
 
     /// The texture's size (logical px): the widest and tallest picture at its big size, with room above.
     pub fn size() -> (f32, f32) {
-        let f = alive::frame(Who::Clawd(crate::cast::Mat::Vinyl));
-        (f.w * BIG_K, (f.h + alive::HEAD) * BIG_K)
+        alive::solo_size(BIG_K)
     }
 
     pub fn poke(&mut self, now: f32) {

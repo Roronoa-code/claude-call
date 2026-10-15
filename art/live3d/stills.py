@@ -9,6 +9,7 @@ import render as R
 TL = r'D:\Outputs\CallMe\design\live3d\cast\timelines'
 OUT = os.path.join(HERE, '..', '..', 'phone', 'ui', 'faces')
 K, SF, HEAD = 0.21, 2.75, 40  # chat.slint's list size, a phone's px per logical px, alive.rs HEAD
+SOLO = {'null': 1.2}  # alive.rs NULL_SOLO: Null alone is drawn larger
 FACES = {'clawd': ('clawd', 300, 250), 'haiku': ('haiku', 300, 250), 'sonnet': ('sonnet', 300, 250), 'opus': ('opus', 300, 250), 'null': ('null', 150, 230)}
 
 if __name__ == '__main__':
@@ -18,7 +19,8 @@ if __name__ == '__main__':
     for face, (tl, fw, fh) in FACES.items():
         data = json.load(open(os.path.join(TL, tl + '.json')))
         prog = R.program(data['shader'])
-        w, h, vh = round(fw * K * SF), round(fh * K * SF), round((fh + HEAD) * K * SF)
+        k = K * SOLO.get(face, 1)
+        w, h, vh = round(fw * k * SF), round(fh * k * SF), round((fh + HEAD) * k * SF)
         # drawn 4x larger and scaled down, for clean edges at this small size
         S = 4
         fbo = ctx.simple_framebuffer((w * S, vh * S), components=4)

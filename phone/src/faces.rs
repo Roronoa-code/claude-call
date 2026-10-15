@@ -14,8 +14,7 @@ const TALK_FOR: f32 = 2.2; // seconds of talk when an answer arrives
 
 /// The textures' sizes (logical px): the widest and tallest picture (a Clawd's) with room above, at each size.
 pub fn sizes() -> [(f32, f32); 2] {
-    let f = alive::frame(Who::Clawd(crate::cast::Mat::Vinyl));
-    [SMALL_K, BIG_K].map(|k| (f.w * k, (f.h + alive::HEAD) * k))
+    [SMALL_K, BIG_K].map(alive::solo_size)
 }
 
 pub struct Faces {
@@ -54,7 +53,7 @@ impl Faces {
             self.who = Some(who);
             (self.replies, self.talk_until, self.drawn) = (replies, 0.0, [-1.0; 2]);
             let tex = sizes().map(|s| texture_px(s, sf));
-            let view = [SMALL_K, BIG_K].map(|k| alive::view(who, k, sf).1);
+            let view = [SMALL_K, BIG_K].map(|k| alive::view(who, alive::solo(who, k), sf).1);
             c.set_face_w(view[0].0);
             c.set_face_h(view[0].1);
             c.set_face_th(tex[0].1);
@@ -82,7 +81,7 @@ impl Faces {
             cast.tick(now);
             let shown = i == 0 || now < self.big_until;
             if shown && (self.drawn[i] < 0.0 || alive::due(cast, self.drawn[i], now)) {
-                let (res, view) = alive::view(who, k, sf);
+                let (res, view) = alive::view(who, alive::solo(who, k), sf);
                 slots[i] = Slot { who, res, view, frame: cast.uniforms(), fresh: true };
                 self.drawn[i] = now;
                 any = true;

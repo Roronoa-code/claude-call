@@ -28,6 +28,21 @@ pub fn frame(who: Who) -> Frame {
 /// taller view than `uRes` only adds sky; nothing moves or scales.
 pub const HEAD: f32 = 40.0;
 
+/// Null stands beside Clawd at home; alone (calls, chats) he is drawn this much larger, so his thin frame reads at
+/// a Clawd's size. actor.slint matches it.
+pub const NULL_SOLO: f32 = 1.2;
+
+/// `k` for `who` drawn alone.
+pub fn solo(who: Who, k: f32) -> f32 {
+    if who == Who::Null { k * NULL_SOLO } else { k }
+}
+
+/// The texture (logical px) a character drawn alone at `k` needs: the larger of a Clawd's and a solo Null's.
+pub fn solo_size(k: f32) -> (f32, f32) {
+    let (c, n) = (frame(Who::Clawd(Mat::Vinyl)), frame(Who::Null));
+    (c.w.max(n.w * NULL_SOLO) * k, (c.h + HEAD).max((n.h + HEAD) * NULL_SOLO) * k)
+}
+
 /// For drawing `who` at `k` times home size on a screen of `sf` px per logical px: its uRes and the viewport (the
 /// picture plus HEAD above it), in px.
 pub fn view(who: Who, k: f32, sf: f32) -> ((i32, i32), (i32, i32)) {

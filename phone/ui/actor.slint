@@ -5,6 +5,8 @@
 export component Actor {
     in property <string> face: "clawd"; // clawd, haiku, sonnet, opus or null
     in property <float> k: 1;
+    // Null alone is drawn larger (alive.rs NULL_SOLO)
+    property <float> s: root.k * (root.face == "null" ? 1.2 : 1);
     in property <bool> live;
     in property <image> source; // the live texture...
     in property <int> lw; // ...of which this many px from its bottom-left corner are drawn
@@ -16,8 +18,8 @@ export component Actor {
     property <float> cx: root.face == "null" ? 73 : 148;
     property <float> feet: (root.face == "null" ? 194.6 : 221.25) + 40;
     // On whole device pixels, so the picture is never resampled between them.
-    property <length> left: round((root.width / 2 - root.cx * root.k * 1px) / 1phx) * 1phx;
-    property <length> top: round((root.height - root.feet * root.k * 1px) / 1phx) * 1phx;
+    property <length> left: round((root.width / 2 - root.cx * root.s * 1px) / 1phx) * 1phx;
+    property <length> top: round((root.height - root.feet * root.s * 1px) / 1phx) * 1phx;
     if root.live: Image {
         source: root.source;
         source-clip-x: 0;
@@ -34,8 +36,8 @@ export component Actor {
         source: root.face == "null" ? @image-url("faces/null.png") : root.face == "haiku" ? @image-url("faces/haiku.png") : root.face == "sonnet" ? @image-url("faces/sonnet.png") : root.face == "opus" ? @image-url("faces/opus.png") : @image-url("faces/clawd.png");
         x: root.left;
         y: root.top;
-        width: root.fw * root.k * 1px;
-        height: root.fh * root.k * 1px;
+        width: root.fw * root.s * 1px;
+        height: root.fh * root.s * 1px;
         image-fit: fill;
     }
     @children
