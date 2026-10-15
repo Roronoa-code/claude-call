@@ -1,283 +1,391 @@
-// PREVIEW (branch preview/home-controls): home control directions 3 and 4 (controls.slint has the others).
+// PREVIEW (branch preview/home-controls-2): home control directions 3 and 4 (controls.slint has the others).
 import { T, Icon, Icons } from "parts.slint";
-import { Home, SetupCard } from "home_parts.slint";
+import { Home, Mode, SetupCard } from "home_parts.slint";
 import { Chats } from "chat.slint";
-import { Ctl, Status } from "controls.slint";
+import { Ctl, SwapLines, Status } from "controls.slint";
 
-// A mode as a word: tapped, a bar grows in under it once the last one's has shrunk away, in or across rows (the
-// approved "shrink out, grow in").
-component Word inherits Rectangle {
-    in property <int> i;
-    property <bool> on: Home.index == self.i;
-    property <float> k: self.on ? 1 : 0;
-    animate k { duration: self.on ? 300ms : 160ms; delay: self.on ? 120ms : 0ms; easing: self.on ? T.spring : T.out; }
-    height: 46px;
-    HorizontalLayout {
-        padding-left: 10px;
-        padding-right: 10px;
-        Text {
-            text: Ctl.mode(root.i).label;
-            font-size: 22px;
-            font-weight: 600;
-            vertical-alignment: center;
-            color: root.on ? T.fg : touch.pressed ? #ffffff80 : #ffffff42;
-            animate color { duration: 220ms; easing: T.out; }
-        }
-    }
-    Rectangle {
-        x: 10px;
-        y: parent.height - 7px;
-        width: max(0px, (parent.width - 20px) * root.k);
-        height: 3px;
-        border-radius: 1.5px;
-        background: root.i >= 4 ? Ctl.night : T.accent;
-        opacity: min(1, root.k * 3);
-    }
-    touch := TouchArea { clicked => { Home.set-mode(Ctl.mode(root.i).id); } }
-}
-
-// A link in the bottom row: just its name.
-component Link inherits Rectangle {
-    in property <string> label;
-    in property <bool> dot;
-    in property <int> i;
-    height: 56px;
-    Text {
-        x: 0;
-        text: root.label;
-        font-size: 15px;
-        font-weight: 500;
-        vertical-alignment: center;
-        color: touch.pressed ? #ffffff70 : T.fg2;
-        animate color { duration: 140ms; }
-    }
-    if root.dot: Rectangle { x: root.width - 2px; y: 16px; width: 7px; height: 7px; border-radius: 3.5px; background: T.accent; }
-    touch := TouchArea { clicked => { Ctl.act(root.i); } }
-}
-
-// 3 Type: no controls drawn, only words. The status is a headline set left like a magazine's; the modes are the words
-// under it, the chosen one white with a bar under it; the actions are a line of names under a hairline, and Call is
-// the one round, orange thing on the screen.
-export component Type inherits Rectangle {
+// 3 Sheet: a sheet resting under the stage, as in a native maps app. At rest it holds only the status (one row) and
+// the four actions as tiles, Call the one filled; the characters get the rest of the screen. Tap the status and the
+// sheet rises into the full list of modes, each with what it means, the Sleep pair under its own heading; the check
+// shrinks out of the old row and grows into the new one, and the sheet settles back down.
+export component Sheet inherits Rectangle {
     in property <length> block-y;
     property <float> fade: Home.kb > 0 ? 0 : 1;
     animate fade { duration: 200ms; easing: T.out; }
-    property <float> mfade: Ctl.sheet ? 0 : self.fade;
-    animate mfade { duration: 200ms; easing: T.out; }
-    Status { x: 24px; y: root.block-y; width: root.width - 48px; title-size: 30px; desc-max: 300px; centre: false; opacity: root.fade; }
-    HorizontalLayout {
-        x: 14px;
-        y: root.block-y + 105px;
-        height: 46px;
-        alignment: start;
-        opacity: root.mfade;
-        for i in 4: Word { i: i; }
-    }
-    HorizontalLayout {
-        x: 14px;
-        y: root.block-y + 150px;
-        height: 46px;
-        alignment: start;
-        opacity: root.mfade;
-        for i in 2: Word { i: i + 4; }
-    }
-    if !Home.ready: SetupCard { x: 20px; y: root.block-y + 196px + 20px; width: root.width - 40px; opacity: root.mfade; }
-
-    property <length> zt: root.height - Home.sab - Ctl.act-h;
-    Rectangle { x: 24px; y: root.zt; width: root.width - 48px; height: 1px; background: #ffffff16; }
-    Link { x: 24px; y: root.zt + 12px; width: 66px; label: "Test ring"; i: 0; }
-    Link { x: 108px; y: root.zt + 12px; width: 50px; label: "Widget"; i: 1; }
-    Link { x: 176px; y: root.zt + 12px; width: 42px; label: "Chats"; i: 2; dot: Chats.unread; }
-    Rectangle {
-        x: root.width - 24px - 180px;
-        y: root.zt + 16px;
-        width: 180px;
-        height: 48px;
-        property <bool> down: call.pressed;
-        Text {
-            x: 0;
-            width: parent.width - 48px - 12px;
-            text: Ctl.call-label;
-            font-size: 16px;
-            font-weight: 600;
-            horizontal-alignment: right;
-            vertical-alignment: center;
-            color: Home.requested ? T.accent : parent.down ? T.fg2 : T.fg;
-            animate color { duration: 200ms; }
-        }
-        Rectangle {
-            x: parent.width - 48px;
-            width: 48px;
-            height: 48px;
-            border-radius: 24px;
-            background: Home.requested ? #2a1c17 : parent.down ? #c4664a : T.accent;
-            border-width: Home.requested ? 1.5px : 0px;
-            border-color: Home.requested ? T.accent.with-alpha(0.55 + 0.45 * Math.sin(animation-tick() / 1000ms * 360deg)) : T.accent;
-            transform-origin: { x: 24px, y: 24px };
-            transform-scale: parent.down ? 0.93 : 1;
-            animate background { duration: 200ms; easing: T.out; }
-            animate transform-scale { duration: 160ms; easing: T.out; }
-            Icon { d: Icons.phone; x: 14px; y: 14px; width: 20px; height: 20px; stroke: Home.requested ? T.accent : #ffffff; }
-        }
-        call := TouchArea { clicked => { Ctl.act(3); } }
-    }
-}
-
-// 4 Pucks: the modes are six vinyl tokens, glossy like Clawd and Null, set in a gentle curve under the record. The
-// chosen one rises and Clawd's orange (the Sleep pair a moonlit lilac) grows in it from the middle as the last one's
-// shrinks away and it sinks back. The
-// actions sit in one floating dock under them, Call as an orange pill a thumb can't miss.
-export component Pucks inherits Rectangle {
-    in property <length> block-y;
-    property <float> fade: Home.kb > 0 ? 0 : 1;
-    animate fade { duration: 200ms; easing: T.out; }
-    property <float> mfade: Ctl.sheet ? 0 : self.fade;
-    animate mfade { duration: 200ms; easing: T.out; }
-    property <length> slot: (self.width - 32px - 14px) / 6;
-    property <length> pz: self.block-y + 94px;
-    Status { x: 20px; y: root.block-y; width: root.width - 40px; opacity: root.fade; }
-    for i in 6: tok := Rectangle {
-        property <bool> on: Home.index == i;
-        property <length> c: 16px + root.slot * (i + 0.5) + (i >= 4 ? 14px : 0px);
-        property <float> u: (self.c - root.width / 2) / (root.width / 2 - 16px - root.slot / 2);
-        property <length> cy: root.pz + 6px + 24px + 20px * (1 - self.u * self.u);
-        property <float> k: self.on ? 1 : 0;
-        animate k { duration: self.on ? 380ms : 220ms; delay: self.on ? 90ms : 0ms; easing: self.on ? T.spring : T.close; }
-        x: self.c - root.slot / 2;
-        y: self.cy - 30px - 6px;
-        width: root.slot;
-        height: 92px;
-        opacity: root.mfade;
-        puck := Rectangle {
-            x: (parent.width - 48px) / 2;
-            y: 6px + 6px * (1 - parent.k);
-            width: 48px;
-            height: 48px;
-            border-radius: 24px;
-            background: @linear-gradient(180deg, #2e2f35 0%, #16171a 100%);
-            border-width: 1px;
-            border-color: #ffffff0d;
-            drop-shadow-blur: 6px + 10px * parent.k;
-            drop-shadow-offset-y: 3px + 6px * parent.k;
-            drop-shadow-color: #000000b0;
-            transform-origin: { x: 24px, y: 24px };
-            transform-scale: touch.pressed ? 0.92 : 1;
-            animate transform-scale { duration: 160ms; easing: T.out; }
-            // its colour grows from the middle as the last one's shrinks away (the approved "shrink out, grow in")
-            Rectangle {
-                x: 24px * (1 - min(1, tok.k));
-                y: 24px * (1 - min(1, tok.k));
-                width: 48px * min(1, tok.k);
-                height: 48px * min(1, tok.k);
-                border-radius: self.width / 2;
-                background: i >= 4 ? @linear-gradient(180deg, #dcd6ff 0%, #9286dc 100%) : @linear-gradient(180deg, #f59c6c 0%, #d2602f 100%);
-                opacity: min(1, tok.k * 3);
-            }
-            // gloss
-            Rectangle {
-                x: 9px;
-                y: 3px;
-                width: 30px;
-                height: 16px;
-                border-radius: 8px;
-                background: @linear-gradient(180deg, #ffffff38 0%, #ffffff00 100%);
-                opacity: 0.45 + 0.55 * tok.k;
-            }
-            Icon {
-                d: Ctl.mode(i).icon;
-                x: 14px;
-                y: 14px;
-                width: 20px;
-                height: 20px;
-                stroke: tok.on ? (i >= 4 ? #221c45 : #3a1607) : T.fg2;
-                animate stroke { duration: 240ms; }
-            }
-        }
-        Text {
-            y: 66px;
-            width: parent.width;
-            height: 16px;
-            text: Ctl.mode(i).label;
-            font-size: 12px;
-            font-weight: 600;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-            color: parent.on ? T.fg : #878990;
-            animate color { duration: 220ms; easing: T.out; }
-        }
-        touch := TouchArea { clicked => { Home.set-mode(Ctl.mode(i).id); } }
-    }
-    if !Home.ready: SetupCard { x: 20px; y: root.block-y + 212px + 20px; width: root.width - 40px; opacity: root.mfade; }
-
-    // the dock
-    Rectangle {
-        x: 16px;
-        y: root.height - Home.sab - Ctl.act-h;
-        width: root.width - 32px;
-        height: 70px;
-        border-radius: 35px;
-        background: @linear-gradient(180deg, #1b1c20 0%, #151619 100%);
+    property <length> rest-h: Ctl.act-h + Home.sab;
+    property <length> row-h: 56px;
+    property <length> list-h: 4px + 6 * self.row-h + 40px + 8px;
+    property <float> k: Ctl.open ? 1 : 0;
+    animate k { duration: Ctl.open ? 520ms : 320ms; easing: Ctl.open ? T.spring : T.close; }
+    property <length> lh: self.list-h * max(0, self.k);
+    // each mode's line in the list, cut to fit one line (the status above keeps the full one)
+    property <[string]> short: [
+        "Calls only. No Discord messages.",
+        "Discord messages only. No calls.",
+        "Calls and Discord messages.",
+        "They save their questions for later.",
+        "Calls ring like an alarm till you pick up.",
+        "No calls or texts. They carry on alone.",
+    ];
+    if !Home.ready: SetupCard { x: 20px; y: root.block-y + 4px; width: root.width - 40px; opacity: root.fade * (1 - min(1, root.k * 2)); }
+    // the stage dims behind the open list; a tap on it closes the list
+    Rectangle { background: #000000; opacity: 0.5 * max(0, min(1, root.k)); }
+    if Ctl.open: TouchArea { clicked => { Ctl.open = false; } }
+    sheet := Rectangle {
+        x: -1px;
+        y: root.height - root.rest-h - root.lh;
+        width: root.width + 2px;
+        height: root.rest-h + root.lh + 80px; // past the bottom, so the spring's overshoot never lifts it clear
+        opacity: root.fade;
+        border-top-left-radius: 28px;
+        border-top-right-radius: 28px;
+        background: #141413;
         border-width: 1px;
-        border-color: #ffffff10;
-        drop-shadow-blur: 20px;
-        drop-shadow-offset-y: 8px;
-        drop-shadow-color: #00000090;
-        for k[i] in [
-            { icon: Icons.bell, label: "Test ring" },
-            { icon: Icons.grid, label: "Widget" },
-            { icon: Icons.chat, label: "Chats" },
-        ]: Rectangle {
-            x: 10px + 62px * i;
-            y: 4px;
-            width: 62px;
-            height: 62px;
-            Rectangle {
-                border-radius: 20px;
-                background: #ffffff;
-                opacity: item.pressed ? 0.07 : (i == 1 && (Home.widgets || Home.channel)) ? 0.05 : 0;
-                animate opacity { duration: 140ms; }
+        border-color: #ffffff12;
+        drop-shadow-blur: 36px;
+        drop-shadow-offset-y: -6px;
+        drop-shadow-color: #000000b0;
+        property <length> w: root.width;
+        TouchArea { } // a tap on the sheet stays on it
+        // the grabber
+        Rectangle { x: 1px + (parent.w - 36px) / 2; y: 8px; width: 36px; height: 4px; border-radius: 2px; background: #ffffff26; }
+        // the status: one row; tapping it opens and closes the list
+        Rectangle {
+            x: 1px;
+            y: 16px;
+            width: parent.w;
+            height: 92px;
+            accessible-role: button;
+            accessible-label: "Contact mode: " + Ctl.title;
+            SwapLines {
+                x: 24px;
+                y: 12px;
+                width: parent.width - 24px - 72px;
+                height: 26px;
+                text: Ctl.title;
+                font-size: 19px;
+                weight: 600;
+                spacing: -0.1px;
+                color: T.fg;
+                centre: false;
             }
-            Icon { d: k.icon; x: 21px; y: 11px; width: 20px; height: 20px; stroke: T.fg; }
-            if i == 2 && Chats.unread: Rectangle { x: 39px; y: 8px; width: 9px; height: 9px; border-radius: 4.5px; background: T.accent; border-width: 2px; border-color: #18191c; }
-            Text {
-                y: 37px;
+            SwapLines {
+                x: 24px;
+                y: 42px;
+                width: parent.width - 24px - 72px;
+                height: 40px;
+                text: Ctl.desc;
+                font-size: 14px;
+                centre: false;
+            }
+            Rectangle {
+                x: parent.width - 24px - 36px;
+                y: 9px;
+                width: 36px;
+                height: 36px;
+                border-radius: 18px;
+                background: row.pressed ? #ffffff1c : #ffffff0d;
+                animate background { duration: 140ms; }
+                Icon {
+                    d: "M7 14.5l5 -5l5 5";
+                    x: 8px;
+                    y: 8px;
+                    width: 20px;
+                    height: 20px;
+                    stroke-width: 2px;
+                    stroke: T.fg2;
+                    transform-origin: { x: 10px, y: 10px };
+                    transform-rotation: 180deg * max(0, min(1, root.k));
+                }
+            }
+            row := TouchArea { clicked => { Ctl.open = !Ctl.open; } }
+        }
+        // the list of modes, revealed as the sheet rises
+        Rectangle {
+            x: 1px;
+            y: 108px;
+            width: parent.w;
+            height: root.lh;
+            clip: true;
+            for i in 6: Rectangle {
+                property <bool> on: Home.index == i;
+                property <Mode> m: Ctl.mode(i);
+                x: 0;
+                y: 4px + root.row-h * i + (i >= 4 ? 40px : 0px);
                 width: parent.width;
-                height: 14px;
-                text: k.label;
-                font-size: 11px;
+                height: root.row-h;
+                // rows come in one after another as the list opens
+                opacity: max(0, min(1, (root.k - 0.35 - i * 0.06) * 3));
+                accessible-role: button;
+                accessible-label: self.m.label;
+                Rectangle {
+                    x: 12px;
+                    width: parent.width - 24px;
+                    border-radius: 14px;
+                    background: pick.pressed ? #ffffff0d : transparent;
+                    animate background { duration: 140ms; }
+                }
+                Icon {
+                    d: parent.m.icon;
+                    x: 24px;
+                    y: (parent.height - 20px) / 2;
+                    width: 20px;
+                    height: 20px;
+                    stroke-width: 1.8px;
+                    stroke: parent.on ? T.fg : #77777c;
+                    animate stroke { duration: 200ms; }
+                }
+                Text {
+                    x: 60px;
+                    y: 8px;
+                    height: 21px;
+                    text: parent.m.label;
+                    font-size: 16px;
+                    font-weight: 500;
+                    color: T.fg;
+                    vertical-alignment: center;
+                }
+                Text {
+                    x: 60px;
+                    y: 29px;
+                    width: parent.width - 60px - 64px;
+                    height: 18px;
+                    text: root.short[i];
+                    font-size: 13px;
+                    color: T.muted;
+                    overflow: elide;
+                    vertical-alignment: center;
+                }
+                // the check: shrinks out of the old row, then grows into the new one
+                property <float> c: self.on ? 1 : 0;
+                animate c { duration: self.on ? 300ms : 160ms; delay: self.on ? 120ms : 0ms; easing: self.on ? T.spring : T.out; }
+                Icon {
+                    d: Icons.check;
+                    x: parent.width - 44px + 10px * (1 - parent.c);
+                    y: (parent.height - 20px) / 2 + 10px * (1 - parent.c);
+                    width: 20px * parent.c;
+                    height: 20px * parent.c;
+                    opacity: min(1, parent.c * 3);
+                    stroke-width: 2.2px;
+                    stroke: i >= 4 ? Ctl.night : T.accent;
+                }
+                pick := TouchArea {
+                    clicked => {
+                        Home.set-mode(parent.m.id);
+                        closer.running = true;
+                    }
+                }
+            }
+            // the Sleep heading
+            Rectangle { x: 24px; y: 4px + 4 * root.row-h + 9px; width: parent.width - 48px; height: 1px; background: Ctl.line; opacity: max(0, min(1, (root.k - 0.55) * 3)); }
+            Text {
+                x: 24px;
+                y: 4px + 4 * root.row-h + 18px;
+                height: 18px;
+                text: "Asleep";
+                font-size: 13px;
+                font-weight: 600;
+                letter-spacing: 0.3px;
+                color: T.muted;
+                vertical-alignment: center;
+                opacity: max(0, min(1, (root.k - 0.55) * 3));
+            }
+        }
+        closer := Timer {
+            interval: 420ms;
+            running: false;
+            triggered => {
+                self.running = false;
+                Ctl.open = false;
+            }
+        }
+        // the actions, as four tiles under a hairline
+        Rectangle { x: 25px; y: 108px + root.lh; width: parent.w - 48px; height: 1px; background: Ctl.line; }
+        property <length> tw: (self.w - 32px - 30px) / 4;
+        for t[i] in [
+            { icon: Icons.bell, label: "Test ring", on: false },
+            { icon: Icons.grid, label: "Widget", on: Home.widgets || Home.channel },
+            { icon: Icons.chat, label: "Chats", on: false },
+            { icon: Icons.phone, label: Ctl.call-label, on: Home.requested },
+        ]: Rectangle {
+            property <bool> call: i == 3;
+            x: 17px + (parent.tw + 10px) * i;
+            y: 123px + root.lh;
+            width: parent.tw;
+            height: 72px;
+            border-radius: 18px;
+            background: self.call ? (Home.requested ? #2a1d18 : tile.pressed ? #c4664a : T.accent) : tile.pressed ? #2a2a29 : t.on ? #2c2c2b : #1e1e1d;
+            border-width: 1px;
+            border-color: self.call && Home.requested ? T.accent.with-alpha(0.6) : self.call ? transparent : #ffffff08;
+            animate background, border-color { duration: 220ms; easing: T.out; }
+            accessible-role: button;
+            accessible-label: t.label;
+            Icon {
+                d: t.icon;
+                x: (parent.width - 22px) / 2;
+                y: 14px;
+                width: 22px;
+                height: 22px;
+                stroke-width: 1.8px;
+                stroke: parent.call ? (Home.requested ? T.accent : #ffffff) : T.fg;
+            }
+            if i == 2 && Chats.unread: Rectangle { x: parent.width / 2 + 9px; y: 11px; width: 7px; height: 7px; border-radius: 3.5px; background: T.accent; }
+            Text {
+                y: 43px;
+                width: parent.width;
+                height: 16px;
+                text: t.label;
+                font-size: 12.5px;
                 font-weight: 500;
-                color: T.fg2;
+                color: parent.call ? (Home.requested ? T.accent : #ffffff) : T.fg2;
                 horizontal-alignment: center;
                 vertical-alignment: center;
             }
-            item := TouchArea { clicked => { Ctl.act(i); } }
+            tile := TouchArea { clicked => { Ctl.open = false; Ctl.act(i); } }
         }
+    }
+}
+
+// 4 Strip: words and one button. The modes are one line of names under the status, like a camera's mode strip: the
+// line slides so the chosen name sits centred, the others fading towards the edges; tap a name or swipe the line.
+// A small mark under the centre shrinks away while the line moves and grows back as it settles. Below, three quiet
+// text actions and Call as the one full-width pill.
+export component Strip inherits Rectangle {
+    in property <length> block-y;
+    property <float> fade: Home.kb > 0 ? 0 : 1;
+    animate fade { duration: 200ms; easing: T.out; }
+    property <float> mfade: Ctl.sheet ? 0 : self.fade;
+    animate mfade { duration: 200ms; easing: T.out; }
+    property <length> slot: 82px;
+    property <length> gap: 22px; // between Quiet and the Sleep pair
+    pure function cx(i: int) -> length { return self.slot * (i + 0.5) + (i >= 4 ? self.gap : 0px); }
+    property <length> target: self.width / 2 - self.cx(Home.index);
+    property <length> off: self.target;
+    animate off { duration: 520ms; easing: T.spring; }
+    Status { x: 20px; y: root.block-y; width: root.width - 40px; title-size: 26px; opacity: root.fade; }
+    Rectangle {
+        y: root.block-y + 96px;
+        width: root.width;
+        height: 48px;
+        clip: true;
+        opacity: root.mfade;
+        for i in 6: Rectangle {
+            property <length> c: root.off + root.cx(i);
+            property <float> near: max(0.16, 1 - abs(self.c - root.width / 2) / 200px);
+            // white only as it reaches the centre, so the colour moves with the line
+            property <float> lit: max(0, 1 - abs(self.c - root.width / 2) / (root.slot * 0.7));
+            x: self.c - root.slot / 2;
+            y: 0;
+            width: root.slot;
+            height: 36px;
+            for t in [0, 1]: Text {
+                text: Ctl.mode(i).label;
+                font-size: 15px;
+                font-weight: 600;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                color: t == 1 ? T.fg : Ctl.dim;
+                opacity: t == 1 ? parent.lit : (1 - parent.lit) * parent.near;
+            }
+        }
+        // the gap before the Sleep pair
         Rectangle {
-            x: parent.width - 9px - 160px;
-            y: 9px;
-            width: 160px;
-            height: 52px;
-            border-radius: 26px;
-            background: Home.requested ? #2a1c17 : pill.pressed ? #c4664a : T.accent;
-            border-width: Home.requested ? 1.5px : 0px;
-            border-color: Home.requested ? T.accent.with-alpha(0.55 + 0.45 * Math.sin(animation-tick() / 1000ms * 360deg)) : T.accent;
-            transform-origin: { x: 80px, y: 26px };
-            transform-scale: pill.pressed ? 0.96 : 1;
-            animate background { duration: 200ms; easing: T.out; }
-            animate transform-scale { duration: 160ms; easing: T.out; }
-            HorizontalLayout {
-                alignment: center;
-                spacing: 8px;
-                Icon { d: Icons.phone; width: 18px; height: 18px; y: 17px; stroke: Home.requested ? T.accent : #ffffff; }
-                Text {
-                    text: Ctl.call-label;
-                    font-size: 15px;
-                    font-weight: 600;
-                    vertical-alignment: center;
-                    color: Home.requested ? T.accent : #ffffff;
+            property <length> c: root.off + root.slot * 4 + root.gap / 2;
+            x: self.c - 1.5px;
+            y: 18px - 1.5px;
+            width: 3px;
+            height: 3px;
+            border-radius: 1.5px;
+            background: #ffffff;
+            opacity: 0.28 * max(0.16, 1 - abs(self.c - root.width / 2) / 200px);
+        }
+        // the mark under the centre: away while the line moves, back as it settles
+        property <float> settle: max(0, 1 - abs(root.off - root.target) / 18px);
+        Rectangle {
+            x: (root.width - self.width) / 2;
+            y: 40px - self.height / 2;
+            width: 4px * parent.settle;
+            height: self.width;
+            border-radius: self.width / 2;
+            background: Home.index >= 4 ? Ctl.night : T.accent;
+        }
+        TouchArea {
+            property <length> sx;
+            pointer-event(e) => {
+                if (e.kind == PointerEventKind.down) {
+                    self.sx = self.mouse-x;
+                } else if (e.kind == PointerEventKind.up) {
+                    root.hit(self.mouse-x, self.mouse-x - self.sx);
                 }
             }
-            pill := TouchArea { clicked => { Ctl.act(3); } }
         }
+    }
+    // A tap picks the name under it; a swipe steps one name the way the line was pushed.
+    function hit(x: length, dx: length) {
+        let n = Math.abs(dx) > 28px ? (dx < 0 ? Math.min(5, Home.index + 1) : Math.max(0, Home.index - 1))
+            : Math.max(0, Math.min(5, Math.floor(((x - self.off) - ((x - self.off) > self.slot * 4 + self.gap / 2 ? self.gap : 0px)) / self.slot)));
+        Home.set-mode(Ctl.mode(n).id);
+    }
+    if !Home.ready: SetupCard { x: 20px; y: root.block-y + 144px + 20px; width: root.width - 40px; opacity: root.mfade; }
+
+    property <length> zt: root.height - Home.sab - Ctl.act-h;
+    for a[i] in [
+        { label: "Test ring", on: false },
+        { label: "Widget", on: Home.widgets || Home.channel },
+        { label: "Chats", on: false },
+    ]: Rectangle {
+        x: root.width / 2 - 150px + 100px * i;
+        y: root.zt;
+        width: 100px;
+        height: 44px;
+        accessible-role: button;
+        accessible-label: a.label;
+        Text {
+            text: a.label;
+            font-size: 15px;
+            font-weight: 500;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            color: link.pressed ? T.muted : a.on ? T.fg : T.fg2;
+            animate color { duration: 160ms; }
+        }
+        if i == 2 && Chats.unread: Rectangle { x: parent.width / 2 + 25px; y: 15px; width: 7px; height: 7px; border-radius: 3.5px; background: T.accent; }
+        link := TouchArea { clicked => { Ctl.act(i); } }
+    }
+    Rectangle {
+        x: 20px;
+        y: root.zt + 52px;
+        width: root.width - 40px;
+        height: 56px;
+        border-radius: 28px;
+        background: Home.requested ? transparent : call.pressed ? #c4664a : T.accent;
+        border-width: 1px;
+        border-color: Home.requested ? T.accent.with-alpha(0.7) : transparent;
+        animate background, border-color { duration: 240ms; easing: T.out; }
+        transform-origin: { x: self.width / 2, y: self.height / 2 };
+        transform-scale: call.pressed ? 0.98 : 1;
+        animate transform-scale { duration: 160ms; easing: T.out; }
+        accessible-role: button;
+        accessible-label: Ctl.call-label;
+        HorizontalLayout {
+            alignment: center;
+            spacing: 10px;
+            Icon {
+                d: Icons.phone;
+                width: 20px;
+                height: 20px;
+                y: (parent.height - 20px) / 2;
+                stroke-width: 1.9px;
+                stroke: Home.requested ? T.accent : #ffffff;
+            }
+            Text {
+                text: Ctl.call-label;
+                font-size: 16.5px;
+                font-weight: 600;
+                vertical-alignment: center;
+                color: Home.requested ? T.accent : #ffffff;
+            }
+        }
+        call := TouchArea { clicked => { Ctl.act(3); } }
     }
 }

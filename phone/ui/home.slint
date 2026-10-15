@@ -6,8 +6,8 @@ import { Home, Mode, SetupCard } from "home_parts.slint";
 import { Toys, Clawd, Null } from "toys.slint";
 import { Chats, ChatList, ChatThread, PickRow } from "chat.slint";
 import { StageBack, Look } from "stage.slint";
-import { Ctl, Tuner, Amp } from "controls.slint";
-import { Type, Pucks } from "controls_b.slint";
+import { Ctl, Hairline, Panel } from "controls.slint";
+import { Sheet, Strip } from "controls_b.slint";
 
 // A choice in a sheet: icon, title and a line under it.
 component Choice {
@@ -105,12 +105,15 @@ export component HomeScreen inherits Window {
     property <string> draft;
     property <length> row-y: Ctl.v > 0 ? self.height - Home.sab - Ctl.act-h : self.height - Home.sab - 24px - 88px; // the round buttons
     // PREVIEW (controls.slint): where the Widget and Chats sheets grow from, the centre of each one's button.
-    property <length> widget-x: Ctl.v == 3 ? 108px + 25px : Ctl.v == 4 ? 26px + 62px + 31px : Ctl.v > 0 ? 16px + (self.width - 32px) * 1.5 / 4 : 20px + root.col-w * 1.5;
-    property <length> chats-x: Ctl.v == 3 ? 176px + 21px : Ctl.v == 4 ? 26px + 124px + 31px : Ctl.v > 0 ? 16px + (self.width - 32px) * 2.5 / 4 : 20px + root.col-w * 2.5;
-    property <length> sheet-bottom: Ctl.v > 0 ? self.height - Home.sab - 16px : self.row-y + 88px;
-    property <length> act-y: Ctl.v == 1 ? 30px : Ctl.v == 2 ? 27px : Ctl.v == 3 ? 40px : Ctl.v == 4 ? 25px : 32px;
+    // act-y: the buttons' middle under row-y; fs: the size the sheet starts from (the button's own).
+    property <length> tile-w: (self.width - 62px) / 4; // 3 Sheet's tiles
+    property <length> widget-x: Ctl.v == 1 ? 20px + (self.width - 40px) * 1.5 / 4 : Ctl.v == 2 ? 16px + 14px + 48px + 22px : Ctl.v == 3 ? 16px + self.tile-w * 1.5 + 10px : Ctl.v == 4 ? self.width / 2 : 20px + root.col-w * 1.5;
+    property <length> chats-x: Ctl.v == 1 ? 20px + (self.width - 40px) * 2.5 / 4 : Ctl.v == 2 ? 16px + 14px + 96px + 22px : Ctl.v == 3 ? 16px + self.tile-w * 2.5 + 20px : Ctl.v == 4 ? self.width / 2 + 100px : 20px + root.col-w * 2.5;
+    property <length> act-y: Ctl.v == 1 ? 27px : Ctl.v == 2 ? 204px : Ctl.v == 3 ? 159px : Ctl.v == 4 ? 22px : 32px;
+    property <length> fs: Ctl.v == 3 ? 72px : Ctl.v > 0 ? 44px : 64px;
+    property <length> sheet-bottom: Ctl.v == 2 ? self.height - Home.sab - 12px : Ctl.v > 0 ? self.height - Home.sab - 12px : self.row-y + 88px;
     property <length> col-w: (self.width - 40px) / 4;
-    property <length> sheet-x: Ctl.v == 1 || Ctl.v == 4 ? 16px : 20px; // PREVIEW: as wide as the key bar or dock it covers
+    property <length> sheet-x: Ctl.v == 2 ? 16px : Ctl.v == 3 ? 12px : 20px; // PREVIEW: as wide as the panel it covers
     property <length> sheet-w: self.width - 2 * self.sheet-x;
     // PREVIEW (stage.slint): the moon stage has its title and status at the top left; each stage leaves its own room
     // under the pair, so the status sits clear of the floor they stand on.
@@ -168,7 +171,7 @@ export component HomeScreen inherits Window {
         width: parent.width - 40px;
         // PREVIEW (controls.slint): with the new controls, two thirds of the spare room goes above, so the controls sit
         // nearer the thumb
-        y: Home.sat + root.top-room + (root.row-y - Home.sat - root.top-room - self.preferred-height) * (Ctl.v > 0 ? 0.66 : 0.5);
+        y: Home.sat + root.top-room + (root.row-y - Home.sat - root.top-room - self.preferred-height) * (Ctl.v == 1 || Ctl.v == 4 ? 0.66 : 0.5);
         height: self.preferred-height;
         // The vinyl Clawd and Null (toys.slint), alive; the one the Call button asks for is lit, the other dimmed.
         HorizontalLayout {
@@ -217,10 +220,10 @@ export component HomeScreen inherits Window {
         if !Home.ready && Ctl.v == 0: Rectangle { height: 20px; }
         if !Home.ready && Ctl.v == 0: SetupCard { }
     }
-    if Ctl.v == 1: Tuner { width: root.width; height: root.height; block-y: stage.y + block.y; }
-    if Ctl.v == 2: Amp { width: root.width; height: root.height; block-y: stage.y + block.y; }
-    if Ctl.v == 3: Type { width: root.width; height: root.height; block-y: stage.y + block.y; }
-    if Ctl.v == 4: Pucks { width: root.width; height: root.height; block-y: stage.y + block.y; }
+    if Ctl.v == 1: Hairline { width: root.width; height: root.height; block-y: stage.y + block.y; }
+    if Ctl.v == 2: Panel { width: root.width; height: root.height; block-y: stage.y + block.y; }
+    if Ctl.v == 3: Sheet { width: root.width; height: root.height; block-y: stage.y + block.y; }
+    if Ctl.v == 4: Strip { width: root.width; height: root.height; block-y: stage.y + block.y; }
 
     // The round buttons.
     if Ctl.v == 0: HorizontalLayout {
@@ -268,6 +271,10 @@ export component HomeScreen inherits Window {
                 Home.editing(false);
                 return accept;
             }
+            if (e.text == Key.Back && Ctl.open) {
+                Ctl.open = false;
+                return accept;
+            }
             reject
         }
     }
@@ -279,9 +286,10 @@ export component HomeScreen inherits Window {
 
     Morph {
         open: Home.widgets;
-        panel: #1c1d21;
-        fx: root.widget-x - 32px;
-        fy: root.row-y + root.act-y - 32px;
+        panel: Ctl.v == 2 ? #191918 : #1c1d21; // PREVIEW: the Panel's own material
+        fx: root.widget-x - root.fs / 2;
+        fy: root.row-y + root.act-y - root.fs / 2;
+        fsize: root.fs;
         tx: root.sheet-x;
         tw: root.sheet-w;
         th: Home.can-pin ? 244px : 96px; // three (or one) rows, clear of the mode control
@@ -304,8 +312,9 @@ export component HomeScreen inherits Window {
     Morph {
         open: Home.channel;
         panel: #1c1d21;
-        fx: root.widget-x - 32px; // opened from the Widget sheet
-        fy: root.row-y + root.act-y - 32px;
+        fx: root.widget-x - root.fs / 2; // opened from the Widget sheet
+        fy: root.row-y + root.act-y - root.fs / 2;
+        fsize: root.fs;
         tx: root.sheet-x;
         tw: root.sheet-w;
         th: 196px;
@@ -368,8 +377,9 @@ export component HomeScreen inherits Window {
     Morph {
         open: Chats.open;
         panel: #1c1d21;
-        fx: root.chats-x - 32px;
-        fy: root.row-y + root.act-y - 32px;
+        fx: root.chats-x - root.fs / 2;
+        fy: root.row-y + root.act-y - root.fs / 2;
+        fsize: root.fs;
         tx: 0px;
         ty: 0px;
         tw: root.width;

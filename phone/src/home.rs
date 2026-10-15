@@ -37,7 +37,7 @@ fn refresh(ui: &HomeScreen, fake: usize, first: bool) {
 pub fn run(_app: android_activity::AndroidApp) {
     let ui = HomeScreen::new().expect("home screen");
     let home = ui.global::<Home>();
-    // PREVIEW (branch preview/home-controls): which home controls show (controls.slint), and `debug.callme.fake` set
+    // PREVIEW (branch preview/home-controls-2): which home controls show (controls.slint), and `debug.callme.fake` set
     // keeps mode taps and the Call button on this screen only (nothing stored, published or asked of the PC).
     let fake = stage::prop(c"debug.callme.fake", 2);
     ui.global::<Toys>().set_controls(stage::prop(c"debug.callme.controls", 4) as i32);

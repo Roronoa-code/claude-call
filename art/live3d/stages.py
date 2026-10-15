@@ -108,7 +108,7 @@ def spot(X, Y, k, rng):
     P0 = anchor_world(k) + np.array([0.0, 0.0, -0.35])
     L = P0 + np.array([0.0, 9.0, 0.9])
     axis = nrm(P0 - L)
-    half, soft = math.radians(15.5), math.radians(4.0)
+    half, soft = math.radians(13.0), math.radians(2.5)
     warm = np.array([1.0, 0.86, 0.7])
 
     def cone(p):
@@ -123,7 +123,7 @@ def spot(X, Y, k, rng):
         for i in range(n):
             t = t0 + (t1 - t0) * (i + jit) / n
             p = o + d * t[..., None]
-            dens = np.exp(-np.maximum(p[..., 1], 0) / 3.2) * (p[..., 1] > 0)
+            dens = np.exp(-np.maximum(p[..., 1], 0) / 7.0) * (p[..., 1] > 0)
             acc = acc + cone(p) * dens * (t1 - t0) / n
         return acc
 
@@ -131,12 +131,12 @@ def spot(X, Y, k, rng):
     floor = np.isfinite(tf)
     col = np.zeros(rd.shape)
     beam = haze(np.broadcast_to(RO, rd.shape), rd, np.where(floor, tf, 22.0))
-    col += warm * 0.010 * beam[..., None]
+    col += warm * 0.026 * beam[..., None]
     # the pool: a dark glossy floor, its edge soft; a little light scattered round it
     irr = cone(F) * ss(0, 1, nrm(L - F)[..., 1])
     alb = 0.05 * (0.92 + 0.08 * fbm(F[..., 0] * 3, F[..., 2] * 3, 3, 7))
-    pool = warm * (alb * irr)[..., None] * 0.9
-    glow = warm * 0.0045 * np.exp(-np.hypot(F[..., 0] - P0[0], (F[..., 2] - P0[2]) * 1.0) / 2.6)[..., None]
+    pool = warm * (alb * irr)[..., None] * 1.7
+    glow = warm * 0.0025 * np.exp(-np.hypot(F[..., 0] - P0[0], (F[..., 2] - P0[2]) * 1.0) / 2.6)[..., None]
     # the floor mirrors the beam: the same haze along the mirrored ray, softened by the floor's roughness
     r = rd * np.array([1, -1, 1])
     refl = np.zeros(tf.shape)
@@ -144,7 +144,7 @@ def spot(X, Y, k, rng):
         rj = nrm(r + rng.normal(0, 0.035, r.shape))
         refl = refl + haze(F, rj, np.full(tf.shape, 22.0), 28) / 4
     fres = 0.04 + 0.96 * (1 - np.clip(-rd[..., 1], 0, 1)) ** 5
-    flo = pool + glow + warm * (0.010 * refl * np.minimum(fres * 4.0, 0.6))[..., None]
+    flo = pool + glow + warm * (0.013 * refl * np.minimum(fres * 4.0, 0.6))[..., None]
     col = np.where(floor[..., None], col + flo, col)
     return col
 

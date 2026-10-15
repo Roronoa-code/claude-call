@@ -1,8 +1,9 @@
-// PREVIEW (branch preview/home-controls, not for main): four directions for the home controls (the contact-mode
-// selector, the status line and the four actions), picked at run time with `adb shell setprop debug.callme.controls
-// <n>` and a restart of the app (0, or unset: the pills and round buttons as they shipped). Same functions and states
-// in all four. Each draws its block (status, modes, setup card) from block-y, under the pair, and its actions at the
-// bottom; home.slint keeps the room for them (Ctl) and grows the Widget and Chats sheets out of their buttons.
+// PREVIEW (branch preview/home-controls-2, not for main): round two of the home controls (the contact-mode selector,
+// the status line and the four actions), picked at run time with `adb shell setprop debug.callme.controls <n>` and a
+// restart of the app (0, or unset: the pills and round buttons as they shipped). Same functions and states in all four.
+// Each draws its block (status, modes, setup card) from block-y, under the pair, and its actions at the bottom;
+// home.slint keeps the room for them (Ctl) and grows the Widget and Chats sheets out of their buttons.
+// No props, no metaphors: type, spacing, one quiet material, hairlines, and the approved "shrink out, grow in".
 import { T, Icon, Icons } from "parts.slint";
 import { Home, Mode, SetupCard } from "home_parts.slint";
 import { Toys } from "toys.slint";
@@ -12,14 +13,21 @@ export global Ctl {
     out property <int> v: Toys.controls;
     out property <length> setup: Home.ready ? 0px : 112px; // the setup card and the gap over it
     // The block's height under the pair, and the actions' room above the bottom inset.
-    out property <length> block-h: (v == 1 ? 188px : v == 2 ? 290px : v == 3 ? 196px : 212px) + setup;
-    out property <length> act-h: v == 1 ? 88px : v == 2 ? 104px : v == 3 ? 88px : 84px;
+    out property <length> block-h: (v == 1 ? 194px : v == 2 ? 0px : v == 3 ? 0px : 144px) + setup;
+    out property <length> act-h: v == 1 ? 84px : v == 2 ? 256px : v == 3 ? 210px : 124px;
     out property <string> call-label: Home.requested ? "Calling you…" : Home.caller == "codex" ? "Call Codex" : "Call Claude";
     out property <string> title: Home.ready ? Home.current.title : "Almost ready";
     out property <string> desc: Home.ready ? Home.current.desc : "A few phone settings first, then they can call.";
     out property <color> night: #aa9dff;
+    // Warm graphite, the one material: a recessed track, a raised face, a hairline.
+    out property <color> well: #121212;
+    out property <color> face: #2b2a29;
+    out property <color> line: #ffffff14;
+    out property <color> dim: #8e8e93; // a label not chosen
     // A sheet grown out of an action covers the modes: they fade out under it, so no sliver of them shows round it.
-    out property <bool> sheet: Home.widgets || Home.channel; // the Sleep modes' colour where the awake ones use the accent
+    out property <bool> sheet: Home.widgets || Home.channel;
+    // 3 Sheet: the mode list is open (Back and a tap outside close it).
+    in-out property <bool> open;
     // The four actions, as the shipped round buttons do them.
     public function act(i: int) {
         if (i == 0) {
@@ -51,6 +59,7 @@ export component SwapLines {
     in property <color> color: T.muted;
     in property <length> max: self.width;
     in property <bool> centre: true;
+    in property <length> spacing: 0px; // letter spacing
     property <string> a;
     property <string> b;
     property <int> pa: 1; // 0 below, 1 shown, 2 above
@@ -63,7 +72,7 @@ export component SwapLines {
         property <int> p: slot == 0 ? root.pa : root.pb;
         property <length> one: m.preferred-width;
         property <length> w: self.one <= root.max ? root.max : min(root.max, self.one / 2 + 28px);
-        m := Text { visible: false; text: slot == 0 ? root.a : root.b; font-size: root.font-size; font-weight: root.weight; }
+        m := Text { visible: false; text: slot == 0 ? root.a : root.b; font-size: root.font-size; font-weight: root.weight; letter-spacing: root.spacing; }
         x: root.centre ? (root.width - self.w) / 2 : 0px;
         y: p == 0 ? 6px : p == 1 ? 0 : -6px;
         width: self.w;
@@ -80,6 +89,7 @@ export component SwapLines {
             text: m.text;
             font-size: root.font-size;
             font-weight: root.weight;
+            letter-spacing: root.spacing;
             color: root.color;
             wrap: word-wrap;
             vertical-alignment: top;
@@ -91,7 +101,8 @@ export component SwapLines {
 // The status: what the mode means, title over a line or two.
 export component Status inherits Rectangle {
     in property <bool> centre: true;
-    in property <length> title-size: 26px;
+    in property <length> title-size: 24px;
+    in property <length> desc-size: 14.5px;
     in property <length> desc-max: 330px;
     height: self.title-size * 1.3 + 6px + 40px;
     SwapLines {
@@ -101,7 +112,8 @@ export component Status inherits Rectangle {
         max: parent.width;
         text: Ctl.title;
         font-size: root.title-size;
-        weight: 700;
+        weight: 600;
+        spacing: -0.2px;
         color: T.fg;
         centre: root.centre;
     }
@@ -110,371 +122,315 @@ export component Status inherits Rectangle {
         width: parent.width;
         height: 40px;
         max: root.desc-max;
+        font-size: root.desc-size;
         text: Ctl.desc;
         centre: root.centre;
     }
 }
 
-// 1 Tuner: an old radio's dial. The six modes are stations on a lit scale behind dark glass; the needle glides to the
-// one you tap (the Sleep pair past a gap, where it turns night-violet) and lights the ticks it passes. The actions
-// are four preset keys in one bar: a key sinks when pressed, and its pip lights while its sheet is open, a chat is
-// unread or a call is on its way.
-export component Tuner inherits Rectangle {
-    in property <length> block-y;
-    property <float> fade: Home.kb > 0 ? 0 : 1;
-    animate fade { duration: 200ms; easing: T.out; }
-    property <float> mfade: Ctl.sheet ? 0 : self.fade;
-    animate mfade { duration: 200ms; easing: T.out; }
-    Status { x: 20px; y: root.block-y; width: root.width - 40px; opacity: root.fade; }
-    dial := Rectangle {
-        x: 16px;
-        y: root.block-y + 102px;
-        width: root.width - 32px;
-        height: 86px;
-        opacity: root.mfade;
-        border-radius: 20px;
-        background: @linear-gradient(180deg, #0a0a0d 0%, #131317 100%);
-        border-width: 1px;
-        border-color: #ffffff12;
-        clip: true;
-        property <length> iw: self.width - 28px;
-        property <length> gap: 18px;
-        property <length> slot: (self.iw - self.gap) / 6;
-        property <int> sel: Home.index;
-        pure function cx(i: int) -> length { return 14px + self.slot * (i + 0.5) + (i >= 4 ? self.gap : 0px); }
-        // the needle's place, gliding; the ticks light as it passes
-        property <length> nx: self.cx(self.sel);
-        animate nx { duration: 560ms; easing: T.spring; }
-        property <color> lit: self.sel >= 4 ? Ctl.night : T.accent;
-        animate lit { duration: 320ms; easing: T.out; }
-        // the glass's top edge catching the light
-        Rectangle { x: 20px; y: 1px; width: parent.width - 40px; height: 1px; background: @linear-gradient(90deg, #ffffff00 0%, #ffffff14 50%, #ffffff00 100%); }
-        // the needle's glow on the scale
-        Rectangle {
-            x: parent.nx - 40px;
-            y: parent.height - 62px;
-            width: 80px;
-            height: 80px;
-            background: @radial-gradient(circle, parent.lit.with-alpha(0.22) 0%, parent.lit.with-alpha(0) 70%);
-        }
-        for t in 57: Rectangle {
-            property <length> tx: 14px + parent.iw * t / 56;
-            property <bool> in-gap: self.tx > 14px + 4 * parent.slot + 2px && self.tx < 14px + 4 * parent.slot + parent.gap - 2px;
-            property <float> near: max(0, 1 - abs(self.tx - parent.nx) / 34px);
-            x: self.tx - 0.5px;
-            y: parent.height - 14px - 7px;
+// A segmented track of modes first .. first + count - 1. The chosen one sits on a raised graphite face that slides
+// to it; when the choice moves to the other track the face shrinks out here and grows in there just after (the
+// approved "shrink out, grow in"). `bare`: no recessed well (on a panel). `icons`: icons only, the title names it.
+export component Track inherits Rectangle {
+    in property <int> first;
+    in property <int> count;
+    in property <bool> bare;
+    in property <bool> icons;
+    property <int> sel: Home.index >= self.first && Home.index < self.first + self.count ? Home.index - self.first : -1;
+    property <int> shown: 0;
+    init => { if (sel >= 0) { shown = sel; } }
+    changed sel => { if (sel >= 0) { shown = sel; } }
+    property <length> pad: self.bare ? 0px : 3px;
+    property <length> seg: (self.width - 2 * self.pad) / self.count;
+    height: 44px;
+    border-radius: 12px;
+    background: self.bare ? transparent : Ctl.well;
+    border-width: self.bare ? 0px : 1px;
+    border-color: #ffffff0c;
+    // hairlines between the segments, gone beside the face (as a native segmented control)
+    if !root.bare: Rectangle {
+        for i in root.count - 1: Rectangle {
+            x: root.pad + root.seg * (i + 1) - 0.5px;
+            y: (root.height - 16px) / 2;
             width: 1px;
-            height: 7px;
-            background: self.near > 0.01 ? parent.lit : #ffffff;
-            opacity: self.in-gap ? 0 : 0.16 + 0.6 * self.near;
+            height: 16px;
+            background: #ffffff17;
+            // gone while the face is over or beside it
+            opacity: max(1 - root.k, min(1, max(0, (abs(root.fx + root.seg / 2 - self.x) - root.seg / 2 - 2px) / 10px)));
         }
-        // the gap between waking and sleeping
-        Rectangle { x: 14px + 4 * parent.slot + parent.gap / 2 - 0.5px; y: parent.height - 32px; width: 1px; height: 18px; background: #ffffff1c; }
-        for i in 6: Rectangle {
-            property <length> c: parent.cx(i);
-            property <bool> on: i == parent.sel;
-            property <float> near: max(0, 1 - abs(self.c - parent.nx) / 34px);
-            x: self.c - parent.slot / 2;
-            width: parent.slot;
-            height: parent.height;
-            // the station's tick
-            Rectangle {
-                x: (parent.width - 1.5px) / 2;
-                y: parent.height - 14px - 14px;
-                width: 1.5px;
-                height: 14px;
-                background: parent.near > 0.01 ? root.lit-of(i) : #ffffff;
-                opacity: 0.3 + 0.6 * parent.near;
-            }
-            Text {
-                x: -6px;
-                y: 18px;
-                width: parent.width + 12px;
-                height: 20px;
-                text: Ctl.mode(i).label;
-                font-size: 13px;
+    }
+    // where the face is (gliding) and how much of it shows (1 = shown; shrinking out is quick, growing in waits
+    // for the other track's to have shrunk)
+    property <length> fx: self.pad + self.seg * self.shown;
+    animate fx { duration: 500ms; easing: T.spring; }
+    property <float> k: self.sel >= 0 ? 1 : 0;
+    animate k { duration: root.sel >= 0 ? 260ms : 160ms; delay: root.sel >= 0 ? 120ms : 0ms; easing: root.sel >= 0 ? T.spring : T.out; }
+    Rectangle {
+        x: root.fx;
+        y: root.pad;
+        width: root.seg;
+        height: root.height - 2 * root.pad;
+        Rectangle {
+            x: parent.width * (1 - root.k) / 2;
+            y: parent.height * (1 - root.k) / 2;
+            width: parent.width * root.k;
+            height: parent.height * root.k;
+            border-radius: root.bare ? 12px : 9px;
+            background: Ctl.face;
+            opacity: min(1, root.k * 3);
+            drop-shadow-blur: 5px;
+            drop-shadow-offset-y: 1px;
+            drop-shadow-color: #000000a0;
+            // its top edge catching the stage light
+            Rectangle { x: 9px; y: 0; width: max(0px, parent.width - 18px); height: 1px; background: #ffffff1c; }
+        }
+    }
+    for i in root.count: cell := Rectangle {
+        property <Mode> m: Ctl.mode(root.first + i);
+        // a label brightens as the face arrives under it and dims as it leaves (no jump ahead of the face)
+        property <float> lit: max(0, 1 - abs(root.fx - self.x) / root.seg) * max(0, (root.k - 0.4) / 0.6);
+        x: root.pad + root.seg * i;
+        y: root.pad;
+        width: root.seg;
+        height: root.height - 2 * root.pad;
+        accessible-role: button;
+        accessible-label: self.m.label;
+        for c in [0, 1]: Rectangle {
+            opacity: c == 0 ? 1 - cell.lit : cell.lit;
+            if !root.icons: Text {
+                text: cell.m.label;
+                font-size: 14px;
                 font-weight: 600;
                 horizontal-alignment: center;
                 vertical-alignment: center;
-                color: parent.on ? T.fg : touch.pressed ? T.fg2 : #8b8d94;
-                animate color { duration: 220ms; easing: T.out; }
+                color: c == 1 ? T.fg : touch.pressed ? T.fg2 : Ctl.dim;
             }
-            touch := TouchArea { clicked => { Home.set-mode(Ctl.mode(i).id); } }
-        }
-        // the needle
-        Rectangle {
-            x: parent.nx - 1px;
-            y: 44px;
-            width: 2px;
-            height: parent.height - 56px;
-            border-radius: 1px;
-            background: parent.lit;
-        }
-        Rectangle {
-            x: parent.nx - 3px;
-            y: 41px;
-            width: 6px;
-            height: 6px;
-            border-radius: 3px;
-            background: parent.lit;
-        }
-    }
-    pure function lit-of(i: int) -> color { return i >= 4 ? Ctl.night : T.accent; }
-    if !Home.ready: SetupCard { x: 20px; y: root.block-y + 188px + 20px; width: root.width - 40px; opacity: root.mfade; }
-
-    // the preset keys
-    Rectangle {
-        x: 16px;
-        y: root.height - Home.sab - Ctl.act-h;
-        width: root.width - 32px;
-        height: 72px;
-        border-radius: 20px;
-        background: @linear-gradient(180deg, #19191d 0%, #141417 100%);
-        border-width: 1px;
-        border-color: #ffffff10;
-        clip: true;
-        property <length> kw: self.width / 4;
-        for k[i] in [
-            { icon: Icons.bell, label: "Test ring", on: false },
-            { icon: Icons.grid, label: "Widget", on: Home.widgets || Home.channel },
-            { icon: Icons.chat, label: "Chats", on: Chats.unread },
-            { icon: Icons.phone, label: Ctl.call-label, on: Home.requested },
-        ]: Rectangle {
-            x: parent.kw * i;
-            width: parent.kw;
-            height: parent.height;
-            property <bool> down: key.pressed;
-            background: self.down ? #0c0c0e : transparent;
-            animate background { duration: 140ms; easing: T.out; }
-            // pressed: a shade along the top, as if the key went in
-            Rectangle {
-                height: 10px;
-                y: 0;
-                background: @linear-gradient(180deg, #00000066 0%, #00000000 100%);
-                opacity: parent.down ? 1 : 0;
-                animate opacity { duration: 140ms; }
-            }
-            if i > 0: Rectangle { x: 0; y: 16px; width: 1px; height: parent.height - 32px; background: #ffffff10; }
-            // the pip
-            Rectangle {
-                x: (parent.width - 5px) / 2;
-                y: 9px;
-                width: 5px;
-                height: 5px;
-                border-radius: 2.5px;
-                background: k.on || parent.down ? T.accent : #ffffff17;
-                opacity: i == 3 && Home.requested ? 0.55 + 0.45 * Math.sin(animation-tick() / 1000ms * 360deg) : 1;
-                drop-shadow-blur: k.on || parent.down ? 6px : 0px;
-                drop-shadow-color: T.accent;
-                animate background { duration: 160ms; }
-            }
-            Icon {
-                d: k.icon;
+            if root.icons: Icon {
+                d: cell.m.icon;
                 x: (parent.width - 20px) / 2;
-                y: parent.down ? 21px : 20px;
+                y: (parent.height - 20px) / 2;
                 width: 20px;
                 height: 20px;
-                stroke: i == 3 ? T.accent : T.fg;
+                stroke-width: 1.8px;
+                stroke: c == 1 ? T.fg : touch.pressed ? T.fg2 : #77777c;
             }
-            Text {
-                y: parent.down ? 47px : 46px;
-                width: parent.width;
-                height: 16px;
-                text: k.label;
-                font-size: 12.5px;
-                font-weight: 500;
-                color: T.fg2;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
-            key := TouchArea { clicked => { Ctl.act(i); } }
         }
+        touch := TouchArea { clicked => { Home.set-mode(parent.m.id); } }
     }
 }
 
-// 2 Amp: a hi-fi's selector knob, cut like a little record: grooves round an orange label, a knurled rim that turns.
-// The six modes sit round its top as on an amplifier's faceplate; tap one and the knob turns to it (its pointer goes
-// night-violet for the Sleep pair). The actions are four jewel sockets with silkscreened names.
-export component Amp inherits Rectangle {
+// The unread dot on Chats.
+component Dot inherits Rectangle {
+    width: 7px;
+    height: 7px;
+    border-radius: 3.5px;
+    background: T.accent;
+}
+
+// 1 Hairline: no surfaces, only a precise segmented system on the floor. The status centred; the four awake modes in
+// one recessed track and the Sleep pair in a half-width track under its middle (on the same segment grid); the
+// actions a toolbar of four equal cells under one hairline, Call the only orange. An action that is on (a sheet out
+// of it, a call on its way) lights its stretch of the hairline.
+export component Hairline inherits Rectangle {
     in property <length> block-y;
     property <float> fade: Home.kb > 0 ? 0 : 1;
     animate fade { duration: 200ms; easing: T.out; }
     property <float> mfade: Ctl.sheet ? 0 : self.fade;
     animate mfade { duration: 200ms; easing: T.out; }
-    property <[angle]> at: [165deg, 135deg, 105deg, 75deg, 45deg, 15deg];
-    property <length> kx: self.width / 2;
-    property <length> ky: self.block-y + 92px + 122px;
-    property <length> r: 104px;
-    property <int> sel: Home.index;
-    property <angle> turn: 90deg - self.at[self.sel]; // the pointer is drawn straight up
-    animate turn { duration: 650ms; easing: T.spring; }
-    property <color> lit: self.sel >= 4 ? Ctl.night : T.accent;
-    animate lit { duration: 320ms; easing: T.out; }
+    property <length> tw: self.width - 40px;
     Status { x: 20px; y: root.block-y; width: root.width - 40px; opacity: root.fade; }
-    Rectangle {
-        opacity: root.mfade;
-        // a dot under each name, the chosen one lit
-        for i in 6: Rectangle {
-            property <bool> on: i == root.sel;
-            x: root.kx + 74px * Math.cos(root.at[i]) - self.width / 2;
-            y: root.ky - 74px * Math.sin(root.at[i]) - self.height / 2;
-            width: self.on ? 6px : 4px;
-            height: self.width;
-            border-radius: self.width / 2;
-            background: self.on ? root.lit : #ffffff30;
-            animate width { duration: 300ms; easing: T.spring; }
-        }
-        for i in 6: Rectangle {
-            property <bool> on: i == root.sel;
-            x: root.kx + root.r * Math.cos(root.at[i]) - 36px;
-            y: root.ky - root.r * Math.sin(root.at[i]) - 22px;
-            width: 72px;
-            height: 44px;
-            Text {
-                text: Ctl.mode(i).label;
-                font-size: 13px;
-                font-weight: 600;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-                color: parent.on ? T.fg : touch.pressed ? T.fg2 : i >= 4 ? #8b88a3 : #85878e;
-                animate color { duration: 220ms; easing: T.out; }
-            }
-            touch := TouchArea { clicked => { Home.set-mode(Ctl.mode(i).id); } }
-        }
-        // the knob
-        Rectangle {
-            x: root.kx - 60px;
-            y: root.ky - 60px;
-            width: 120px;
-            height: 120px;
-            border-radius: 60px;
-            background: @linear-gradient(180deg, #36373d 0%, #0d0d10 100%);
-            drop-shadow-blur: 24px;
-            drop-shadow-offset-y: 10px;
-            drop-shadow-color: #000000c0;
-            // the turning part: knurled rim, grooves, label and pointer
-            Rectangle {
-                width: 120px;
-                height: 120px;
-                transform-origin: { x: 60px, y: 60px };
-                transform-rotation: root.turn;
-                for n in 48: Rectangle {
-                    property <angle> a: n * 7.5deg;
-                    x: 60px + 55px * Math.cos(self.a) - 1.25px;
-                    y: 60px + 55px * Math.sin(self.a) - 1.25px;
-                    width: 2.5px;
-                    height: 2.5px;
-                    border-radius: 1.25px;
-                    background: #00000099;
-                }
-                Rectangle {
-                    x: 14px;
-                    y: 14px;
-                    width: 92px;
-                    height: 92px;
-                    border-radius: 46px;
-                    background: @radial-gradient(circle, #1f2024 0%, #18191c 75%, #121316 100%);
-                    border-width: 1px;
-                    border-color: #00000080;
-                    for g in [78px, 66px, 54px, 44px]: Rectangle {
-                        x: (92px - g) / 2;
-                        y: (92px - g) / 2;
-                        width: g;
-                        height: g;
-                        border-radius: g / 2;
-                        border-width: 1px;
-                        border-color: #ffffff09;
-                    }
-                    Rectangle {
-                        x: 33px;
-                        y: 33px;
-                        width: 26px;
-                        height: 26px;
-                        border-radius: 13px;
-                        background: @linear-gradient(180deg, #e2875f 0%, #b85a36 100%);
-                        Rectangle { x: 11px; y: 11px; width: 4px; height: 4px; border-radius: 2px; background: #1a1a1d; }
-                    }
-                    // the pointer
-                    Rectangle {
-                        x: 44px;
-                        y: 7px;
-                        width: 4px;
-                        height: 18px;
-                        border-radius: 2px;
-                        background: root.lit;
-                    }
-                }
-            }
-            // light on the knob (it stays put while the knob turns)
-            Rectangle {
-                x: 22px;
-                y: 8px;
-                width: 76px;
-                height: 40px;
-                border-radius: 20px;
-                background: @radial-gradient(circle, #ffffff12 0%, #ffffff00 70%);
-            }
-        }
-    }
-    if !Home.ready: SetupCard { x: 20px; y: root.block-y + 290px + 20px; width: root.width - 40px; opacity: root.mfade; }
+    Track { x: 20px; y: root.block-y + 96px; width: root.tw; first: 0; count: 4; opacity: root.mfade; }
+    Track { x: 20px + root.tw / 4; y: root.block-y + 150px; width: root.tw / 2; first: 4; count: 2; opacity: root.mfade; }
+    if !Home.ready: SetupCard { x: 20px; y: root.block-y + 194px + 20px; width: root.width - 40px; opacity: root.mfade; }
 
-    // the jewel sockets
-    HorizontalLayout {
+    property <length> zt: root.height - Home.sab - Ctl.act-h;
+    property <length> cw: (self.width - 40px) / 4;
+    Rectangle { x: 20px; y: root.zt; width: root.width - 40px; height: 1px; background: Ctl.line; }
+    for k[i] in [
+        { icon: Icons.bell, label: "Test ring", on: false },
+        { icon: Icons.grid, label: "Widget", on: Home.widgets || Home.channel },
+        { icon: Icons.chat, label: "Chats", on: false },
+        { icon: Icons.phone, label: Ctl.call-label, on: Home.requested },
+    ]: Rectangle {
+        x: 20px + root.cw * i;
+        y: root.zt;
+        width: root.cw;
+        height: 72px;
+        accessible-role: button;
+        accessible-label: k.label;
+        // its stretch of the hairline, lit while it is on
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: 0;
+            width: k.on ? parent.width - 28px : 0px;
+            height: 1px;
+            background: i == 3 ? T.accent : T.fg2;
+            animate width { duration: 420ms; easing: T.spring; }
+        }
+        Rectangle {
+            x: 6px;
+            y: 6px;
+            width: parent.width - 12px;
+            height: parent.height - 8px;
+            border-radius: 14px;
+            background: cell.pressed ? #ffffff0a : transparent;
+            animate background { duration: 140ms; }
+        }
+        Icon {
+            d: k.icon;
+            x: (parent.width - 22px) / 2;
+            y: 16px;
+            width: 22px;
+            height: 22px;
+            stroke-width: 1.8px;
+            stroke: i == 3 ? T.accent : cell.pressed ? T.fg2 : T.fg;
+        }
+        if i == 2 && Chats.unread: Dot { x: parent.width / 2 + 9px; y: 13px; }
+        Text {
+            y: 44px;
+            width: parent.width;
+            height: 16px;
+            text: k.label;
+            font-size: 12.5px;
+            font-weight: 500;
+            color: i == 3 && Home.requested ? T.accent : k.on ? T.fg : T.fg2;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            animate color { duration: 200ms; }
+        }
+        cell := TouchArea { clicked => { Ctl.act(i); } }
+    }
+}
+
+// 2 Panel: everything in one object, a smoked-graphite slab resting on the floor under the light, read top to bottom
+// like a grouped list: the status beside a small state dot, a hairline, the six modes as icons (the title names the
+// chosen one), a hairline, then three quiet actions and Call as the one filled pill.
+export component Panel inherits Rectangle {
+    in property <length> block-y;
+    property <float> fade: Home.kb > 0 ? 0 : 1;
+    animate fade { duration: 200ms; easing: T.out; }
+    property <float> mfade: Ctl.sheet ? 0 : self.fade;
+    animate mfade { duration: 200ms; easing: T.out; }
+    if !Home.ready: SetupCard { x: 20px; y: root.block-y + 4px; width: root.width - 40px; opacity: root.fade; }
+    property <color> state: Home.index >= 4 ? Ctl.night : Home.index == 3 ? Ctl.dim : T.accent;
+    animate state { duration: 300ms; easing: T.out; }
+    // a description on two lines makes the slab 20 px taller, upwards; everything under the status keeps its place
+    probe := Text { visible: false; text: Ctl.desc; font-size: 14px; }
+    property <bool> two: probe.preferred-width > root.width - 32px - 58px;
+    property <length> ph: self.two ? 244px : 224px;
+    animate ph { duration: 420ms; easing: T.spring; }
+    slab := Rectangle {
         x: 16px;
-        y: root.height - Home.sab - Ctl.act-h;
+        y: root.height - Home.sab - 12px - root.ph;
         width: root.width - 32px;
-        height: 80px;
+        height: root.ph;
+        opacity: root.fade;
+        border-radius: 28px;
+        background: #191918;
+        border-width: 1px;
+        border-color: #ffffff10;
+        drop-shadow-blur: 32px;
+        drop-shadow-offset-y: 12px;
+        drop-shadow-color: #000000d0;
+        property <length> iw: self.width - 40px;
+        // the slab's top edge in the stage light
+        Rectangle { x: 28px; y: 0; width: parent.width - 56px; height: 1px; background: #ffffff16; }
+        // the status
+        Rectangle {
+            x: 20px;
+            y: 27px;
+            width: 8px;
+            height: 8px;
+            border-radius: 4px;
+            background: root.state;
+        }
+        SwapLines {
+            x: 38px;
+            y: 18px;
+            width: parent.iw - 18px;
+            height: 26px;
+            text: Ctl.title;
+            font-size: 19px;
+            weight: 600;
+            spacing: -0.1px;
+            color: T.fg;
+            centre: false;
+        }
+        SwapLines {
+            x: 38px;
+            y: 47px;
+            width: parent.iw - 18px;
+            height: 40px;
+            text: Ctl.desc;
+            font-size: 14px;
+            centre: false;
+        }
+        Rectangle { x: 20px; y: parent.height - 143px; width: parent.iw; height: 1px; background: Ctl.line; }
+        // the modes: four awake, a hairline, the Sleep pair
+        property <length> mc: (self.iw - 17px) / 6;
+        Track { x: 20px; y: parent.height - 132px; width: parent.mc * 4; first: 0; count: 4; bare: true; icons: true; opacity: root.mfade; }
+        Rectangle { x: 20px + parent.mc * 4 + 8px; y: parent.height - 120px; width: 1px; height: 20px; background: Ctl.line; opacity: root.mfade; }
+        Track { x: 20px + parent.mc * 4 + 17px; y: parent.height - 132px; width: parent.mc * 2; first: 4; count: 2; bare: true; icons: true; opacity: root.mfade; }
+        Rectangle { x: 20px; y: parent.height - 77px; width: parent.iw; height: 1px; background: Ctl.line; }
+        // the actions
         for k[i] in [
-            { icon: Icons.bell, label: "TEST RING", on: false },
-            { icon: Icons.grid, label: "WIDGET", on: Home.widgets || Home.channel },
-            { icon: Icons.chat, label: "CHATS", on: false },
-            { icon: Icons.phone, label: Home.requested ? "CALLING YOU…" : Home.caller == "codex" ? "CALL CODEX" : "CALL CLAUDE", on: Home.requested },
+            { icon: Icons.bell, label: "Test ring", on: false },
+            { icon: Icons.grid, label: "Widget", on: Home.widgets || Home.channel },
+            { icon: Icons.chat, label: "Chats", on: false },
         ]: Rectangle {
-            property <bool> down: sock.pressed;
-            Rectangle {
-                x: (parent.width - 54px) / 2;
-                y: 0;
-                width: 54px;
-                height: 54px;
-                border-radius: 27px;
-                background: @linear-gradient(180deg, #303137 0%, #0a0a0c 100%);
-                transform-origin: { x: 27px, y: 27px };
-                transform-scale: parent.down ? 0.94 : 1;
-                animate transform-scale { duration: 160ms; easing: T.out; }
-                Rectangle {
-                    x: 4px;
-                    y: 4px;
-                    width: 46px;
-                    height: 46px;
-                    border-radius: 23px;
-                    background: sock.pressed ? #0f1012 : #1a1b1f;
-                    border-width: k.on ? 1.5px : 0px;
-                    border-color: T.accent.with-alpha(i == 3 && Home.requested ? 0.55 + 0.45 * Math.sin(animation-tick() / 1000ms * 360deg) : 1);
-                    animate background { duration: 140ms; }
-                    Icon {
-                        d: k.icon;
-                        x: 13px;
-                        y: 13px;
-                        width: 20px;
-                        height: 20px;
-                        stroke: i == 3 ? T.accent : T.fg;
-                    }
+            x: 14px + 48px * i;
+            y: parent.height - 62px;
+            width: 44px;
+            height: 44px;
+            border-radius: 22px;
+            background: b.pressed ? #ffffff14 : k.on ? #ffffff10 : transparent;
+            animate background { duration: 160ms; }
+            accessible-role: button;
+            accessible-label: k.label;
+            Icon {
+                d: k.icon;
+                x: 11px;
+                y: 11px;
+                width: 22px;
+                height: 22px;
+                stroke-width: 1.8px;
+                stroke: k.on ? T.fg : T.fg2;
+            }
+            if i == 2 && Chats.unread: Dot { x: 30px; y: 8px; }
+            b := TouchArea { clicked => { Ctl.act(i); } }
+        }
+        Rectangle {
+            x: 14px + 48px * 3 + 10px;
+            y: parent.height - 62px;
+            width: parent.width - self.x - 14px;
+            height: 44px;
+            border-radius: 22px;
+            background: Home.requested ? transparent : call.pressed ? #c4664a : T.accent;
+            border-width: 1px;
+            border-color: Home.requested ? T.accent.with-alpha(0.7) : transparent;
+            animate background, border-color { duration: 240ms; easing: T.out; }
+            accessible-role: button;
+            accessible-label: Ctl.call-label;
+            HorizontalLayout {
+                alignment: center;
+                spacing: 8px;
+                Icon {
+                    d: Icons.phone;
+                    width: 18px;
+                    height: 18px;
+                    y: (parent.height - 18px) / 2;
+                    stroke-width: 1.9px;
+                    stroke: Home.requested ? T.accent : #ffffff;
                 }
-                if i == 2 && Chats.unread: Rectangle { x: 40px; y: 2px; width: 11px; height: 11px; border-radius: 5.5px; background: T.accent; border-width: 2px; border-color: #111214; }
+                Text {
+                    text: Ctl.call-label;
+                    font-size: 15px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                    color: Home.requested ? T.accent : #ffffff;
+                }
             }
-            Text {
-                y: 64px;
-                width: parent.width;
-                height: 14px;
-                text: k.label;
-                font-size: 10.5px;
-                font-weight: 600;
-                letter-spacing: 1.1px;
-                color: T.fg2;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
-            sock := TouchArea { clicked => { Ctl.act(i); } }
+            call := TouchArea { clicked => { Ctl.act(3); } }
         }
     }
 }
