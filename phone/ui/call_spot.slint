@@ -167,9 +167,22 @@ export component Glyph inherits Rectangle {
     in property <color> ink: #ebe5dc;
     in property <color> lit: #f2b089;
     in property <bool> show-label: true;
+    in property <bool> glow; // on: a small warm pool of light under the icon as well
     callback clicked;
     width: 60px;
     height: root.show-label ? 52px : 44px;
+    Rectangle {
+        x: (root.width - 56px) / 2;
+        y: (root.show-label ? 13px : root.height / 2) - 28px;
+        width: 56px;
+        height: 56px;
+        background: @radial-gradient(circle, #f2b08955 0%, #f2b08922 45%, #f2b08900 70%);
+        opacity: root.glow && root.on ? 1 : 0;
+        transform-origin: { x: 28px, y: 28px };
+        transform-scale: root.glow && root.on ? 1 : 0.6;
+        animate opacity { duration: 260ms; easing: T.out; }
+        animate transform-scale { duration: 480ms; easing: T.spring; }
+    }
     Rectangle {
         transform-origin: { x: root.width / 2, y: 13px };
         transform-scale: touch.pressed && root.enabled ? 0.86 : 1;

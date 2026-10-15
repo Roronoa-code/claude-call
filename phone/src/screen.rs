@@ -339,9 +339,9 @@ pub fn run(app: android_activity::AndroidApp) {
         move |t| e.send_typed(&t)
     });
     let now = e.now();
-    // PREVIEW (branch preview/call-screen-2): which call screen shows. debug.callme.call 0 (or unset): Comic as shipped
-    // (look 3); 1-4: round 2's Subtitles, Script, Your light and Camera (looks 5-8).
-    let pick = stage::prop_or(c"debug.callme.call", 0, 4);
+    // Which call screen shows: debug.callme.call 4 (or unset): Camera, Mani's pick (look 8); 0: Comic, as shipped before
+    // (look 3); 1-3: round 2's Subtitles, Script and Your light (looks 5-7).
+    let pick = stage::prop_or(c"debug.callme.call", 4, 4);
     let look = if pick == 0 { 3 } else { 4 + pick };
     ui.global::<Call>().set_look(look as i32);
     let frame = Rc::new(std::cell::RefCell::new(Frame {

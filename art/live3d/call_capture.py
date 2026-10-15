@@ -21,7 +21,8 @@ TAPS = {
     1: dict(answer=(293, -74), type=(291, -74), more=(357, -74), shut=(357, -74), hang=(52, -74)),
     2: dict(answer=(359, -72), type=(206, -72), more=(254, -72), shut=(290, -72), hang=(52, -72)),
     3: dict(answer=(288, -86), type=(288, -86), more=(370, -86), shut=(370, -86), hang=(206, -86)),
-    4: dict(answer=(289, -74), type=(377, -184), more=(377, -280), shut=(377, -280), hang=(88, -74)),
+    4: dict(answer=(288, -88), pre_type=(371, -88), type=(206, -158), more=(371, -88), shut=(371, -88), hang=(206, -88),
+            mute=(41, -88), quiet=(123, -88), transcript=(288, -88)),
 }
 CF = 0x08000000  # no console window
 
@@ -46,6 +47,7 @@ class Run:
                    CALLME_LOCAL='1', CALLME_AGENT=agent, CALLME_DEBUG='1')
         self.p = subprocess.Popen([EXE], env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1, creationflags=CF)
         self.link, self.pending, self.nid, self.lock = None, {}, 0, threading.Lock()
+        self.rec_secs, self.rec = 0, None
         threading.Thread(target=self._err, daemon=True).start()
         threading.Thread(target=self._out, daemon=True).start()
         self.req('initialize', {'protocolVersion': '2025-06-18', 'capabilities': {}, 'clientInfo': {'name': 'step4', 'version': '1'}})
@@ -121,6 +123,9 @@ class Run:
         port = re.search(r':(\d+)', self.link.split('//', 1)[1]).group(1)
         adb('reverse', f'tcp:{port}', f'tcp:{port}')
         self.say('link ' + self.link)
+        if self.rec_secs:  # the server can take a while to start: record from here, so the call fits
+            self.rec = self.record(self.rec_secs, 'call')
+            time.sleep(1.0)
         adb('shell', f"am start -n fyi.mani.callme/.CallActivity --es link '{self.link}'")
         return call
 
@@ -148,8 +153,7 @@ def main():
         r.shot('probe-ended')
         r.p.kill()
         return
-    rec = r.record(100, 'call')
-    time.sleep(1.0)
+    r.rec_secs = 150
     first, res = r.ring(f"Hi, it's {who}. I finished the new call screen. Want to hear what changed before I push it?")
     time.sleep(1.6)
     r.shot('1-ringing')
@@ -174,6 +178,9 @@ def main():
     r.shot('3b-hearing')
     adb('shell', 'setprop', 'debug.callme.hear', "''")
     time.sleep(1.5)
+    if 'pre_type' in TAPS[look]:  # Type sits behind More
+        r.tap('pre_type')
+        time.sleep(0.8)
     r.tap('type')
     time.sleep(1.6)
     for w in ['Yes', 'please,', 'the', 'short', 'version.']:  # a word at a time, as a person types (a burst can drop letters)
@@ -207,10 +214,27 @@ def main():
         r.shot('7d-more-open')
         r.tap('shut')
         time.sleep(1.2)
+    if 'mute' in TAPS[look]:  # the row's own toggles: on, shown, off again
+        r.tap('mute')
+        time.sleep(0.9)
+        r.shot('7e-mute-on')
+        r.tap('quiet')
+        time.sleep(0.9)
+        r.shot('7f-quiet-on')
+        r.tap('mute')
+        r.tap('quiet')
+        time.sleep(0.4)
+        r.tap('transcript')
+        time.sleep(0.2)
+        r.shot('7g-transcript-mid')
+        time.sleep(1.0)
+        r.shot('7h-transcript-open')
+        r.tap('transcript')
+        time.sleep(1.0)
     r.tap('hang')
     time.sleep(0.35)
     r.shot('8-ended')
-    rec.join()
+    r.rec.join()
     r.p.kill()
     vid = os.path.join(r.dir, 'call.mp4')
     subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', vid, '-vf', 'scale=540:-2', '-c:v', 'libx264', '-crf', '26',

@@ -2,9 +2,10 @@
 // the shot is wide: the whole cone of light, the caller small in it, the light swelling with each ring. Answer, and the
 // camera dollies in until the caller fills the frame (caller.rs `shot`); for your turn it eases back a little, a
 // little further while it works, wide again on hold and at the end. The words are a large lower third, left-aligned
-// over the dark floor, each fading in as it is said; yours take their place in cool italics. A slim rail of bare
-// icons on the right (Mute, Type, Speaker, More: Transcript, Quiet and In 5 min; with More open those three show their names),
-// Hang up and Answer / Done talking at the bottom.
+// over the dark floor, each fading in as it is said; yours take their place in cool italics. One calm row along the
+// bottom, in thumb reach: Mute, Quiet, the big red Hang up in the middle, Transcript, More (Speaker, Type, In 5 min rise
+// in a row above it). While it rings, Decline and Answer either side of the middle. There is no Done talking: your
+// turn ends by itself after a short silence (engine/hearing.rs).
 import { T, Icon, Icons, SwapText } from "parts.slint";
 import { Call } from "call_data.slint";
 import { Sheets } from "call_kit.slint";
@@ -23,7 +24,7 @@ export component CameraLook inherits Rectangle {
     property <float> k: Call.face-k;
     property <float> close: Math.max(0, Math.min(1, (root.k - 0.62) / (1.15 - 0.62)));
     property <length> fy0: H * (0.53 + 0.07 * root.close);
-    property <length> by: H - Call.sab - 22px - 56px;
+    property <length> by: H - Call.sab - 96px; // the bottom row: Hang up is 64 px round, names under the icons
     property <length> words-top0: H * 0.7;
     property <length> dy: keys ? Math.max(0px, root.fy0 + 24px - (field-top - 120px)) : 0px;
     property <length> fy: round((root.fy0 - root.dy) / 1phx) * 1phx;
@@ -37,7 +38,6 @@ export component CameraLook inherits Rectangle {
     SwapText { x: 24px; y: Call.sat + 33px; width: 240px; height: 18px; text: Call.time-text; key: Call.time-key; font-size: 12.5px; color: T.muted; }
 
     // ---- The lower third ----
-    property <length> rail-w: 52px;
     property <length> words-top: keys ? field-top - 116px : root.words-top0;
     property <length> words-bottom: keys ? field-top - 12px : root.by - 18px;
     property <string> label: Call.notice != "" ? Call.notice.to-uppercase()
@@ -47,9 +47,11 @@ export component CameraLook inherits Rectangle {
     Rectangle {
         x: 24px;
         y: root.words-top;
-        width: W - 24px - root.rail-w - 8px;
+        width: W - 48px;
         height: root.words-bottom - root.words-top;
+        opacity: root.more ? 0 : 1; // More's row rises where its foot is: it steps back while More is open
         animate y, height { duration: 300ms; easing: T.out; }
+        animate opacity { duration: 260ms; easing: T.out; }
         lmeasure := Text { text: root.label; font-size: 11px; font-weight: 600; letter-spacing: 1.6px; visible: false; }
         SwapText {
             y: 0;
@@ -95,92 +97,101 @@ export component CameraLook inherits Rectangle {
         }
     }
 
-    // ---- The rail: bare icons up the right edge (Mute, Type, Speaker, More); More adds Transcript, Quiet, In 5 min ----
+    // ---- The bottom row: Mute, Quiet, Hang up, Transcript, More; More raises Speaker, Type and In 5 min above it ----
     property <bool> more;
-    property <length> rail-bottom: root.by - 8px;
-    property <length> rail-step: 48px;
-    for i in 7: Glyph {
-        property <bool> shown: i < 4 || root.more;
-        x: W - 8px - root.rail-w + (root.rail-w - self.width) / 2;
-        y: root.rail-bottom - (i + 1) * root.rail-step + (self.shown ? 0 : 10px);
-        width: root.rail-w;
-        show-label: false;
-        icon: i == 0 ? (Call.muted ? Icons.mic-off : Icons.mic) : i == 1 ? Icons.keyboard : i == 2 ? Icons.speaker
-            : i == 3 ? (root.more ? Icons.close : "M5 12h0.01 M12 12h0.01 M19 12h0.01") : i == 4 ? Icons.captions : i == 5 ? Icons.speaker-off : Icons.later;
-        label: i == 0 ? (Call.muted ? "Unmute" : "Mute") : i == 1 ? "Type" : i == 2 ? "Speaker" : i == 3 ? (root.more ? "Close" : "More") : i == 4 ? "Transcript" : i == 5 ? "Quiet" : "In 5 min";
-        on: i == 0 ? Call.muted : i == 1 ? Call.typing : i == 2 ? Call.speaker : i == 4 ? Call.caps-open : i == 5 ? Call.quiet : false;
-        enabled: self.shown && !root.incoming && !root.ended && self.opacity > 0.9;
-        opacity: (self.shown ? 1 : 0) * (root.incoming || root.ended || root.keys ? 0 : 1);
-        animate opacity { duration: 240ms; delay: root.incoming ? 0ms : root.more && i >= 4 ? (i - 3) * 50ms : 120ms + i * 35ms; easing: T.out; }
-        animate y { duration: 480ms; delay: root.more && i >= 4 ? (i - 3) * 50ms : 0ms; easing: T.spring; }
+    property <length> step: Math.min(84px, (W - 32px) / 4.6);
+    property <length> mid: root.by + 32px; // the row's icons and Hang up share this middle line
+    for i in 4: Glyph {
+        property <int> at: i == 0 ? -2 : i == 1 ? -1 : i == 2 ? 1 : 2;
+        x: W / 2 + self.at * root.step - self.width / 2;
+        y: root.mid - 13px;
+        glow: true;
+        icon: i == 0 ? (Call.muted ? Icons.mic-off : Icons.mic) : i == 1 ? Icons.speaker-off : i == 2 ? Icons.captions
+            : (root.more ? Icons.close : "M5 12h0.01 M12 12h0.01 M19 12h0.01");
+        label: i == 0 ? (Call.muted ? "Muted" : "Mute") : i == 1 ? (Call.quiet ? "Quiet on" : "Quiet") : i == 2 ? "Transcript" : (root.more ? "Close" : "More");
+        on: i == 0 ? Call.muted : i == 1 ? Call.quiet : i == 2 ? Call.caps-open : false;
+        // live once shown: a second tap on Answer (where Transcript appears) lands on nothing
+        enabled: !root.incoming && !root.ended && self.opacity > 0.9;
+        opacity: root.incoming || root.ended || root.keys ? 0 : 1;
+        animate opacity { duration: 240ms; delay: root.incoming ? 0ms : 140ms + 50ms * Math.abs(self.at); easing: T.out; }
         clicked => {
             if (i == 0) { Call.toggle-mute(); }
-            else if (i == 1) { Call.typing = !Call.typing; root.more = false; }
-            else if (i == 2) { Call.toggle-speaker(); }
-            else if (i == 3) { root.more = !root.more; }
-            else if (i == 4) { Call.caps-open = !Call.caps-open; root.more = false; }
-            else if (i == 5) { Call.toggle-quiet(); }
+            else if (i == 1) { Call.toggle-quiet(); }
+            else if (i == 2) { Call.caps-open = !Call.caps-open; root.more = false; }
+            else { root.more = !root.more; }
+        }
+    }
+    for j in 3: Glyph {
+        property <bool> shown: root.more && !root.ended && !root.keys;
+        x: W / 2 + (j - 1) * root.step - self.width / 2;
+        y: root.mid - 13px - 70px + (self.shown ? 0 : 12px);
+        glow: true;
+        icon: j == 0 ? Icons.speaker : j == 1 ? Icons.keyboard : Icons.later;
+        label: j == 0 ? "Speaker" : j == 1 ? "Type" : "In 5 min";
+        on: j == 0 ? Call.speaker : j == 1 ? Call.typing : false;
+        enabled: self.shown;
+        opacity: self.shown ? 1 : 0;
+        animate y { duration: self.shown ? 520ms : 220ms; delay: self.shown ? (2 - j) * 45ms : 0ms; easing: self.shown ? T.spring : T.close; }
+        animate opacity { duration: self.shown ? 280ms : 160ms; delay: self.shown ? (2 - j) * 45ms : 0ms; easing: T.out; }
+        clicked => {
+            if (j == 0) { Call.toggle-speaker(); }
+            else if (j == 1) { Call.typing = !Call.typing; root.more = false; }
             else { Call.call-back(); }
         }
     }
 
-    // More's three show their names to their left (above the words, so they never cross them)
-    for j in 3: Text {
-        property <int> i: j + 4;
-        x: W - 8px - root.rail-w - 112px;
-        y: root.rail-bottom - (self.i + 1) * root.rail-step;
-        width: 108px;
-        height: 44px;
-        text: j == 0 ? "Transcript" : j == 1 ? "Quiet" : "In 5 min";
-        font-size: 12px;
-        color: #ebe5dcb0;
-        horizontal-alignment: right;
-        vertical-alignment: center;
-        opacity: root.more && !root.keys ? 1 : 0;
-        animate opacity { duration: root.more ? 260ms : 140ms; delay: root.more ? 80ms + j * 50ms : 0ms; easing: T.out; }
-    }
-
-    // ---- Hang up (Decline) and Answer / Done talking ----
+    // ---- Hang up in the middle; while it rings, Decline and Answer either side of it ----
     Pill {
-        x: 24px;
+        x: (root.incoming ? W / 2 - root.step : W / 2) - 32px;
         y: root.by;
-        width: 128px;
+        width: 64px;
+        height: 64px;
         icon: Icons.phone;
-        label: root.incoming ? "Decline" : "Hang up";
         turn: true;
         fill: Spot.red;
         enabled: !root.ended;
         opacity: root.ended || root.keys ? 0 : 1;
+        animate x { duration: 520ms; easing: T.spring; }
         animate opacity { duration: 260ms; easing: T.out; }
         clicked => { Call.hang-up(); }
     }
-    property <bool> big-live: root.incoming || Call.can-finish;
     Pill {
-        x: W - 24px - self.width;
+        x: W / 2 + root.step - 32px;
         y: root.by;
-        width: Math.min(196px, W - 24px - 128px - 12px - 24px);
-        icon: root.incoming ? Icons.phone : Icons.check;
-        label: root.incoming ? "Answer" : "Done talking";
-        fill: root.incoming ? Spot.green : Spot.warm;
-        ink: root.incoming ? white : #1b1713;
-        enabled: root.big-live && !root.ended;
-        opacity: root.big-live && !root.ended && !root.keys ? 1 : 0;
-        transform-origin: { x: self.width / 2, y: 28px };
-        transform-scale: root.big-live ? 1 : 0.9;
-        animate opacity { duration: root.big-live ? 260ms : 180ms; easing: T.out; }
-        animate transform-scale { duration: root.big-live ? 520ms : 220ms; easing: root.big-live ? T.spring : T.close; }
-        clicked => { if (root.incoming) { Call.answer(); } else { Call.done-talking(); } }
+        width: 64px;
+        height: 64px;
+        icon: Icons.phone;
+        fill: Spot.green;
+        enabled: root.incoming;
+        opacity: root.incoming ? 1 : 0;
+        transform-origin: { x: 32px, y: 32px };
+        transform-scale: root.incoming ? 1 : 0.6;
+        animate opacity { duration: 200ms; easing: T.out; }
+        animate transform-scale { duration: 300ms; easing: T.close; }
+        clicked => { Call.answer(); }
+    }
+    for side in 2: Text {
+        x: W / 2 + (side == 0 ? -1 : 1) * root.step - 50px;
+        y: root.by + 70px;
+        width: 100px;
+        height: 16px;
+        text: side == 0 ? "Decline" : "Answer";
+        font-size: 11px;
+        color: #ebe5dc99;
+        horizontal-alignment: center;
+        opacity: root.incoming ? 1 : 0;
+        animate opacity { duration: 200ms; }
     }
 
     Sheets {
         width: W;
         height: H;
-        caps-x: W - 8px - root.rail-w / 2 - 22px;
-        caps-y: root.rail-bottom - 5 * root.rail-step;
-        type-x: W - 8px - root.rail-w / 2 - 22px;
-        type-y: root.rail-bottom - 2 * root.rail-step;
+        caps-x: W / 2 + root.step - 22px;
+        caps-y: root.mid - 22px;
+        type-x: W / 2 - 22px;
+        type-y: root.mid - 70px - 22px;
         fsize: 44px;
-        keep: H - (root.rail-bottom - 4 * root.rail-step) - Call.sab + 12px;
+        keep: H - (root.mid - 30px) - Call.sab; // the transcript stops above the row, so Transcript can shut it
         lift: 96px;
     }
     changed phase => { if (root.ended) { root.more = false; } }
