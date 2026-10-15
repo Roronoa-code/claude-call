@@ -21,7 +21,7 @@ const fn s(k: f32, floor: f32, stage: [f32; 4], key: [f32; 4], key_col: [f32; 4]
 pub static STAGES: [Stage; 5] = [
     s(1.0, 0.0, [0.0; 4], [0.0; 4], [0.0; 4], [0.0; 4]),
     // spot: one cone of light straight down on a glossy black floor
-    s(1.08, 110.0, [0.32, 0.0, 0.08, 3.0], [0.0, 1.0, 0.15, 0.2], [-0.05, -0.12, -0.2, -0.45], [0.32, 2.0, 30.0, 0.35]),
+    s(1.08, 110.0, [0.32, 0.0, 0.08, 3.0], [0.0, 1.0, 0.15, 0.2], [-0.05, -0.12, -0.2, -0.45], [0.3, 1.0, 30.0, 0.35]),
     // desk: a walnut desk under a warm lamp; its front edge cuts the reflections
     s(1.0, 60.0, [0.32, 0.0, 0.08, 2.2], [-0.4, 0.7, 0.42, 0.3], [0.1, -0.05, -0.2, -0.3], [0.5, 4.0, 3.0, 0.2]),
     // moon: a night room, moonlight through a window over the floor and up the wall

@@ -562,9 +562,11 @@ void main() {
         float tf = -ro.y / rd.y;
         vec3 f = ro + rd * tf;
         if ((tf < tHit || cover < 1.0) && length(f.xz) < 2.6) {
-            float o = 0.0, s = 1.0;
+            // on a lit stage only the floor right by him darkens (the key light's soft shadow does the rest), or
+            // the gap under his body reads as a hard black block between his legs
+            float o = 0.0, s = 1.0, hs = uShadow.x > 0.0 ? 0.45 : 1.0;
             for (int i = 0; i < 5; i++) {
-                float h = 0.05 + 0.17 * float(i);
+                float h = (0.05 + 0.17 * float(i)) * hs;
                 o += max(h - map(f + vec3(0.0, h, 0.0)), 0.0) * s;
                 s *= 0.7;
             }
