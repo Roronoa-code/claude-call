@@ -425,7 +425,8 @@ fn show(ui: &HomeScreen) {
             head: Default::default(),
         })
         .collect();
-    let rows = chat_view::arrange(rows);
+    let (hero, line) = chat_view::hero(&rows);
+    let rows = chat_view::arrange(rows, &hero.id);
     ROWS.with(|model| {
         // gone chats out; then row by row: the same chat changes in place, a chat that moved or came back goes in
         for i in (0..model.row_count()).rev() {
@@ -453,7 +454,6 @@ fn show(ui: &HomeScreen) {
         }
     });
     c.set_unread(st.chats.iter().any(|c| c.unread > 0));
-    let (hero, line) = chat_view::hero(&rows);
     c.set_hero(hero);
     c.set_hero_line(line.into());
     match st.get(&cur) {
@@ -628,6 +628,9 @@ pub fn wire(ui: &HomeScreen) -> Tracker {
     // PREVIEW: the PC played here with debug.callme.fake (the test emulator only; fake_chat.rs)
     crate::fake_chat::set(crate::stage::prop(c"debug.callme.fake", 2) > 0);
     let c = ui.global::<Chats>();
+    // PREVIEW (chats-5): which opening (chats/open.slint), until Mani picks one
+    c.set_open_style(crate::stage::prop_or(c"debug.callme.open", 1, 3).max(1) as i32);
+    c.set_open_slow(crate::stage::prop_or(c"debug.callme.slow", 1, 8).max(1) as f32);
     MSGS.with(|m| c.set_msgs(ModelRc::from(m.clone())));
     ROWS.with(|m| c.set_rows(ModelRc::from(m.clone())));
     c.on_open_chat({

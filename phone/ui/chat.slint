@@ -84,6 +84,18 @@ export global Chats {
     in-out property <string> current; // the open chat's id ("" = the list)
     in-out property <length> from-y: Home.sat + 116px; // where a chat opens out of (home.slint): the tapped row...
     in-out property <length> from-h: 78px; // ...or the new-chat picker
+    // The tapped row's id and its character's box on the screen (x, y, w, h) at its scale fk: a chat opening (or
+    // closing) carries the character between there and its place by the text box (chats/open.slint).
+    in-out property <string> from-id;
+    in-out property <length> fx;
+    in-out property <length> fy;
+    in-out property <length> fw;
+    in-out property <length> fh;
+    in-out property <float> fk;
+    in-out property <float> open-k; // the opening, 0 (list) to 1 (chat)
+    in-out property <bool> flying; // the character is on its way (its places on both screens stand empty)
+    in property <int> open-style: 1; // PREVIEW (chats-5): which opening (debug.callme.open 1-3)
+    in property <float> open-slow: 1; // PREVIEW (chats-5): its slow-motion capture (debug.callme.slow 4: 4x slower)
     in-out property <bool> picker; // the new-chat picker
     in-out property <bool> want-focus; // put the cursor in the field once it is on screen
     callback open-chat(string);
@@ -178,6 +190,7 @@ export component NewChat {
                         Chats.picker = false;
                         Chats.from-y = root.absolute-position.y; // the picker itself (home.slint) opens into the chat
                         Chats.from-h = 166px;
+                        Chats.from-id = ""; // a new chat's character stands big in the middle: nothing to carry
                         Chats.new-chat(a.agent, a.model);
                         Chats.want-focus = true;
                     }

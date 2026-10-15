@@ -6,7 +6,9 @@ import { T, Icon, Icons, Morph, SwapText } from "parts.slint";
 import { Home, RoundIcon } from "home_parts.slint";
 import { Toys, Clawd, Null } from "toys.slint";
 import { Chats, NewChat, Ink } from "chat.slint";
-import { ChatList, ChatThread } from "chats/screens.slint";
+import { ChatList } from "chats/list.slint";
+import { ChatThread } from "chats/thread.slint";
+import { Opener } from "chats/open.slint";
 import { StageBack, Look } from "stage.slint";
 
 // A choice in a sheet: icon, title and a line under it.
@@ -365,22 +367,19 @@ export component HomeScreen inherits Window {
         radius: 0px;
         face: Icons.chat;
         from: T.btn;
-        ChatList { width: root.width; height: root.height; visible: thread.g < 1; }
-        // A chat opens out of its row over the list, and closes back into it.
-        thread := Morph {
+        ChatList {
+            width: root.width;
+            height: root.height;
+            visible: !thread.full;
+            // PREVIEW (chats-5): the list drifts left under a chat sliding in (2), or clears away (3)
+            x: Chats.open-style == 2 ? -0.28 * root.width * Chats.open-k : 0px;
+            opacity: Chats.open-style == 3 ? 1 - clamp(Chats.open-k * 2.2, 0, 1) : 1;
+        }
+        // A chat opens out of its row over the list, carried by its character, and closes back into it.
+        thread := Opener {
             open: Chats.current != "";
-            panel: Ink.bg;
-            fx: 8px;
-            fy: Chats.from-y;
-            fw: root.width - 16px;
-            fh: Chats.from-h;
-            fradius: 18px;
-            tx: 0px;
-            ty: 0px;
-            tw: root.width;
-            th: root.height;
-            radius: 0px;
-            zoom: false;
+            width: root.width;
+            height: root.height;
             if thread.shown: ChatThread { width: root.width; height: root.height; }
         }
     }

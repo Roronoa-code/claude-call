@@ -81,3 +81,8 @@ export component Figure {
     }
     @children
 }
+
+// A soft floor under a standing character: a dim warm pool, no beam.
+export component Floor inherits Rectangle {
+    background: @radial-gradient(circle, #2a221f 0%, #1a1716 38%, #0e0e1000 70%);
+}

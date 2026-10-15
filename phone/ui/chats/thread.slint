@@ -1,146 +1,13 @@
-// The Chats screens: the character is with you. At the top of the list the agent who matters right now stands on a soft floor and says where things stand (thinking about your message, has a question,
-// just replied); the chats below are cards with their characters standing in them. Inside a chat the character
-// stands beside the text box, by your thumb: it thinks while the PC works, talks as the answer comes in, hops when
-// tapped. The agent's turns sit on cards; mine are warm bubbles.
+// A chat: the character stands beside the text box, by your thumb: it thinks while the PC works, talks as the
+// answer comes in, looks at you while its question waits, hops when tapped. The agent's turns sit on soft cards;
+// mine are warm bubbles. A new chat shows the character big in the middle until the first message.
 import { T, Icon, Icons } from "../parts.slint";
 import { Home } from "../home_parts.slint";
 import { Chats, ChatRow, Ink, IconButton, BackButton } from "../chat.slint";
-import { Figure } from "still.slint";
+import { Figure, Floor } from "still.slint";
 import { Shimmer } from "msg.slint";
 import { Log } from "log.slint";
 import { Composer } from "field.slint";
-import { SlideRow, UndoBar, Count } from "rows.slint";
-
-global Look {
-    out property <color> row: #151518;
-}
-
-// A soft floor under a standing character: a dim warm pool, no beam.
-component Floor inherits Rectangle {
-    background: @radial-gradient(circle, #2a221f 0%, #1a1716 38%, #0e0e1000 70%);
-}
-
-export component ChatList inherits Rectangle {
-    background: Ink.bg;
-    property <ChatRow> h: Chats.hero;
-    property <bool> alive: h.id == Chats.live-row && Chats.live && h.id != "";
-    Rectangle {
-        y: Home.sat;
-        height: 56px;
-        BackButton { }
-        // New chat: a warm round button (the picker grows out of it).
-        Rectangle {
-            x: parent.width - 60px;
-            y: 6px;
-            width: 48px;
-            height: 48px;
-            border-radius: 24px;
-            background: nb.pressed ? #9a4e36 : Ink.me;
-            animate background { duration: 160ms; easing: T.out; }
-            Icon { d: Icons.plus; x: 12px; y: 12px; stroke: #fff8f5; }
-            nb := TouchArea { clicked => { Chats.picker = true; } }
-        }
-    }
-    Flickable {
-        y: Home.sat + 56px;
-        width: parent.width;
-        height: parent.height - self.y;
-        content-height: list.preferred-height;
-        flicked => { Chats.revealed = ""; }
-        list := VerticalLayout {
-            padding-bottom: Home.sab + 24px;
-            // Who matters now, standing on the floor, and where things stand.
-            if h.id != "": Rectangle {
-                height: 196px;
-                TouchArea { clicked => { Chats.from-y = parent.absolute-position.y; Chats.from-h = parent.height; Chats.open-chat(h.id); } }
-                Floor { x: 4px; y: 128px; width: 170px; height: 56px; }
-                Figure {
-                    x: 10px;
-                    y: 0;
-                    width: 160px;
-                    height: 166px;
-                    face: h.face;
-                    pose: h.busy ? "think" : h.unread ? "happy" : "idle";
-                    k: 0.5; // faces.rs HERO_K
-                    live: alive;
-                    source: Chats.big-live;
-                    lw: Chats.big-w;
-                    lh: Chats.big-h;
-                    th: Chats.big-th;
-                }
-                VerticalLayout {
-                    x: 178px;
-                    width: parent.width - 178px - 20px;
-                    alignment: center;
-                    spacing: 6px;
-                    Text { text: h.name; font-size: 14px; font-weight: 600; color: h.busy || h.asks || h.unread ? Ink.warm : Ink.muted; overflow: elide; }
-                    Text { text: Chats.hero-line; font-size: 21px; font-weight: 650; color: Ink.text; wrap: word-wrap; max-height: 3 * 26px; overflow: elide; }
-                    if h.busy: Shimmer { text: "Thinking"; font-size: 14px; base: #8a8c93; }
-                    if !h.busy: Text { text: h.time == "now" ? "Just now" : h.time + " ago"; font-size: 14px; color: Ink.muted; }
-                }
-            }
-            Rectangle {
-                height: 44px;
-                Text { x: 20px; y: 8px; text: "Chats"; font-size: 22px; font-weight: 700; color: Ink.text; }
-            }
-            VerticalLayout {
-                padding-left: 12px;
-                padding-right: 12px;
-                // the others (the one standing at the top isn't repeated)
-                for r in Chats.rows: SlideRow {
-                    id: r.id;
-                    face-h: r.id == root.h.id ? 0px : 76px;
-                    gap: 6px;
-                    visible: r.id != root.h.id;
-                    face-bg: Look.row;
-                    radius: 22px;
-                    margin: 12px;
-                    tapped(y) => { Chats.from-y = y; Chats.from-h = 76px; Chats.open-chat(r.id); }
-                    // the character standing in its card, feet on the card's floor line
-                    Figure { x: 6px; y: 0; width: 62px; height: 66px; face: r.face; pose: r.busy ? "think" : "idle"; k: 0.21; }
-                    Text {
-                        x: 76px;
-                        y: 14px;
-                        width: parent.width - 76px - 72px;
-                        height: 24px;
-                        text: r.name;
-                        font-size: 16.5px;
-                        font-weight: r.unread ? 700 : 600;
-                        color: Ink.text;
-                        overflow: elide;
-                        vertical-alignment: center;
-                    }
-                    Text {
-                        x: parent.width - 72px;
-                        y: 14px;
-                        width: 58px;
-                        height: 24px;
-                        text: r.time;
-                        font-size: 13px;
-                        color: r.unread ? Ink.warm : Ink.muted;
-                        font-weight: r.unread ? 600 : 400;
-                        horizontal-alignment: right;
-                        vertical-alignment: center;
-                    }
-                    if !r.busy: Text {
-                        x: 76px;
-                        y: 39px;
-                        width: parent.width - 76px - (r.unread ? 52px : 16px);
-                        height: 24px;
-                        text: r.asks ? "Has a question for you" : r.preview;
-                        font-size: 15px;
-                        color: r.asks ? Ink.warm : r.unread ? Ink.text2 : Ink.muted;
-                        overflow: elide;
-                        vertical-alignment: center;
-                    }
-                    if r.busy: Shimmer { x: 76px; y: 39px; height: 24px; text: "Thinking"; base: #a08a80; vertical-alignment: center; }
-                    if r.unread: Count { x: parent.width - self.width - 14px; y: 40px; n: max(1, r.count); }
-                }
-            }
-        }
-    }
-    UndoBar { x: 16px; width: parent.width - 32px; base: parent.height - Home.sab - 16px; }
-}
 
 export component ChatThread inherits Rectangle {
     background: Ink.bg;
@@ -237,6 +104,8 @@ export component ChatThread inherits Rectangle {
                 width: parent.width - 120px;
                 height: alone ? 60px : 22px;
                 text: Chats.name;
+                // PREVIEW (chats-5): opening 3 carries the row's name up here, standing in for it until it lands
+                opacity: Chats.open-style == 3 && Chats.open-k < 0.999 && Chats.from-id != "" ? 0 : 1;
                 font-size: 17px;
                 font-weight: 650;
                 color: Ink.text;
@@ -278,9 +147,10 @@ export component ChatThread inherits Rectangle {
             y: 0;
             width: parent.width;
             height: 74px;
+            visible: !Chats.flying; // on its way from the list (chats/open.slint)
             face: Chats.face;
             pose: Chats.waiting ? "think" : "idle";
-            k: 0.26;
+            k: 0.26; // faces.rs SMALL_K
             live: Chats.live;
             source: Chats.face-live;
             lw: Chats.face-w;

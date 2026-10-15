@@ -214,6 +214,34 @@ def video(look, d, row_xy, field_xy, settle=2.2):
     print('video saved')
 
 
+def trans(style, slow, path, row_y=502):
+    """An opening (debug.callme.open) at real speed (slow 1) or slowed in the app (slow 4): the list, a card opened,
+    the chat for a moment, Back, the list again. Recorded at 540 wide straight from the emulator."""
+    adb('shell', 'setprop', 'debug.callme.open', str(style))
+    adb('shell', 'setprop', 'debug.callme.slow', str(slow))
+    fixture()
+    start()
+    tap(*CHATS_BTN)
+    time.sleep(2.5)
+    rec = subprocess.Popen(ADB + ['shell', 'screenrecord', '--size', '540x1200', '--bit-rate', '8000000', '/sdcard/t.mp4'])
+    time.sleep(1.2)
+    tap(200, row_y)
+    time.sleep(0.6 * slow + 1.4)
+    key(4)
+    time.sleep(0.5 * slow + 1.4)
+    swipe(200, 600, 588, 300)  # screenrecord writes a frame only when the screen changes
+    time.sleep(0.8)
+    adb('shell', 'pkill', '-INT', 'screenrecord')
+    rec.wait()
+    time.sleep(1.2)
+    raw = path + '.raw.mp4'
+    subprocess.run(ADB + ['pull', '/sdcard/t.mp4', raw], capture_output=True)
+    adb('shell', 'rm', '/sdcard/t.mp4')
+    subprocess.run([FF, '-y', '-loglevel', 'error', '-i', raw, '-c:v', 'h264_nvenc', '-preset', 'p5', '-cq', '23', '-pix_fmt', 'yuv420p', '-an', path])
+    os.remove(raw)
+    adb('shell', 'setprop', 'debug.callme.slow', '1')
+
+
 if __name__ == '__main__':
     cmd, args = sys.argv[1], sys.argv[2:]
     if cmd == 'fixture':
@@ -230,6 +258,8 @@ if __name__ == '__main__':
         text(' '.join(args))
     elif cmd == 'swipe':
         swipe(float(args[0]), float(args[1]), float(args[2]), int(args[3]) if len(args) > 3 else 350)
+    elif cmd == 'trans':
+        trans(int(args[0]), int(args[1]), args[2])
     elif cmd == 'video':
         look, d = int(args[0]), args[1]
         video(look, d, (float(args[2]), float(args[3])), (float(args[4]), float(args[5])))

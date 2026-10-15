@@ -34,12 +34,13 @@ pub fn hero(rows: &[ChatRow]) -> (ChatRow, String) {
 }
 
 /// The list in three groups, each headed by its first row: what needs Mani (a question, a new reply), what the PC is
-/// working on, and the rest; newest first within each.
-pub fn arrange(mut rows: Vec<ChatRow>) -> Vec<ChatRow> {
+/// working on, and the rest; newest first within each. The chat standing at the top (`hero`) heads no group: the list
+/// doesn't show it again.
+pub fn arrange(mut rows: Vec<ChatRow>, hero: &str) -> Vec<ChatRow> {
     let group = |r: &ChatRow| if r.asks || r.unread { 0 } else if r.busy { 1 } else { 2 };
     rows.sort_by_key(group); // stable: newest first stays within each group
     let mut last = None;
-    for r in rows.iter_mut() {
+    for r in rows.iter_mut().filter(|r| r.id != hero) {
         let g = group(r);
         if last != Some(g) {
             r.head = ["Needs you", "Working on it", "Earlier"][g].into();
