@@ -8,15 +8,23 @@ use std::{
     time::{Duration, Instant},
 };
 
-fn refresh(ui: &HomeScreen) {
+/// `fake` (preview only): 0, or keep the mode chosen on this screen (1) and also pretend setup isn't finished and a
+/// chat is unread (2).
+fn refresh(ui: &HomeScreen, fake: usize, first: bool) {
     let home = ui.global::<Home>();
     let read = android::with(|env, act| {
         Ok((settings::missing(env, act)?, settings::mode(env, act)?, settings::topic(env, act)?, settings::can_pin(env, act)?))
     });
     if let Some((missing, mode, topic, can_pin)) = read {
+        let missing = if fake == 2 { "Notifications, Microphone".to_string() } else { missing };
+        if fake == 2 {
+            ui.global::<Chats>().set_unread(true); // and a chat with something new
+        }
         home.set_ready(missing.is_empty());
         home.set_missing(format!("Still needed: {missing}").into());
-        home.set_mode(mode.into());
+        if fake == 0 || first {
+            home.set_mode(mode.into());
+        }
         home.set_topic(topic.into());
         home.set_can_pin(can_pin);
     }
@@ -29,13 +37,19 @@ fn refresh(ui: &HomeScreen) {
 pub fn run(_app: android_activity::AndroidApp) {
     let ui = HomeScreen::new().expect("home screen");
     let home = ui.global::<Home>();
+    // PREVIEW (branch preview/home-controls): which home controls show (controls.slint), and `debug.callme.fake` set
+    // keeps mode taps and the Call button on this screen only (nothing stored, published or asked of the PC).
+    let fake = stage::prop(c"debug.callme.fake", 2);
+    ui.global::<Toys>().set_controls(stage::prop(c"debug.callme.controls", 4) as i32);
     home.on_set_mode({
         let ui = ui.as_weak();
         move |m| {
             if let Some(ui) = ui.upgrade() {
                 ui.global::<Home>().set_mode(m.clone()); // at once; the phone and PC follow
             }
-            android::with(|env, act| settings::choose(env, act, &m));
+            if fake == 0 {
+                android::with(|env, act| settings::choose(env, act, &m));
+            }
         }
     });
     home.on_set_up(|| {
@@ -52,6 +66,13 @@ pub fn run(_app: android_activity::AndroidApp) {
     home.on_call({
         let (ui, requested_at) = (ui.as_weak(), requested_at.clone());
         move |agent| {
+            if fake > 0 {
+                requested_at.set(Some(Instant::now()));
+                if let Some(ui) = ui.upgrade() {
+                    ui.global::<Home>().set_requested(true);
+                }
+                return;
+            }
             if let Some(topic) = android::with(|env, act| settings::topic(env, act)) {
                 crate::net::request_call(topic, agent.to_string());
                 requested_at.set(Some(Instant::now()));
@@ -75,7 +96,7 @@ pub fn run(_app: android_activity::AndroidApp) {
         let editing = editing.clone();
         move |on| editing.set(on)
     });
-    refresh(&ui);
+    refresh(&ui, fake, true);
     let mut chats = crate::inbox::wire(&ui);
 
     // The vinyl Clawd and Null live on the home screen in 3D, drawn by the GPU (alive.rs, live_gl.rs): blinks,
@@ -147,9 +168,10 @@ pub fn run(_app: android_activity::AndroidApp) {
             // Permissions granted in Settings, or a mode changed elsewhere, show up within a second.
             if last_refresh.elapsed() > Duration::from_secs(1) {
                 last_refresh = Instant::now();
-                refresh(&ui);
+                refresh(&ui, fake, false);
             }
-            if requested_at.get().is_some_and(|t| t.elapsed() > Duration::from_secs(90) || service::active_link().is_some()) {
+            let wait = Duration::from_secs(if fake > 0 { 6 } else { 90 });
+            if requested_at.get().is_some_and(|t| t.elapsed() > wait || service::active_link().is_some()) {
                 requested_at.set(None);
                 home.set_requested(false);
             }

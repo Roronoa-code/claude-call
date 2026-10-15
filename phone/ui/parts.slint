@@ -67,6 +67,8 @@ export component SwapText {
     in property <color> color: T.fg2;
     in property <TextHorizontalAlignment> align: left;
     in property <int> weight: 400;
+    in property <TextWrap> wrap: no-wrap;
+    in property <TextVerticalAlignment> valign: center;
     // Set: only a new key swaps; other text changes (a ticking clock) just update the shown line.
     in property <string> key;
     property <string> a;
@@ -92,7 +94,8 @@ export component SwapText {
         font-weight: root.weight;
         color: root.color;
         horizontal-alignment: root.align;
-        vertical-alignment: center;
+        vertical-alignment: root.valign;
+        wrap: root.wrap;
         opacity: p == 1 ? 1 : 0;
         y: p == 0 ? 6px : p == 1 ? 0 : -6px;
         animate opacity, y {
