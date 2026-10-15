@@ -1,0 +1,159 @@
+// PREVIEW (preview/chats-4): list parts the chats directions share, from chat_list.slint: a row that slides (or
+// long-presses) open to Delete with Undo after, and the "Chat deleted · Undo" bar. A direction draws the row's face
+// as children.
+import { T, Icon } from "../parts.slint";
+import { Home } from "../home_parts.slint";
+import { Chats, Ink } from "../chat.slint";
+
+export component SlideRow inherits Rectangle {
+    in property <string> id;
+    in property <length> face-h: 80px; // the row's height
+    in property <length> radius: 20px;
+    in property <brush> face-bg: Ink.bg;
+    in property <length> margin: 8px; // the list's side margin: what shows is clipped to the screen's edges
+    out property <bool> pressed: touch.pressed && !slid;
+    callback tapped(length); // its y on screen
+    property <length> reveal: 96px;
+    property <bool> away: id == Chats.leaving;
+    property <float> enter: id == Chats.returning ? 0 : 1;
+    property <float> hk: away ? 0 : 1;
+    property <bool> sliding;
+    property <bool> slid;
+    property <bool> held;
+    property <bool> gone;
+    property <length> from;
+    property <length> drag;
+    property <length> dx: away ? -(self.width + 24px) : sliding ? drag : Chats.revealed == id ? -reveal : 0px;
+    animate dx { duration: sliding ? 0ms : away ? 300ms : 360ms; easing: away ? T.close : T.out; }
+    animate hk { duration: 300ms; delay: 170ms; easing: T.close; }
+    animate enter { duration: 440ms; easing: T.out; }
+    init => {
+        if (self.enter < 1) {
+            self.enter = 1;
+            Chats.returning = "";
+        }
+    }
+    height: face-h * hk * enter;
+    Timer {
+        interval: 480ms;
+        running: root.away && !root.gone;
+        triggered => { root.gone = true; Chats.delete-chat(root.id); }
+    }
+    Timer {
+        interval: 450ms;
+        running: touch.pressed && !root.slid && !root.held && !root.away;
+        triggered => { root.held = true; Chats.revealed = root.id; }
+    }
+    touch := TouchArea {
+        enabled: !root.away;
+        changed pressed => {
+            if (self.pressed) {
+                root.slid = false;
+                root.held = false;
+                root.from = Chats.revealed == root.id ? -root.reveal : 0px;
+            } else if (root.sliding) {
+                Chats.revealed = root.drag < -root.reveal / 2 ? root.id : Chats.revealed == root.id ? "" : Chats.revealed;
+                root.sliding = false;
+            }
+        }
+        moved => {
+            if (!root.slid && !root.held && Math.abs(self.mouse-x - self.pressed-x) > 10px
+                && Math.abs(self.mouse-x - self.pressed-x) > 1.3 * Math.abs(self.mouse-y - self.pressed-y)) {
+                root.slid = true;
+                root.drag = root.from;
+                root.sliding = true;
+                if (Chats.revealed != root.id) { Chats.revealed = ""; }
+            }
+            if (root.sliding) {
+                root.drag = min(0px, root.from + self.mouse-x - self.pressed-x);
+                if (root.drag < -root.reveal) { root.drag = -root.reveal + (root.drag + root.reveal) * 0.3; }
+            }
+        }
+        clicked => {
+            if (root.slid || root.held) { return; }
+            if (Chats.revealed != "") { Chats.revealed = ""; return; }
+            root.tapped(root.absolute-position.y);
+        }
+    }
+    Rectangle {
+        x: -root.margin;
+        width: root.width + 2 * root.margin;
+        clip: true;
+        // Delete, under the row on the right; it comes up as the row slides off it.
+        Rectangle {
+            property <float> p: clamp(-root.dx / root.reveal, 0, 1);
+            x: parent.width - self.width - root.margin;
+            y: (root.face-h - self.height) / 2;
+            width: root.reveal - 12px;
+            height: min(66px, root.face-h - 12px);
+            border-radius: 18px;
+            background: del.pressed ? #b53a31 : #d0473d;
+            animate background { duration: 140ms; easing: T.out; }
+            opacity: root.away ? 0 : min(1, p * 1.6);
+            animate opacity { duration: root.away ? 180ms : 0ms; }
+            transform-origin: { x: self.width / 2, y: self.height / 2 };
+            transform-scale: 0.82 + 0.18 * p;
+            Icon { d: "M4.5 7h15 M9.5 7V4.8h5V7 M6.5 7l1 12.2h9l1 -12.2 M10.2 10.8v4.8 M13.8 10.8v4.8"; x: (parent.width - 24px) / 2; y: parent.height / 2 - 21px; stroke: #fff8f5; stroke-width: 1.8px; }
+            Text { y: parent.height / 2 + 8px; width: parent.width; text: "Delete"; font-size: 12.5px; font-weight: 600; color: #fff8f5; horizontal-alignment: center; }
+            del := TouchArea {
+                enabled: Chats.revealed == root.id && !root.away;
+                clicked => { Chats.revealed = ""; Chats.leaving = root.id; }
+            }
+        }
+        Rectangle {
+            x: root.margin + root.dx - (1 - root.enter) * (root.width + 24px);
+            width: root.width;
+            height: root.face-h;
+            y: 0;
+            border-radius: root.radius;
+            background: root.face-bg;
+            clip: true;
+            Rectangle {
+                background: root.pressed ? #ffffff0d : #ffffff00;
+                animate background { duration: 160ms; easing: T.out; }
+            }
+            @children
+        }
+    }
+}
+
+// For a few seconds after a delete: "Chat deleted", and Undo.
+export component UndoBar inherits Rectangle {
+    in property <length> base; // where its lower edge rests (the caller sets x and width)
+    property <float> k: Chats.deleted != "" ? 1 : 0;
+    animate k { duration: Chats.deleted != "" ? 380ms : 240ms; easing: Chats.deleted != "" ? T.out : T.close; }
+    visible: self.k > 0.01;
+    height: 52px;
+    y: base - self.height + (1 - self.k) * 20px;
+    opacity: self.k;
+    border-radius: 18px;
+    background: Ink.raised;
+    border-width: 1px;
+    border-color: Ink.hair;
+    drop-shadow-blur: 18px;
+    drop-shadow-color: #00000080;
+    drop-shadow-offset-y: 4px;
+    TouchArea { }
+    Text { x: 18px; height: parent.height; text: "Chat deleted"; font-size: 15px; color: Ink.text; vertical-alignment: center; }
+    Rectangle {
+        x: parent.width - self.width - 6px;
+        y: 4px;
+        width: 76px;
+        height: 44px;
+        border-radius: 14px;
+        background: undo.pressed ? #ffffff14 : #ffffff00;
+        animate background { duration: 140ms; easing: T.out; }
+        Text { text: "Undo"; font-size: 15px; font-weight: 600; color: Ink.warm; }
+        undo := TouchArea { enabled: Chats.deleted != ""; clicked => { Chats.undo(); } }
+    }
+}
+
+// A count of unread replies, in a warm pill.
+export component Count inherits Rectangle {
+    in property <int> n;
+    width: max(22px, num.preferred-width + 14px);
+    height: 22px;
+    border-radius: 11px;
+    background: Ink.me;
+    num := Text { text: root.n; font-size: 12.5px; font-weight: 700; color: #fff8f5; }
+}

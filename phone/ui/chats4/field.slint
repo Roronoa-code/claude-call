@@ -1,0 +1,175 @@
+// PREVIEW (preview/chats-4): the text box for the chats directions, copied from chat.slint's field with: Send / Stop
+// 44px with a 48px touch area, and a calm grey caret, handle and composing word (Android draws all three in the
+// selection colour: the warm one made the word being typed a solid orange block, and the handle sat on the hint).
+import { T, Icon, Icons } from "../parts.slint";
+import { Home } from "../home_parts.slint";
+import { Chats, Ink, IconButton } from "../chat.slint";
+
+export component Composer inherits Rectangle {
+    in property <brush> fill: Ink.surface;
+    in property <length> radius: 28px;
+    in property <color> go-color: Ink.me;
+    property <string> draft;
+    property <bool> picked-media: Chats.pick == "image" || Chats.pick == "video";
+    property <bool> has-pick: Chats.pick != "" && Chats.ready;
+    property <bool> can-send: Chats.pick != "loading" && (draft != "" || picked-media);
+    property <bool> can-stop: Chats.action == "stop" && !can-send;
+    property <length> pick-h: has-pick ? (picked-media ? 76px : 48px) : 0px;
+    out property <bool> focused;
+    function send() {
+        if (can-send) { Chats.send(draft); draft = ""; }
+    }
+    height: 56px + pick-h;
+    animate height { duration: 300ms; easing: T.out; }
+    border-radius: radius;
+    background: fill;
+    border-width: 1px;
+    border-color: root.focused ? #ffffff24 : Ink.hair;
+    animate border-color { duration: 200ms; }
+    clip: true;
+    if !Chats.ready: Text {
+        width: parent.width;
+        height: parent.height;
+        text: "Chat isn't set up on the PC yet";
+        font-size: 15px;
+        color: Ink.muted;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    // The photo or video picked to send (a cross removes it), or how getting it is going.
+    if root.has-pick: Rectangle {
+        x: 10px;
+        y: 10px;
+        width: parent.width - 20px;
+        height: root.pick-h - 6px;
+        if root.picked-media: Rectangle {
+            width: 64px;
+            height: 64px;
+            border-radius: 16px;
+            background: Ink.raised;
+            clip: true;
+            Image { width: parent.width; height: parent.height; source: Chats.pick-pic; image-fit: cover; }
+            if Chats.pick == "video": Rectangle {
+                width: 26px;
+                height: 26px;
+                border-radius: 13px;
+                background: #0e0e10b3;
+                Path { x: 10px; y: 7.5px; width: 8px; height: 11px; viewbox-width: 16; viewbox-height: 20; commands: "M2 1.5 L15 10 L2 18.5 Z"; fill: white; }
+            }
+        }
+        Text {
+            x: root.picked-media ? 78px : 10px;
+            width: parent.width - self.x - 48px;
+            height: root.picked-media ? 64px : parent.height;
+            text: Chats.pick-text;
+            font-size: 14px;
+            color: Chats.pick == "error" ? #ec8a6f : Ink.text2;
+            vertical-alignment: center;
+            wrap: word-wrap;
+            overflow: elide;
+        }
+        IconButton {
+            x: parent.width - 46px;
+            y: (min(parent.height, 64px) - self.height) / 2;
+            icon: Icons.close;
+            stroke: Ink.muted;
+            clicked => { Chats.unpick(); }
+        }
+    }
+    if Chats.ready: HorizontalLayout {
+        y: parent.height - 56px;
+        height: 56px;
+        padding-left: 4px;
+        padding-right: 6px;
+        IconButton { icon: Icons.plus; stroke: Ink.text2; y: 4px; clicked => { Chats.attach(); } }
+        FocusScope {
+            horizontal-stretch: 1;
+            min-width: 0px;
+            preferred-width: 0px;
+            Timer { interval: 220ms; running: Chats.want-focus; triggered => { Chats.want-focus = false; input.focus(); } }
+            key-pressed(e) => {
+                if (e.text == Key.Back && Chats.back()) { return accept; }
+                reject
+            }
+            window := Rectangle {
+                clip: true;
+                property <length> scroll: 0px;
+                input := TextInput {
+                    x: min(0px, max(parent.width - self.width, parent.scroll));
+                    width: max(parent.width, self.preferred-width + 4px);
+                    height: parent.height;
+                    text <=> root.draft;
+                    font-size: 16.5px;
+                    color: Ink.text;
+                    // Android draws the caret, its handle and the word being composed in this colour (opaque for
+                    // the first two): a calm grey, never the warm send colour.
+                    selection-background-color: #9a9ca359;
+                    selection-foreground-color: Ink.text;
+                    vertical-alignment: center;
+                    single-line: true;
+                    accepted => { root.send(); }
+                    changed has-focus => { Home.editing(self.has-focus); root.focused = self.has-focus; }
+                    cursor-position-changed(at) => {
+                        if (at.x + window.scroll < 0px) {
+                            window.scroll = -at.x;
+                        } else if (at.x + window.scroll > window.width - 4px) {
+                            window.scroll = window.width - 4px - at.x;
+                        }
+                    }
+                }
+                Text {
+                    visible: root.draft == "";
+                    x: root.focused ? 4px : 0px; // just after the caret, never under it
+                    text: Chats.hint;
+                    font-size: 16.5px;
+                    color: #6f7178;
+                    vertical-alignment: center;
+                    width: parent.width - self.x;
+                    height: parent.height;
+                    overflow: elide;
+                }
+            }
+        }
+        // Send (warm once there is something to send), or Stop while the PC works and nothing is typed.
+        Rectangle {
+            width: 48px;
+            Rectangle {
+                x: 2px;
+                y: 6px;
+                width: 44px;
+                height: 44px;
+                border-radius: 22px;
+                background: root.can-stop ? Ink.text : root.can-send ? root.go-color : Ink.raised;
+                animate background { duration: 220ms; easing: T.out; }
+                transform-origin: { x: 22px, y: 22px };
+                transform-scale: go.pressed ? 0.9 : 1;
+                animate transform-scale { duration: 140ms; easing: T.out; }
+                Icon {
+                    d: "M12 19V5.5 M6 11l6 -6l6 6";
+                    x: 10px;
+                    y: 10px;
+                    width: 24px;
+                    height: 24px;
+                    stroke: root.can-send ? #fff8f5 : #6f7178;
+                    stroke-width: 2.2px;
+                    opacity: root.can-stop ? 0 : 1;
+                    animate opacity { duration: 180ms; }
+                }
+                Rectangle {
+                    width: 13px;
+                    height: 13px;
+                    border-radius: 3px;
+                    background: Ink.bg;
+                    opacity: root.can-stop ? 1 : 0;
+                    animate opacity { duration: 180ms; }
+                }
+            }
+            go := TouchArea {
+                enabled: root.can-send || root.can-stop;
+                clicked => {
+                    if (root.can-stop) { Chats.stop(); } else { root.send(); }
+                }
+            }
+        }
+    }
+}

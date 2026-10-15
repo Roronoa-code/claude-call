@@ -311,6 +311,7 @@ fn thread(chat: &chats::Chat, ask: &str) -> Vec<ChatMsg> {
     let question = lines.iter().position(|l| !l.me).filter(|_| ask != "");
     let sent = |c: &str| chat.lines.iter().any(|l| l.me && l.state != "not_sent" && l.text == c);
     let mut msgs: Vec<ChatMsg> = vec![];
+    let now = chats::now();
     for (i, l) in lines.iter().enumerate() {
         let mut items: Vec<ChatMsg> = vec![];
         if l.me {
@@ -319,6 +320,7 @@ fn thread(chat: &chats::Chat, ask: &str) -> Vec<ChatMsg> {
                 items.push(ChatMsg { me: true, text: chats::shown(l).into(), ..ChatMsg::default() });
             }
         } else {
+            items.extend(crate::chats4::who(chat, l, now)); // PREVIEW (chats-4): its speaker
             if l.text.is_empty() && l.media.is_empty() {
                 // "Something went wrong.", "Stopped." and the like: a quiet line, not an answer
                 items.push(ChatMsg { text: chats::shown(l).into(), kind: "note".into(), ..ChatMsg::default() });
@@ -341,7 +343,9 @@ fn thread(chat: &chats::Chat, ask: &str) -> Vec<ChatMsg> {
             }
         }
         let mine_before = msgs.last().map(|m| m.me);
+        let count = items.len();
         for (n, mut m) in items.into_iter().enumerate() {
+            m.last = n + 1 == count;
             let prev = msgs.last().map_or(String::new(), |p| p.kind.to_string());
             m.n = n as i32;
             m.gap = match (mine_before, n) {
@@ -349,6 +353,7 @@ fn thread(chat: &chats::Chat, ask: &str) -> Vec<ChatMsg> {
                 (Some(true), 0) if l.me => 8.0, // my messages in a row
                 (Some(_), 0) => 26.0, // the other side speaks, or the PC's next answer
                 _ => match (prev.as_str(), m.kind.as_str()) {
+                    ("who", _) => 10.0,
                     (_, "h") => 22.0,
                     ("h", _) => 8.0,
                     ("li", "li") | ("choice", "choice") => 8.0,
@@ -414,6 +419,13 @@ fn show(ui: &HomeScreen) {
             unread: c.unread > 0,
             busy: chats::waiting(c),
             asks: chats::ask_state(c, now) == "waiting",
+            // PREVIEW (chats-4)
+            choices: match crate::chats4::choices(c, now) {
+                v if v.is_empty() => ModelRc::default(),
+                v => ModelRc::new(VecModel::from(v)),
+            },
+            topic: crate::chats4::topic(c).into(),
+            count: c.unread as i32,
         })
         .collect();
     ROWS.with(|model| {
@@ -443,6 +455,11 @@ fn show(ui: &HomeScreen) {
         }
     });
     c.set_unread(st.chats.iter().any(|c| c.unread > 0));
+    if crate::chats4::look() == 2 {
+        let (hero, line) = crate::chats4::hero(&rows);
+        c.set_hero(hero);
+        c.set_hero_line(line.into());
+    }
     match st.get(&cur) {
         Some(chat) => {
             let ask = chats::ask_state(chat, now);
@@ -484,7 +501,10 @@ fn show(ui: &HomeScreen) {
         }
         None => {
             c.set_current("".into());
-            MSGS.with(|model| model.set_vec(vec![]));
+            // PREVIEW (chats-4): a direction's chat shrinks back into its row still showing its lines
+            if crate::chats4::look() == 0 {
+                MSGS.with(|model| model.set_vec(vec![]));
+            }
         }
     }
 }
@@ -617,6 +637,7 @@ pub fn wire(ui: &HomeScreen) -> Tracker {
     // PREVIEW: the PC played here with debug.callme.fake (the test emulator only; fake_chat.rs)
     crate::fake_chat::set(crate::stage::prop(c"debug.callme.fake", 2) > 0);
     let c = ui.global::<Chats>();
+    c.set_look(crate::chats4::look() as i32); // PREVIEW (chats-4)
     MSGS.with(|m| c.set_msgs(ModelRc::from(m.clone())));
     ROWS.with(|m| c.set_rows(ModelRc::from(m.clone())));
     c.on_open_chat({
@@ -658,6 +679,11 @@ pub fn wire(ui: &HomeScreen) -> Tracker {
             android::with(|env, act| post(env, act, &chat, |s| s.add_mine(&chat, &text, None)));
             show(&ui);
         }
+    });
+    // PREVIEW (chats-4): a waiting question answered from the list, as a tap on its answer in the thread.
+    c.on_answer(|chat, text| {
+        android::with(|env, act| post(env, act, &chat, |s| s.add_mine(&chat, &text, None)));
+        changed();
     });
     c.on_stop({
         let ui = ui.as_weak();

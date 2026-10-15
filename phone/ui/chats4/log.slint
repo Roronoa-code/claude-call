@@ -1,0 +1,61 @@
+// PREVIEW (preview/chats-4): the scrolling thread for the chats directions (chat.slint's, shared): it sticks to its
+// end as lines arrive or the keyboard comes up, glides there instead of jumping, and keeps a long answer's start in
+// view as it lands. What a direction adds after the pieces (its "Thinking" row) goes in as children.
+import { T } from "../parts.slint";
+import { Chats } from "../chat.slint";
+import { Piece, Look } from "msg.slint";
+
+export component Log inherits Flickable {
+    in property <Look> look;
+    in property <length> pad-top: 12px;
+    in property <length> pad-bottom; // room under the last piece (the field floats over the thread's end)
+    in property <length> side: 20px;
+    out property <bool> scrolled: self.content-y < -2px;
+    // Rows that arrive once the thread is up rise in; the ones it opens with are simply there.
+    property <bool> settled;
+    property <length> hold: -1px;
+    property <length> glide-to;
+    property <bool> gliding;
+    // The last speaker line (its portrait is the live one).
+    property <int> newest: -1;
+    Timer { interval: 450ms; running: !root.settled; triggered => { root.settled = true; } }
+    Timer {
+        interval: 16ms;
+        running: root.gliding;
+        triggered => {
+            if (Math.abs(root.glide-to - root.content-y) < 1px) {
+                root.content-y = root.glide-to;
+                root.gliding = false;
+            } else {
+                root.content-y += (root.glide-to - root.content-y) * 0.2;
+            }
+        }
+    }
+    content-width: self.width;
+    content-height: rows.preferred-height;
+    property <length> stick: Math.min(0px, self.height - rows.preferred-height);
+    init => { self.content-y = self.stick; }
+    changed stick => {
+        root.glide-to = root.hold >= 0 ? Math.max(self.stick, -(root.hold - 14px)) : self.stick;
+        if (root.settled) { root.gliding = true; } else { self.content-y = root.glide-to; }
+    }
+    flicked => { root.gliding = false; }
+    rows := VerticalLayout {
+        width: parent.width;
+        padding-left: root.side;
+        padding-right: root.side;
+        padding-top: root.pad-top;
+        padding-bottom: root.pad-bottom;
+        for m[i] in Chats.msgs: Piece {
+            m: m;
+            look: root.look;
+            settled: root.settled;
+            newest: m.kind == "who" && i >= root.newest;
+            init => {
+                if (m.kind == "who" && i > root.newest) { root.newest = i; }
+            }
+            landed(y) => { root.hold = y; }
+        }
+        @children
+    }
+}

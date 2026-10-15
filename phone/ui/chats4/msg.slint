@@ -1,0 +1,302 @@
+// PREVIEW (preview/chats-4): one piece of a thread (inbox.rs thread: ChatMsg) as the chats directions draw it. Copied
+// from chat.slint's thread (today's design stays as it is) with the parts each direction styles as inputs, and the
+// fixes Mani's bugs need: a photo always shows as a framed picture (a tall one cropped from its top, never a tall
+// empty box).
+import { T } from "../parts.slint";
+import { Chats, ChatMsg, Ink } from "../chat.slint";
+import { Bust } from "still.slint";
+import "../fonts/JetBrainsMonoNL-Regular.ttf";
+
+// The thread's look, per direction.
+export struct Look {
+    me-bg: color, // my bubble
+    me-heading: bool, // my message as a heading over the answer (Pages) instead of a bubble
+    prose: length, // the agent's text size
+    card: bool, // the agent's turn on a card (Companion)
+    card-bg: color,
+    who: bool, // a speaker line over each answer: portrait, name, when
+}
+
+// A word with a slow light passing through it while the PC works ("Thinking").
+export component Shimmer inherits Text {
+    in property <color> base: #8a8c93;
+    property <float> s: Math.mod(animation-tick() / 1900ms, 1) * 1.8 - 0.4;
+    font-size: 15px;
+    font-weight: 500;
+    color: @linear-gradient(90deg, base 0%, base max(0, s - 0.3) * 100%, #f4f1ef max(0, min(1, s)) * 100%, base min(1, s + 0.3) * 100%, base 100%);
+}
+
+export component Piece inherits Rectangle {
+    in property <ChatMsg> m;
+    in property <Look> look;
+    in property <bool> settled; // rows that arrive once the thread is up rise in
+    in property <bool> newest; // the last speaker line: its portrait is the live one
+    callback landed(length); // an answer's first piece arrived: its y, to keep in view
+    property <bool> bubble: m.me && m.kind == "" && !look.me-heading;
+    property <bool> heading: m.me && m.kind == "" && look.me-heading;
+    property <bool> prose: m.kind == "p" || m.kind == "h" || m.kind == "li" || m.kind == "quote";
+    property <bool> code: m.kind == "code";
+    property <bool> media: m.kind == "image" || m.kind == "video";
+    property <bool> quiet: m.kind == "note";
+    property <bool> choice: m.kind == "choice";
+    property <bool> who: m.kind == "who";
+    // On a card: the agent's pieces sit inside it, the first and last with room above and below.
+    property <bool> carded: look.card && !m.me;
+    property <length> inset: carded ? 18px : 0px;
+    property <length> pad-top: carded && (m.n == 0) ? 16px : 0px;
+    property <length> pad-bottom: carded && m.last ? 16px : 0px;
+    property <length> top: m.gap * 1px;
+    property <length> inner: self.width - 2 * inset;
+    // A photo or video: whole if it is wide, at most 5:4 tall (cropped from its top), in a soft frame.
+    property <float> ratio: min(max(m.ratio, 0.4), 1.25);
+    property <length> media-w: min(inner * (m.me ? 0.74 : 0.86), 300px);
+    property <length> bubble-w: min(inner * 0.8, said.preferred-width + 32px);
+    property <length> h: bubble ? said.preferred-height + 22px
+        : heading ? asked.preferred-height + 2px
+        : who ? 32px
+        : choice ? 50px
+        : m.kind == "tag" ? 18px
+        : prose ? words.preferred-height
+        : code ? lines.preferred-height + (m.mark != "" ? 45px : 26px)
+        : media ? self.media-w * ratio
+        : quiet ? hush.preferred-height + 19px : 0px;
+    property <float> k: 0;
+    // A speaker line that replaces "Thinking" is simply there (it takes its place); the rest rise in, staggered.
+    animate k { duration: settled && !who ? 460ms : 0ms; delay: settled ? m.n * 70ms : 0ms; easing: T.out; }
+    init => {
+        // the newest answer's start stays in view as it lands; a message of mine goes back to following the end
+        if (settled && m.anchor) {
+            root.landed(self.y + self.top);
+        } else if (settled && m.me) {
+            root.landed(-1px);
+        }
+        self.k = 1;
+    }
+    height: top + pad-top + h + pad-bottom;
+    // The card behind the agent's turn, joined across its pieces.
+    if carded: Rectangle {
+        y: m.n == 0 ? root.top : 0px;
+        height: root.height - self.y;
+        background: look.card-bg;
+        border-top-left-radius: m.n == 0 ? 22px : 0px;
+        border-top-right-radius: m.n == 0 ? 22px : 0px;
+        border-bottom-left-radius: m.last ? 22px : 0px;
+        border-bottom-right-radius: m.last ? 22px : 0px;
+        opacity: k;
+    }
+    Rectangle {
+        x: inset;
+        width: root.inner;
+        y: root.top + root.pad-top + (1 - root.k) * (m.me ? 6px : 12px);
+        height: root.h;
+        opacity: root.k;
+        // Mine: a warm bubble on the right, a little smaller as it leaves the field.
+        if bubble: Rectangle {
+            x: parent.width - self.width;
+            width: bubble-w;
+            background: look.me-bg;
+            border-radius: 21px;
+            border-bottom-right-radius: 7px;
+            transform-origin: { x: self.width, y: self.height };
+            transform-scale: 0.94 + 0.06 * k;
+        }
+        said := Text {
+            visible: bubble;
+            x: parent.width - bubble-w + 16px;
+            y: 11px;
+            width: bubble-w - 32px;
+            text: bubble ? m.text : "";
+            wrap: word-wrap;
+            font-size: 16.5px;
+            color: #fff8f5;
+        }
+        // Mine as a heading (Pages): what I asked, large, the answer under it.
+        asked := Text {
+            visible: heading;
+            width: parent.width;
+            text: heading ? m.text : "";
+            wrap: word-wrap;
+            font-size: 21px;
+            font-weight: 650;
+            color: Ink.text;
+        }
+        // The speaker over an answer: portrait, name, how long ago (the newest one alive).
+        if who: Rectangle {
+            Bust {
+                x: 0;
+                y: 1px;
+                width: 30px;
+                face: Chats.face;
+                live: root.newest && Chats.live;
+                source: Chats.face-live;
+                lw: Chats.face-w;
+                lh: Chats.face-h;
+                th: Chats.face-th;
+                TouchArea { clicked => { Chats.poke(); } }
+            }
+            Text { x: 40px; y: 0; height: 32px; text: m.text; font-size: 14.5px; font-weight: 600; color: Ink.text; vertical-alignment: center; }
+            Text { x: parent.width - self.width; y: 0; height: 32px; text: m.mark; font-size: 12.5px; color: Ink.muted; vertical-alignment: center; horizontal-alignment: right; }
+        }
+        // The PC's text: a paragraph, a heading, a list item (its number or dot hanging in the margin) or a quote.
+        if m.kind == "li" && m.mark == "•": Rectangle {
+            x: m.level * 22px + 5px;
+            y: look.prose * 0.52;
+            width: 5px;
+            height: 5px;
+            border-radius: 2.5px;
+            background: Ink.text2;
+        }
+        if m.kind == "li" && m.mark != "•": Text { x: m.level * 22px; y: 0; text: m.mark; font-size: look.prose; color: Ink.muted; }
+        if m.kind == "quote": Rectangle { x: 0; width: 3px; border-radius: 1.5px; background: #3a3a40; }
+        words := StyledText {
+            visible: prose;
+            x: m.kind == "li" ? m.level * 22px + 24px : m.kind == "quote" ? 15px : 0px;
+            y: 0;
+            width: parent.width - self.x;
+            text: m.body;
+            default-font-size: m.kind == "h" ? look.prose + 2px : look.prose;
+            default-color: m.kind == "quote" ? Ink.text2 : Ink.text;
+            link-color: Ink.warm;
+        }
+        // Code: a quiet card, its language above, in a monospace face; long lines slide sideways.
+        Rectangle {
+            visible: code;
+            background: carded ? #0e0e10 : #141416;
+            border-radius: 14px;
+            border-width: 1px;
+            border-color: Ink.hair;
+            if m.mark != "": Text { x: 14px; y: 11px; text: m.mark; font-size: 11.5px; color: Ink.muted; font-family: "JetBrains Mono NL"; }
+            wide := Rectangle {
+                property <length> pan: 0px;
+                property <length> from;
+                property <length> least: min(0px, self.width - lines.preferred-width - 28px);
+                x: 1px;
+                width: parent.width - 2px;
+                y: m.mark != "" ? 30px : 11px;
+                height: lines.preferred-height + 4px;
+                clip: true;
+                lines := Text {
+                    x: 13px + wide.pan;
+                    y: 2px;
+                    text: code ? m.text : "";
+                    font-family: "JetBrains Mono NL";
+                    font-size: 12.5px;
+                    line-height-factor: 1.3;
+                    color: #d6d6da;
+                }
+                TouchArea {
+                    enabled: wide.least < 0;
+                    changed pressed => { wide.from = wide.pan; }
+                    moved => { wide.pan = max(wide.least, min(0px, wide.from + self.mouse-x - self.pressed-x)); }
+                }
+            }
+            Rectangle {
+                x: parent.width - self.width - 1px;
+                y: wide.y;
+                width: 28px;
+                height: wide.height;
+                background: @linear-gradient(90deg, #14141600 0%, carded ? #0e0e10 : #141416 100%);
+                opacity: wide.pan > wide.least + 2px ? 1 : 0;
+                animate opacity { duration: 160ms; }
+            }
+        }
+        // A quiet line: downloading, couldn't load, stopped.
+        if quiet: Rectangle {
+            x: m.me ? parent.width - self.width : 0px;
+            width: min(parent.width, hush.preferred-width + 28px);
+            border-radius: 14px;
+            background: #ffffff0a;
+        }
+        hush := Text {
+            visible: quiet;
+            x: m.me ? parent.width - min(parent.width, self.preferred-width + 28px) + 14px : 14px;
+            y: 9px;
+            width: min(parent.width, self.preferred-width + 28px) - 28px;
+            text: quiet ? m.text : "";
+            font-size: 14px;
+            color: Ink.muted;
+            wrap: word-wrap;
+        }
+        // An answer the agent offers: a full-width button, sent as my message when tapped. Once answered (or
+        // expired) they rest faded, the one I sent filled in with a tick.
+        if choice: Rectangle {
+            property <bool> live: Chats.ask == "waiting" && Chats.ready;
+            property <bool> on: m.mark == "on";
+            height: 50px;
+            border-radius: 16px;
+            background: on ? look.me-bg : tap.pressed ? #3a3a40 : live ? #26262b : #ffffff00;
+            border-width: live || on ? 0px : 1px;
+            border-color: Ink.hair;
+            animate background { duration: 200ms; easing: T.out; }
+            opacity: live || on ? 1 : 0.5;
+            animate opacity { duration: 260ms; easing: T.out; }
+            transform-origin: { x: self.width / 2, y: self.height / 2 };
+            transform-scale: tap.pressed ? 0.98 : 1;
+            animate transform-scale { duration: 140ms; easing: T.out; }
+            Text {
+                x: 18px;
+                width: parent.width - 60px;
+                text: m.text;
+                font-size: 16px;
+                font-weight: 600;
+                color: on ? #fff8f5 : live ? Ink.text : Ink.text2;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            Path {
+                x: parent.width - 34px;
+                y: (parent.height - 16px) / 2;
+                width: 16px;
+                height: 16px;
+                viewbox-width: 24;
+                viewbox-height: 24;
+                commands: on ? "M5 12.5L10 17.5L19 7" : "M5 12h13 M13 6l6 6l-6 6";
+                stroke: on ? #fff8f5 : live ? Ink.warm : Ink.muted;
+                stroke-width: 2.2px;
+                fill: transparent;
+                visible: live || on;
+            }
+            tap := TouchArea {
+                enabled: parent.live;
+                clicked => { Chats.choose(m.text); }
+            }
+        }
+        // A small grey word under a question: "Expired".
+        if m.kind == "tag": Text { x: 2px; text: m.text; font-size: 12.5px; color: Ink.muted; vertical-alignment: center; }
+        // A photo or video in a soft frame, so even a dark screenshot reads as a picture.
+        if media: Rectangle {
+            x: m.me || heading ? parent.width - self.width : 0px;
+            width: media-w;
+            background: #232327;
+            border-radius: 20px;
+            transform-origin: { x: m.me ? self.width : 0px, y: self.height };
+            transform-scale: 0.96 + 0.04 * k;
+            Rectangle {
+                x: 4px;
+                y: 4px;
+                width: parent.width - 8px;
+                height: parent.height - 8px;
+                border-radius: 16px;
+                clip: true;
+                background: #121214;
+                Image { width: parent.width; height: parent.height; source: m.pic; image-fit: cover; vertical-alignment: ImageVerticalAlignment.top; }
+                // a tall picture shown from its top: its cut edge fades out (the whole one opens on a tap)
+                if m.ratio > 1.26: Rectangle {
+                    y: parent.height - self.height;
+                    height: 56px;
+                    background: @linear-gradient(180deg, #23232700 0%, #232327 100%);
+                }
+                if m.kind == "video": Rectangle {
+                    width: 54px;
+                    height: 54px;
+                    border-radius: 27px;
+                    background: #0e0e10b3;
+                    border-width: 1px;
+                    border-color: #ffffff26;
+                    Path { x: 21px; y: 17px; width: 16px; height: 20px; viewbox-width: 16; viewbox-height: 20; commands: "M2 1.5 L15 10 L2 18.5 Z"; fill: white; }
+                }
+            }
+            TouchArea { clicked => { Chats.open-media(m.path, m.kind); } }
+        }
+    }
+}

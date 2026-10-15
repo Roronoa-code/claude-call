@@ -9,7 +9,9 @@ import { Actor } from "actor.slint";
 import "fonts/JetBrainsMonoNL-Regular.ttf";
 
 // asks: an agent's question waiting for my answer.
-export struct ChatRow { id: string, name: string, face: string, preview: string, time: string, unread: bool, busy: bool, asks: bool }
+export struct ChatRow { id: string, name: string, face: string, preview: string, time: string, unread: bool, busy: bool, asks: bool,
+    // PREVIEW (chats-4): a waiting question's answers (to answer from the list), my last message, unread count
+    choices: [string], topic: string, count: int }
 // One piece of the thread (inbox.rs thread). kind: "" my text bubble; "note" a quiet line (downloading, couldn't load,
 // stopped); "image" or "video" a card (pic, ratio = height / width) that opens the file at path when tapped; the
 // PC's text as blocks: "p", "h", "li" (mark "1." or "•", level 0 or 1), "quote" (all with their inline markdown in
@@ -29,6 +31,7 @@ export struct ChatMsg {
     gap: float,
     n: int,
     anchor: bool,
+    last: bool, // PREVIEW (chats-4): the last piece of its message
 }
 
 // The chats' own colours: near-black like the home stage, one warm tone for me.
@@ -100,6 +103,14 @@ export global Chats {
     in property <string> deleted; // the chat Undo would bring back ("" : no bar)
     callback delete-chat(string);
     callback undo();
+    // PREVIEW (chats-4): which direction shows (debug.callme.chats; 0 today's design), a waiting question answered from
+    // the list (chat, answer), the row whose character is alive in the list, and where the opened row was.
+    in property <int> look;
+    callback answer(string, string);
+    in property <string> live-row;
+    in-out property <length> from-y;
+    in property <ChatRow> hero; // Companion: who matters now, and what it is doing
+    in property <string> hero-line;
     // Back steps out one level: photo, picker, a row slid open, thread, Chats screen. False when there is nothing left.
     public function back() -> bool {
         if (viewing) { viewing = false; return true; }
@@ -763,7 +774,7 @@ export component NewChat {
                     horizontal-alignment: center;
                 }
                 tile := TouchArea {
-                    clicked => { Chats.picker = false; Chats.new-chat(a.agent, a.model); Chats.want-focus = true; }
+                    clicked => { Chats.from-y = self.absolute-position.y; Chats.picker = false; Chats.new-chat(a.agent, a.model); Chats.want-focus = true; }
                 }
             }
         }

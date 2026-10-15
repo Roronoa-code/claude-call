@@ -1,0 +1,379 @@
+// PREVIEW (preview/chats-4) direction A, "Portraits": a roomy messenger where every agent has a face. The list shows
+// each character as a portrait in a round seat (alive while it works), a question waiting for Mani on its own card
+// at the top with its answers right there, and one clear "New chat" button by the thumb. Inside a chat each answer
+// opens with its speaker (portrait, name, when); "Thinking" is the character itself, thinking where the answer will
+// appear, and the answer lands under that same portrait.
+import { T, Icon, Icons } from "../parts.slint";
+import { Home } from "../home_parts.slint";
+import { Chats, ChatRow, Ink, IconButton, BackButton } from "../chat.slint";
+import { Bust, Figure } from "still.slint";
+import { Shimmer, Look } from "msg.slint";
+import { Log } from "log.slint";
+import { Composer } from "field.slint";
+import { SlideRow, UndoBar, Count } from "rows.slint";
+
+global A {
+    out property <Look> look: { me-bg: Ink.me, me-heading: false, prose: 16.5px, card: false, card-bg: Ink.surface, who: true };
+    out property <color> card: #17171a;
+    out property <color> key: #26262b; // an answer button
+}
+
+// A question waiting for Mani, with its answers: tap one and it is sent, as in its thread.
+component AskCard inherits Rectangle {
+    in property <ChatRow> r;
+    property <length> q-h: q.preferred-height;
+    background: A.card;
+    border-radius: 24px;
+    height: 16px + 40px + 10px + q-h + 14px + (r.choices.length > 0 ? r.choices.length * 56px - 8px : 48px) + 16px;
+    TouchArea { clicked => { Chats.from-y = root.absolute-position.y; Chats.open-chat(r.id); } }
+    Bust { x: 16px; y: 16px; width: 40px; face: r.face; seat: #222226; }
+    Text { x: 66px; y: 16px; width: parent.width - 66px - 70px; height: 22px; text: r.name; font-size: 16px; font-weight: 650; color: Ink.text; overflow: elide; vertical-alignment: center; }
+    Text { x: 66px; y: 38px; height: 18px; text: "Waiting for your answer"; font-size: 13px; color: Ink.warm; vertical-alignment: center; }
+    Text { x: parent.width - 16px - 60px; y: 16px; width: 60px; height: 22px; text: r.time; font-size: 13px; color: Ink.muted; horizontal-alignment: right; vertical-alignment: center; }
+    q := Text {
+        x: 16px;
+        y: 66px;
+        width: parent.width - 32px;
+        text: r.preview;
+        font-size: 16px;
+        color: Ink.text;
+        wrap: word-wrap;
+    }
+    for c[i] in r.choices: Rectangle {
+        x: 16px;
+        y: 66px + root.q-h + 14px + i * 56px;
+        width: parent.width - 32px;
+        height: 48px;
+        border-radius: 15px;
+        background: key.pressed ? #3a3a40 : A.key;
+        animate background { duration: 160ms; easing: T.out; }
+        transform-scale: key.pressed ? 0.98 : 1;
+        animate transform-scale { duration: 140ms; easing: T.out; }
+        Text { x: 16px; width: parent.width - 56px; text: c; font-size: 15.5px; font-weight: 600; color: Ink.text; vertical-alignment: center; overflow: elide; }
+        Icon { d: "M5 12h13 M13 6l6 6l-6 6"; x: parent.width - 36px; y: 12px; stroke: Ink.warm; }
+        key := TouchArea { clicked => { Chats.answer(r.id, c); } }
+    }
+    if r.choices.length == 0: Rectangle {
+        x: 16px;
+        y: 66px + root.q-h + 14px;
+        width: parent.width - 32px;
+        height: 48px;
+        border-radius: 15px;
+        background: reply.pressed ? #3a3a40 : A.key;
+        Text { text: "Reply"; font-size: 15.5px; font-weight: 600; color: Ink.text; }
+        reply := TouchArea { clicked => { Chats.from-y = root.absolute-position.y; Chats.open-chat(r.id); } }
+    }
+}
+
+export component ListA inherits Rectangle {
+    background: Ink.bg;
+    Rectangle {
+        y: Home.sat;
+        height: 56px;
+        BackButton { }
+    }
+    Text {
+        x: 20px;
+        y: Home.sat + 56px;
+        text: "Chats";
+        font-size: 32px;
+        font-weight: 700;
+        color: Ink.text;
+    }
+    if Chats.rows.length == 0: VerticalLayout {
+        y: Home.sat + 170px;
+        width: parent.width;
+        spacing: 6px;
+        Text { text: "No chats yet"; font-size: 18px; font-weight: 600; color: Ink.text; horizontal-alignment: center; }
+        Text { text: "Start one with New chat."; font-size: 15px; color: Ink.muted; horizontal-alignment: center; }
+    }
+    Flickable {
+        y: Home.sat + 108px;
+        width: parent.width;
+        height: parent.height - self.y;
+        content-height: list.preferred-height;
+        flicked => { Chats.revealed = ""; }
+        list := VerticalLayout {
+            padding-left: 12px;
+            padding-right: 12px;
+            padding-bottom: Home.sab + 96px; // clear of New chat
+            // Questions waiting for Mani: first, each on its own card.
+            for r in Chats.rows: VerticalLayout {
+                padding-bottom: r.asks ? 12px : 0px;
+                if r.asks: AskCard { r: r; }
+            }
+            for r in Chats.rows: SlideRow {
+                property <bool> alive: r.id == Chats.live-row && Chats.live;
+                id: r.id;
+                face-h: r.asks ? 0px : 80px;
+                visible: !r.asks;
+                tapped(y) => { Chats.from-y = y; Chats.open-chat(r.id); }
+                Bust {
+                    x: 10px;
+                    y: 14px;
+                    width: 52px;
+                    face: r.face;
+                    pose: r.busy ? "think" : "idle";
+                    live: alive;
+                    source: Chats.face-live;
+                    lw: Chats.face-w;
+                    lh: Chats.face-h;
+                    th: Chats.face-th;
+                }
+                Text {
+                    x: 76px;
+                    y: 15px;
+                    width: parent.width - 76px - 72px;
+                    height: 24px;
+                    text: r.name;
+                    font-size: 16.5px;
+                    font-weight: r.unread ? 700 : 600;
+                    color: Ink.text;
+                    overflow: elide;
+                    vertical-alignment: center;
+                }
+                Text {
+                    x: parent.width - 72px;
+                    y: 15px;
+                    width: 60px;
+                    height: 24px;
+                    text: r.time;
+                    font-size: 13px;
+                    font-weight: r.unread ? 600 : 400;
+                    color: r.unread ? Ink.warm : Ink.muted;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                }
+                if !r.busy: Text {
+                    x: 76px;
+                    y: 41px;
+                    width: parent.width - 76px - (r.unread ? 52px : 14px);
+                    height: 24px;
+                    text: r.preview;
+                    font-size: 15px;
+                    color: r.unread ? Ink.text2 : Ink.muted;
+                    overflow: elide;
+                    vertical-alignment: center;
+                }
+                if r.busy: Shimmer { x: 76px; y: 41px; height: 24px; text: "Thinking"; base: #a08a80; vertical-alignment: center; }
+                if r.unread: Count { x: parent.width - self.width - 12px; y: 42px; n: max(1, r.count); }
+                // a hairline under each row, from the text's edge
+                Rectangle { x: 76px; y: parent.height - 1px; height: 1px; background: #ffffff0d; }
+            }
+        }
+    }
+    // New chat: the one primary action, by the thumb (the picker grows out of it).
+    Rectangle {
+        x: parent.width - self.width - 16px;
+        y: parent.height - Home.sab - 16px - self.height;
+        width: 148px;
+        height: 56px;
+        border-radius: 28px;
+        background: nc.pressed ? #9a4e36 : Ink.me;
+        animate background { duration: 160ms; easing: T.out; }
+        drop-shadow-blur: 20px;
+        drop-shadow-color: #00000099;
+        drop-shadow-offset-y: 6px;
+        transform-scale: nc.pressed ? 0.96 : 1;
+        animate transform-scale { duration: 140ms; easing: T.out; }
+        Icon { d: Icons.plus; x: 20px; y: 16px; stroke: #fff8f5; }
+        Text { x: 52px; height: parent.height; text: "New chat"; font-size: 16px; font-weight: 650; color: #fff8f5; vertical-alignment: center; }
+        nc := TouchArea { clicked => { Chats.picker = true; } }
+    }
+    UndoBar { x: 16px; width: parent.width - 32px; base: parent.height - Home.sab - 88px; }
+}
+
+export component ThreadA inherits Rectangle {
+    background: Ink.bg;
+    property <length> bottom: self.height - max(Home.kb, Home.sab) - 10px;
+    log := Log {
+        y: Home.sat + 64px;
+        width: parent.width;
+        height: parent.height - self.y;
+        look: A.look;
+        pad-top: Chats.ask == "waiting" ? 196px : 12px;
+        animate pad-top { duration: 420ms; easing: T.out; }
+        pad-bottom: Chats.readonly ? Home.sab + 28px : root.height - field.y + 18px;
+        // The PC is working on it: the character thinks where its answer will appear; the answer lands under the
+        // same portrait.
+        if Chats.action == "stop": Rectangle {
+            property <float> k: 0;
+            init => { self.k = 1; }
+            animate k { duration: 420ms; easing: T.out; }
+            height: 58px;
+            opacity: k;
+            Rectangle {
+                y: 26px + (1 - parent.k) * 8px;
+                height: 32px;
+                Bust {
+                    x: 0;
+                    y: 1px;
+                    width: 30px;
+                    face: Chats.face;
+                    pose: "think";
+                    live: Chats.live;
+                    source: Chats.face-live;
+                    lw: Chats.face-w;
+                    lh: Chats.face-h;
+                    th: Chats.face-th;
+                }
+                Shimmer { x: 40px; height: 32px; text: "Thinking"; font-size: 14.5px; font-weight: 600; base: #8a8c93; vertical-alignment: center; }
+            }
+        }
+        // How my last message is going (tap to try again when it did not go).
+        if Chats.status != "" && Chats.action != "stop": HorizontalLayout {
+            alignment: end;
+            padding-top: 6px;
+            Rectangle {
+                width: note.preferred-width;
+                height: 22px;
+                note := Text {
+                    text: Chats.status;
+                    font-size: 13px;
+                    color: Chats.action == "retry" ? #ec8a6f : Ink.muted;
+                    font-weight: Chats.action == "retry" ? 600 : 400;
+                    vertical-alignment: center;
+                }
+                TouchArea { enabled: Chats.action == "retry"; clicked => { Chats.retry(); } }
+            }
+        }
+    }
+    // An agent's question: the agent stands over it, looking at you, until it is answered.
+    Figure {
+        property <float> shown: Chats.ask == "waiting" ? 1 : 0;
+        animate shown { duration: 420ms; easing: T.out; }
+        visible: self.shown > 0.01;
+        opacity: self.shown;
+        x: 0;
+        y: log.y + log.content-y + 24px - (1 - self.shown) * 16px;
+        width: parent.width;
+        height: 160px;
+        face: Chats.face;
+        k: 0.5;
+        live: Chats.live;
+        source: Chats.big-live;
+        lw: Chats.big-w;
+        lh: Chats.big-h;
+        th: Chats.big-th;
+        TouchArea { clicked => { Chats.poke(); } }
+    }
+    // A new chat: its character stands big in the middle (above the keyboard while it's up).
+    VerticalLayout {
+        property <length> top: Home.sat + 64px;
+        property <length> room: field.y - 8px - self.top;
+        x: 24px;
+        width: parent.width - 48px;
+        y: self.top + max(0px, (self.room - self.preferred-height) / 2) - (Chats.empty ? 0px : 16px);
+        height: self.preferred-height;
+        alignment: start;
+        spacing: 4px;
+        opacity: Chats.empty ? 1 : 0;
+        visible: self.opacity > 0.01;
+        animate opacity, y { duration: 320ms; easing: T.out; }
+        Figure {
+            height: 156px;
+            face: Chats.face;
+            k: 0.7;
+            live: Chats.live;
+            source: Chats.big-live;
+            lw: Chats.big-w;
+            lh: Chats.big-h;
+            th: Chats.big-th;
+            TouchArea { enabled: Chats.empty; clicked => { Chats.poke(); } }
+        }
+        Rectangle { height: 14px; }
+        Text { text: Chats.short; font-size: 24px; font-weight: 700; color: Ink.text; horizontal-alignment: center; overflow: elide; }
+        Text { text: "Your message goes to the PC."; font-size: 15px; color: Ink.muted; horizontal-alignment: center; }
+    }
+    // The header: back, the portrait, the name and where things stand.
+    Rectangle {
+        y: 0;
+        height: Home.sat + 64px;
+        background: Ink.bg;
+        Rectangle {
+            y: parent.height - 1px;
+            height: 1px;
+            background: Ink.hair;
+            opacity: log.scrolled && !Chats.empty ? 1 : 0;
+            animate opacity { duration: 200ms; }
+        }
+        Rectangle {
+            y: Home.sat;
+            height: 64px;
+            BackButton { y: 8px; }
+            Bust {
+                x: 54px;
+                y: 12px;
+                width: 40px;
+                face: Chats.face;
+                pose: Chats.waiting ? "think" : "idle";
+                TouchArea { clicked => { Chats.poke(); } }
+            }
+            Text {
+                property <bool> alone: Chats.title == "" && !Chats.waiting;
+                x: 106px;
+                y: alone ? 0px : 11px;
+                width: parent.width - 122px;
+                height: alone ? 64px : 22px;
+                text: Chats.name;
+                font-size: 17px;
+                font-weight: 650;
+                color: Ink.text;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            Text {
+                x: 106px;
+                y: 33px;
+                width: parent.width - 122px;
+                height: 18px;
+                text: Chats.waiting ? "Thinking…" : Chats.title;
+                font-size: 13px;
+                color: Chats.waiting || Chats.ask == "waiting" ? Ink.warm : Ink.muted;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+    }
+    // The thread fades out under the field.
+    Rectangle {
+        visible: !Chats.readonly;
+        y: field.y - 30px;
+        height: parent.height - self.y;
+        background: @linear-gradient(180deg, #0e0e1000 0%, #0e0e10 46%);
+    }
+    field := Composer {
+        visible: !Chats.readonly;
+        x: 12px;
+        width: parent.width - 24px;
+        y: root.bottom - self.height;
+    }
+    // A photo full screen; a tap or Back closes it.
+    Rectangle {
+        property <float> k: Chats.viewing ? 1 : 0;
+        animate k { duration: Chats.viewing ? 340ms : 220ms; easing: Chats.viewing ? T.out : T.close; }
+        visible: k > 0.01;
+        background: black;
+        opacity: k;
+        TouchArea { clicked => { Chats.viewing = false; } }
+        Image {
+            y: Home.sat;
+            width: parent.width;
+            height: parent.height - Home.sat - Home.sab;
+            source: Chats.full;
+            image-fit: contain;
+            transform-origin: { x: self.width / 2, y: self.height / 2 };
+            transform-scale: 0.94 + 0.06 * parent.k;
+        }
+        Rectangle {
+            x: 12px;
+            y: Home.sat + 8px;
+            width: 44px;
+            height: 44px;
+            border-radius: 22px;
+            background: #1a1a1dcc;
+            Icon { d: Icons.close; x: 10px; y: 10px; }
+            TouchArea { clicked => { Chats.viewing = false; } }
+        }
+    }
+}

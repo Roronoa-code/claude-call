@@ -12,6 +12,8 @@ mod caller;
 #[cfg(target_os = "android")]
 mod chat_alert;
 #[cfg(target_os = "android")]
+mod chats4; // PREVIEW: the chats directions
+#[cfg(target_os = "android")]
 mod engine;
 #[cfg(target_os = "android")]
 mod faces;
