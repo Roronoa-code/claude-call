@@ -233,6 +233,99 @@ vec3 toon(vec3 n, vec3 alb, float occ, float lift) {
     return mix(c, alb * vec3(1.08, 1.25, 1.4), smoothstep(0.74, 0.78, d));
 }
 
+// Sonnet: long soft pile. The fur is a height field of fine locks lying down the body, gathered into soft clumps
+// and swirled by the stuffing's lumps, seen through a few shells so the gaps between locks fall into shade and
+// grazing views fill in; each lock is lit as a little bump, with a fibre sheen along the strands and a warm halo
+// where the tips catch the light.
+float FUZZ = 0.0; // 0 on the surface, towards 1 in the tufts standing out past the silhouette
+vec3 localDir(vec3 v) { v.xy = rot(uBody.z) * v.xy; v.xz = rot(uBody.w) * v.xz; return v; }
+vec4 vnoised(vec3 x) { // value noise with its gradient (xyz) and value (w)
+    vec3 i = floor(x), f = fract(x);
+    vec3 u = f * f * (3.0 - 2.0 * f), du = 6.0 * f * (1.0 - f);
+    float a = hash(i), b = hash(i + vec3(1, 0, 0)), c = hash(i + vec3(0, 1, 0)), d = hash(i + vec3(1, 1, 0));
+    float e = hash(i + vec3(0, 0, 1)), g = hash(i + vec3(1, 0, 1)), h = hash(i + vec3(0, 1, 1)), k = hash(i + vec3(1, 1, 1));
+    float k1 = b - a, k2 = c - a, k3 = e - a, k4 = a - b - c + d, k5 = a - c - e + h, k6 = a - b - e + g, k7 = -a + b + c - d + e - g - h + k;
+    return vec4(du * vec3(k1 + k4 * u.y + k6 * u.z + k7 * u.y * u.z, k2 + k5 * u.z + k4 * u.x + k7 * u.z * u.x, k3 + k6 * u.x + k5 * u.y + k7 * u.x * u.y),
+                a + k1 * u.x + k2 * u.y + k3 * u.z + k4 * u.x * u.y + k5 * u.y * u.z + k6 * u.z * u.x + k7 * u.x * u.y * u.z);
+}
+// The locks, turned off the noise grid's axes and drawn out along the nap (y), about two device pixels across on
+// the phone. Their scale per unit of local space:
+const mat3 LOCKS = mat3(0.88, 0.0, -0.48, 0.12, 0.97, 0.22, 0.46, -0.25, 0.85) * mat3(105.0, 0.0, 0.0, 0.0, 40.0, 0.0, 0.0, 0.0, 105.0);
+// The pile at a root: height (w; 1 at the tallest tips, given the clump it sits in) and its slope across the skin
+// (xyz, per unit), which shades each lock as a bump. Locks smaller than about two pixels blur to their mean.
+vec4 pile(vec3 x, float foot, float clump) {
+    vec4 a = vnoised(LOCKS * x);
+    float fade = smoothstep(0.004, 0.009, foot);
+    return vec4((a.xyz * LOCKS) * 0.65 * (1.0 - fade), smoothstep(0.15, 0.85, mix(a.w, 0.5, fade) * 0.72 + clump * 0.28));
+}
+vec3 plush(vec3 q, vec3 c, vec3 n, vec3 v, vec3 rd, float foot, float occ, float isLeg) {
+    vec3 alb = lin(vec3(0.83, 0.37, 0.1));
+    vec3 nl = localDir(n), rl = localDir(rd);
+    // the nap runs down the sides and out from the crown
+    vec3 dn = mix(vec3(0.0, -1.0, 0.0), normalize(vec3(c.x, 0.0, c.z) + 1e-4), smoothstep(0.35, 0.85, nl.y));
+    vec3 F = normalize(dn - nl * dot(dn, nl) + vec3(0.0, 0.0, 1e-3));
+    // big soft lumps of stuffing turn the light and swirl the locks; the locks gather into soft clumps
+    vec4 lump = vnoised(q * vec3(4.0, 3.0, 4.0));
+    vec3 lt = lump.xyz - nl * dot(lump.xyz, nl);
+    vec3 ns = normalize(n - worldDir(lt) * 0.14);
+    vec3 qw = q + lt * 0.03 + 0.012 * vec3(sin(q.y * 25.0 + q.z * 9.0 + lump.w * 6.0), 0.0, sin(q.y * 22.0 + q.x * 9.0 + lump.w * 6.0));
+    float clump = vnoise(qw * vec3(38.0, 16.0, 38.0) + 7.3);
+    // seams round the front panel and the feet: the fur parts along them and the thread shows in dashes
+    vec3 bq = abs(c) - BODY + ROUND;
+    float seam = 1e3, along = c.y;
+    if (bq.x > 0.0 && bq.z > 0.0 && bq.y < 0.5 * (bq.x + bq.z)) seam = abs(bq.x - bq.z) * 0.707; // up the front corners
+    if (bq.y > 0.0 && bq.z > 0.0 && c.y > 0.0) { float s2 = abs(bq.y - bq.z) * 0.707; if (s2 < seam) { seam = s2; along = c.x; } }
+    if (isLeg > 0.5) { seam = abs(q.y - 0.1); along = q.x + q.z; }
+    float part = mix(0.55, 1.0, smoothstep(0.0, 0.016, seam));
+    // light, once for the pixel
+    vec3 l1 = normalize(vec3(-0.55, 0.80, 0.55));
+    float ndv = max(dot(ns, v), 0.0);
+    float wrap0 = max((dot(ns, l1) + 0.25) / 1.25, 0.0);
+    float wrap = wrap0 * wrap0 * (3.0 - 2.0 * wrap0);
+    float topLit = mix(0.58, 1.05, smoothstep(0.1, BODY_Y + BODY.y, q.y));
+    vec3 lit = alb * (wrap * 1.45 + max(dot(ns, normalize(vec3(0.8, 0.3, 0.5))), 0.0) * 0.1 + 0.035) * occ * topLit;
+    // fibre sheen (Kajiya-Kay): strands rise from the skin and lie along the nap, which the lumps swirl about, so
+    // the sheen breaks into soft brushed patches
+    float sw = (lump.w - 0.5) * 2.6;
+    vec3 Fs = F * cos(sw) + cross(nl, F) * sin(sw);
+    vec3 T = worldDir(normalize(nl * 0.5 + Fs * 0.87));
+    vec3 hv = normalize(l1 + v);
+    float t1 = dot(normalize(T + n * 0.25), hv), t2 = dot(normalize(T - n * 0.3), hv);
+    vec3 sheen = vec3(1.0, 0.78, 0.55) * pow(max(1.0 - t1 * t1, 0.0), 40.0) * 0.14 + alb * pow(max(1.0 - t2 * t2, 0.0), 5.0) * 0.25;
+    sheen *= occ * smoothstep(-0.2, 0.4, dot(n, l1)) * topLit;
+    // the shells: from the tips down; each layer's locks cover what is under them and are lit as bumps
+    float cosv = max(-dot(rl, nl), 0.3);
+    vec3 drift = (rl - nl * dot(rl, nl)) / cosv;
+    const float L = 0.02;
+    float footV = foot * inversesqrt(cosv); // a pixel's footprint along the skin: wider where it turns away
+    float w = 0.12 + 9.0 * footV;
+    vec3 col = vec3(0.0);
+    float acc = 0.0;
+    for (int k = 0; k < 2; k++) {
+        float h = 0.75 - 0.4 * float(k);
+        vec4 pk = pile(qw + drift * (1.0 - h) * L - F * h * L * 0.4, footV, clump);
+        float a = smoothstep(h - w, h + w, pk.w * part);
+        vec3 gt = pk.xyz - nl * dot(pk.xyz, nl);
+        vec3 nb = normalize(ns - worldDir(gt) * 0.0028);
+        float bl = max((dot(nb, l1) + 0.25) / 1.25, 0.0) / max(wrap0, 0.05);
+        vec3 ck = lit * clamp(bl, 0.4, 1.6) * mix(0.78, 1.04, h) * mix(vec3(0.9, 0.75, 0.66), vec3(1.0), h) + sheen * h * h;
+        col += (1.0 - acc) * a * ck;
+        acc += (1.0 - acc) * a;
+    }
+    col += (1.0 - acc) * lit * vec3(0.66, 0.46, 0.36);
+    // the tips' halo: back-lit fibres glow at grazing angles, warm on the lit side, the stage's violet behind
+    float gr = pow(1.0 - ndv, 3.0);
+    col += lin(vec3(1.0, 0.56, 0.26)) * gr * 0.32 * (0.3 + 0.7 * wrap) * occ;
+    col += lin(vec3(0.6, 0.5, 1.0)) * gr * 0.2 * smoothstep(0.0, 0.7, dot(n, normalize(vec3(0.45, 0.2, -0.85))));
+    // past the silhouette only tips remain
+    col = mix(col, lit * 1.05 + sheen + lin(vec3(1.0, 0.56, 0.26)) * 0.1 * (0.3 + 0.7 * wrap), FUZZ * 0.7);
+    // the seam's groove, and the thread in short pale dashes along it
+    col *= mix(0.55, 1.0, smoothstep(0.0, 0.016, seam)) * mix(0.82, 1.0, smoothstep(0.0, 0.045, seam));
+    float dash = smoothstep(0.32, 0.16, abs(fract(along / 0.032) - 0.5)) * smoothstep(0.01, 0.004, seam);
+    col = mix(col, lit * vec3(1.2, 1.05, 0.85), dash * 0.7);
+    return col;
+}
+
 vec3 shade(vec3 p, vec3 rd, float foot, out float ink) {
     vec3 n = normal(p), v = -rd;
     vec3 q = local(p);
@@ -275,34 +368,7 @@ vec3 shade(vec3 p, vec3 rd, float foot, out float ink) {
             ink = max(ink, smoothstep(0.045, 0.025, claw) * step(abs(a.z), ARM.z * 0.55) * smoothstep(ARM.x * 0.55, ARM.x * 0.75, a.x));
         }
     } else if (MAT == 2) {
-        vec3 alb = lin(vec3(0.86, 0.42, 0.12));
-        // fur: streaks along the nap (downwards) over soft clumps; the finest octave fades out before it would
-        // shimmer smaller than a pixel
-        float fineFade = 1.0 - smoothstep(0.012, 0.03, foot);
-        float fib = vnoise(q * vec3(60.0, 16.0, 60.0)) * 0.6 + vnoise(q * vec3(140.0, 40.0, 140.0)) * 0.4 * fineFade;
-        vec3 cq = q * vec3(13.0, 7.0, 13.0);
-        float clump = vnoise(cq);
-        vec3 cg = vec3(vnoise(cq + vec3(0.15, 0.0, 0.0)), vnoise(cq + vec3(0.0, 0.15, 0.0)), vnoise(cq + vec3(0.0, 0.0, 0.15))) - clump;
-        n = normalize(n - worldDir(cg) * 0.6); // the clumps catch the light
-        alb *= 0.76 + 0.42 * fib + 0.06 * (clump - 0.5);
-        // seams round the front panel and the feet: a soft groove with the fur drawn into it
-        vec3 bq = abs(c) - BODY + ROUND;
-        float seam = 1e3;
-        if (bq.x > 0.0 && bq.z > 0.0) seam = abs(bq.x - bq.z) * 0.707;
-        if (bq.y > 0.0 && bq.z > 0.0 && c.y > 0.0) seam = min(seam, abs(bq.y - bq.z) * 0.707);
-        if (isLeg > 0.5) seam = abs(q.y - 0.09);
-        seam += 0.006 * (fib - 0.5);
-        float groove = smoothstep(0.03, 0.0, seam);
-        alb *= 1.0 - 0.22 * groove;
-        float ndv = max(dot(n, v), 0.0);
-        vec3 l1 = normalize(vec3(-0.55, 0.80, 0.55));
-        float wrap = max((dot(n, l1) + 0.25) / 1.25, 0.0);
-        wrap *= wrap * (3.0 - 2.0 * wrap); // a softbox key: bright front and top, the far side falling into shade
-        col = alb * (wrap * 1.35 + max(dot(n, normalize(vec3(0.8, 0.3, 0.5))), 0.0) * 0.08 + 0.035) * occ;
-        col *= mix(0.55, 1.05, smoothstep(0.1, BODY_Y + BODY.y, q.y)); // top lit, the bottom in shade
-        // the nap's sheen: fabric catches light at grazing angles
-        col += lin(vec3(1.0, 0.7, 0.45)) * pow(1.0 - ndv, 2.0) * 0.3 * (0.3 + 0.7 * wrap) * occ * (0.6 + 0.8 * fib);
-        col += lin(vec3(0.6, 0.5, 1.0)) * pow(1.0 - ndv, 3.0) * 0.15 * smoothstep(0.0, 0.7, dot(n, normalize(vec3(0.45, 0.2, -0.85))));
+        col = plush(q, c, n, v, rd, foot, occ, isLeg);
     } else if (MAT == 3) {
         vec3 alb = lin(vec3(1.0, 0.44, 0.03)) * mix(0.62, 1.0, smoothstep(0.3, 1.8, q.y));
         float bandZ = BODY.z - 0.27;
@@ -346,19 +412,29 @@ vec3 shade(vec3 p, vec3 rd, float foot, out float ink) {
         } else {
             // a socket round each eye (the surface dips in, the lower lip catches the light), then the glossy black
             // eye domed like a bead
-            float w = MAT == 3 ? 0.012 : (MAT == 0 ? 0.032 : 0.02);
+            float w = MAT == 3 ? 0.012 : (MAT == 0 ? 0.032 : (MAT == 2 ? 0.035 : 0.02));
             float rim = clamp(e / (w + aa), 0.0, 1.0);
             float groove = 1.0 - smoothstep(0.0, 1.0, rim);
             vec3 ng = normalize(n - out2 * (MAT == 0 ? 0.9 * (1.0 - rim) : 0.7 * groove));
             if (MAT == 0) col = light(ng, v, vin * mix(0.25, 1.0, rim), 0.55, occ * mix(0.2, 1.0, rim));
             else {
                 vec3 rimCol = MAT == 3 ? chrome(ng, v, occ) : light(ng, v, col * 0.2, 0.2, occ * 0.4);
-                col = mix(col, rimCol, groove * (MAT == 2 ? 0.6 : 0.9));
+                if (MAT == 2) rimCol = col * vec3(0.2, 0.13, 0.1); // the fur tucks into a dark ring round the bead
+                col = mix(col, rimCol, groove * (MAT == 2 ? 0.85 : 0.9));
             }
             float s = clamp(-e / 0.12, 0.0, 1.0);
             float slope = min((1.0 - s) / sqrt(max(1.0 - (1.0 - s) * (1.0 - s), 1e-4)), 3.0) * 0.9;
             vec3 ne = normalize(n + out2 * slope);
-            vec3 black = light(ne, v, vec3(0.004), 1.0, 1.0) * mix(0.5, 1.0, s);
+            if (MAT == 2) {
+                // the plush's eye is a round glass bead: an ellipsoid's normal, smooth through the middle where the
+                // slope above has a ridge; the blink, ^ ^ and sleepy shapes keep the slope
+                float open = uEyes.z * clamp(1.0 - 2.0 * uMood.x, 0.0, 1.0);
+                vec2 r = ES * vec2(0.14 * ESX * mix(1.12, 1.0, open), 0.29 * mix(0.12, 1.0, open));
+                vec2 u = ep * ES / r;
+                vec3 nb = worldDir(normalize(vec3(u / r, sqrt(max(1.0 - dot(u, u), 0.0)) / 0.1)));
+                ne = normalize(mix(ne, nb, smoothstep(0.3, 0.7, open) * (1.0 - smoothstep(0.2, 0.6, uEyes.w)) * step(dot(u, u), 1.1))); // not the mouth
+            }
+            vec3 black = light(ne, v, vec3(0.004), MAT == 2 ? 0.55 : 1.0, 1.0) * mix(0.5, 1.0, s); // the plush's bead: one clear glint
             vec3 h = normalize(normalize(vec3(-0.55, 0.80, 0.55)) + v);
             black += vec3(1.0) * smoothstep(0.93, 0.97, dot(ne, h)) * 1.4; // the crisp white glint
             col = mix(col, black, inside);
@@ -386,8 +462,8 @@ void main() {
         BODY = vec3(1.0, 0.88, 0.80); ROUND = 0.52; PUFF = 0.13; EYE = vec2(0.31, 0.2); ES = 1.16; bottom = 0.5;
         LEG = vec3(0.27, 0.6, 0.4); LEGT = -0.03; ARM = vec3(0.46, 0.28, 0.28); LEGK = 0.035; TAPER = 0.12; SHOULDER = vec3(-0.04, -0.12, 0.3);
     } else if (MAT == 2) {
-        BODY = vec3(0.96, 0.9, 0.84); ROUND = 0.46; PUFF = 0.07; EYE = vec2(0.34, 0.17); ES = 0.82;
-        LEG = vec3(0.3, 0.55, 0.42); LEGT = -0.02; ARM = vec3(0.5, 0.28, 0.3); TAPER = 0.07; SHOULDER = vec3(-0.08, 0.16, 0.26); ARMYAW = 0.35; bottom = 0.4;
+        BODY = vec3(0.96, 0.9, 0.84); ROUND = 0.46; PUFF = 0.07; EYE = vec2(0.33, 0.31); ES = 0.78; ESX = 0.95;
+        LEG = vec3(0.33, 0.55, 0.42); LEGT = 0.0; LEGK = 0.11; ARM = vec3(0.6, 0.3, 0.32); TAPER = 0.12; SHOULDER = vec3(-0.08, 0.16, 0.26); ARMYAW = 0.35; bottom = 0.34;
     } else if (MAT == 3) {
         BODY = vec3(1.06, 0.92, 0.76); ROUND = 0.46; PUFF = 0.12; EYE = vec2(0.34, 0.1); ES = 1.12; ESX = 0.82; bottom = 0.42;
         LEG = vec3(0.23, 0.68, 0.4); LEGT = -0.08; ARM = vec3(0.42, 0.22, 0.24); TAPER = 0.0; SHOULDER = vec3(0.0, -0.08, 0.2);
@@ -451,12 +527,14 @@ void main() {
             }
         } else if (MAT == 2) {
             // the fuzzy edge: fibres stand a little proud of the surface, so the silhouette is soft and broken
+            // the locks stand proud of the surface by up to `len` pixels, each with a crisp one-pixel edge
             vec3 p = ro + rd * tBest;
-            vec3 lp = local(p);
-            float fur = 0.026 / (pix * tBest) * (0.25 * vnoise(lp * 40.0) + 0.75 * vnoise(lp * vec3(170.0, 60.0, 170.0)));
-            cover = clamp(1.0 - best / (1.0 + fur), 0.0, 1.0);
-            cover *= cover;
-            if (cover > 0.0) col = shade(p, rd, pix * tBest, ink);
+            float foot = pix * tBest;
+            float len = 0.02 / foot;
+            float tuft = smoothstep(0.15, 0.85, vnoise(LOCKS * local(p)) * 0.72 + 0.14); // the pile's height, no slope needed
+            cover = clamp(len * (0.15 + 0.85 * tuft * tuft) - best + 0.5, 0.0, 1.0);
+            FUZZ = clamp(best / len, 0.0, 1.0);
+            if (cover > 0.0) col = shade(p, rd, foot, ink);
         } else {
             // Anti-aliased edges: a ray that just misses still covers part of its pixel.
             cover = clamp(1.0 - best, 0.0, 1.0);

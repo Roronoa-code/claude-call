@@ -63,7 +63,7 @@ fn feel(who: Who) -> Feel {
     match who {
         Who::Clawd(Mat::Vinyl) => Feel { squash: (5.0, 0.55), land: 0.3, hop: 0.22, lean: (2.0, 0.45), arms: (3.0, 0.35), arm_rest: -0.6, breath: 0.016 },
         Who::Clawd(Mat::Cartoon) => Feel { squash: (6.5, 0.38), land: 0.42, hop: 0.28, lean: (2.6, 0.4), arms: (4.0, 0.3), arm_rest: -0.85, breath: 0.02 },
-        Who::Clawd(Mat::Plush) => Feel { squash: (3.4, 0.3), land: 0.45, hop: 0.18, lean: (1.5, 0.5), arms: (2.2, 0.28), arm_rest: -0.95, breath: 0.022 },
+        Who::Clawd(Mat::Plush) => Feel { squash: (2.6, 0.2), land: 0.75, hop: 0.16, lean: (1.3, 0.42), arms: (1.8, 0.2), arm_rest: -0.8, breath: 0.024 },
         Who::Clawd(Mat::Chrome) => Feel { squash: (7.5, 0.7), land: 0.16, hop: 0.15, lean: (1.8, 0.6), arms: (3.5, 0.5), arm_rest: -0.55, breath: 0.01 },
         Who::Null => Feel { squash: (5.5, 0.5), land: 0.25, hop: 0.16, lean: (2.2, 0.5), arms: (6.0, 0.5), arm_rest: 0.0, breath: 0.012 },
     }
