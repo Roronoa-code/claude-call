@@ -410,8 +410,8 @@ export component HomeScreen inherits Window {
             open: Chats.picker;
             panel: #1c1c20;
             // PREVIEW (chats-4): A's picker grows out of New chat, at the bottom
-            fx: Chats.look == 1 ? root.width - 16px - 148px : root.width - 52px;
-            fy: Chats.look == 1 ? root.height - Home.sab - 72px : Home.sat + 6px;
+            fx: Chats.look == 1 ? root.width - 16px - 148px : Chats.look == 2 ? root.width - 60px : root.width - 52px;
+            fy: Chats.look == 1 ? root.height - Home.sab - 72px : Chats.look == 2 ? Home.sat + 6px : Home.sat + 6px;
             fsize: Chats.look == 1 ? 56px : 48px;
             fw: Chats.look == 1 ? 148px : 48px;
             tw: root.width - 24px;

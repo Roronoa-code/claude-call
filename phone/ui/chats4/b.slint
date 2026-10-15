@@ -147,7 +147,9 @@ export component ListB inherits Rectangle {
 export component ThreadB inherits Rectangle {
     background: Ink.bg;
     property <length> bottom: self.height - max(Home.kb, Home.sab) - 10px;
-    property <length> pal: Chats.readonly ? 0px : 76px; // the character's room beside the field
+    // the character's room beside the field (a new chat's stands big in the middle until the first message)
+    property <length> pal: Chats.readonly || Chats.empty ? 0px : 76px;
+    animate pal { duration: 320ms; easing: T.out; }
     log := Log {
         y: Home.sat + 60px;
         width: parent.width;
@@ -266,7 +268,9 @@ export component ThreadB inherits Rectangle {
         background: @linear-gradient(180deg, #0e0e1000 0%, #0e0e10 46%);
     }
     // The character, standing by the field (it rides up with the keyboard). A tap: a hop.
-    if !Chats.readonly && !Chats.empty: Rectangle {
+    if !Chats.readonly: Rectangle {
+        opacity: root.pal / 76px;
+        visible: self.opacity > 0.01;
         x: 4px;
         y: field.y + field.height - self.height + 2px;
         width: 76px;

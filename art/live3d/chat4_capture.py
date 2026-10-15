@@ -203,10 +203,10 @@ def video(look, d, row_xy, field_xy, settle=2.2):
     subprocess.run(ADB + ['pull', '/sdcard/flow.mp4', raw], capture_output=True)
     adb('shell', 'rm', '/sdcard/flow.mp4')
     vid = os.path.join(d, 'flow.mp4')
-    subprocess.run([FF, '-y', '-loglevel', 'error', '-i', raw, '-c:v', 'libx264', '-crf', '18', '-pix_fmt', 'yuv420p', '-an', vid])
+    subprocess.run([FF, '-y', '-loglevel', 'error', '-i', raw, '-c:v', 'h264_nvenc', '-preset', 'p5', '-cq', '19', '-pix_fmt', 'yuv420p', '-an', vid])
     os.remove(raw)
-    subprocess.run([FF, '-y', '-loglevel', 'error', '-i', vid, '-vf', 'scale=540:-2', '-c:v', 'libx264', '-crf', '26',
-                    '-preset', 'slow', '-pix_fmt', 'yuv420p', '-an', os.path.join(d, 'flow-540.mp4')])
+    subprocess.run([FF, '-y', '-loglevel', 'error', '-i', vid, '-vf', 'scale=540:-2', '-c:v', 'h264_nvenc', '-preset', 'p5', '-cq', '27',
+                    '-pix_fmt', 'yuv420p', '-an', os.path.join(d, 'flow-540.mp4')])
     print('video saved')
 
 
