@@ -34,6 +34,7 @@ mod widget;
 mod alive;
 mod cast;
 mod chats;
+mod stage; // PREVIEW: the home stage's worlds
 mod view;
 
 slint::include_modules!();

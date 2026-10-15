@@ -10,6 +10,11 @@ uniform vec4 uArms; // left, right arm angle
 uniform vec4 uEyes; // look x, look y, open, sleepy lids
 uniform vec4 uMood; // happy, talk (mouth open 0..1), -, -
 uniform vec4 uMat;  // x: 0 vinyl, 1 cartoon, 2 plush, 3 chrome
+// The home stage's world (all 0 elsewhere: the studio as it was, no floor drawn).
+uniform vec4 uStage; // floor reflection strength, px of floor below the picture, reflection blur, its fade with height
+uniform vec4 uKey;   // key light direction (0: the studio's top-left key), rim light strength (added to 1)
+uniform vec4 uKeyCol; // key light colour (added to white), ambient strength (added to 1)
+uniform vec4 uShadow; // the key light's cast shadow on the floor: strength, softness; px over which the floor fades out at the bottom (0: 30 logical px); light bounced up off the floor
 out vec4 outColor;
 // The material can also be fixed when compiling ("#define MAT_ID 2" after the version line): the GPU then drops the
 // other materials' code and folds the proportions into constants, which is cheaper than picking at run time.
@@ -21,6 +26,8 @@ const float FL = 5.0; // lens: a long one, like a product shot
 
 // Each material's proportions, from its reference art; set once at the start of main.
 int MAT;
+vec3 KEY, KEYC; // the key light's direction and colour
+float RIM, AMB;
 vec3 BODY;    // half size
 float BODY_Y; // body centre above the floor
 float ROUND, PUFF;
@@ -188,23 +195,24 @@ vec3 studio(vec3 r) {
 vec3 softClip(vec3 c) { return mix(c, 0.82 + 0.18 * (1.0 - exp(-(c - 0.82) / 0.18)), step(0.82, c)); } // no blown highlights
 
 vec3 light(vec3 n, vec3 v, vec3 alb, float gloss, float occ) {
-    vec3 l1 = normalize(vec3(-0.55, 0.80, 0.55)); // key: top left, in front
+    vec3 l1 = KEY; // key: top left, in front (or the stage's)
     vec3 l2 = normalize(vec3(0.80, 0.30, 0.50));  // fill
     vec3 l3 = normalize(vec3(0.45, 0.20, -0.85)); // rim from behind, the stage's violet
     vec3 l4 = normalize(vec3(0.35, 0.90, 0.25));  // a small light above: the second sharp highlight
     float d1 = dot(n, l1);
     float wrap = max((d1 + 0.4) / 1.4, 0.0);
-    vec3 col = alb * wrap * 1.1;
-    col += alb * vec3(1.0, 0.3, 0.06) * 0.30 * smoothstep(0.0, 0.35, wrap) * (1.0 - smoothstep(0.35, 0.9, wrap)); // warmth under the skin
+    vec3 col = alb * wrap * 1.1 * KEYC;
+    col += alb * KEYC * vec3(1.0, 0.3, 0.06) * 0.30 * smoothstep(0.0, 0.35, wrap) * (1.0 - smoothstep(0.35, 0.9, wrap)); // warmth under the skin
     col += alb * max(dot(n, l2), 0.0) * 0.22;
-    col += alb * (0.10 + 0.08 * n.y);
+    col += alb * (0.10 + 0.08 * n.y) * AMB;
+    col += alb * KEYC * uShadow.w * max(-n.y, 0.0); // the stage's lit floor, from below
     col *= occ;
     float ndv = max(dot(n, v), 0.0);
     float fr = 0.04 + 0.96 * pow(1.0 - ndv, 5.0);
     vec3 h1 = normalize(l1 + v), h4 = normalize(l4 + v);
     float s = pow(max(dot(n, h1), 0.0), 60.0) * 0.9 + pow(max(dot(n, h4), 0.0), 120.0) * 0.45 + pow(max(dot(n, h1), 0.0), 20.0) * 0.35;
-    col += vec3(1.0, 0.96, 0.92) * s * gloss * mix(0.6, 1.0, occ);
-    col += vec3(0.55, 0.42, 1.0) * fr * 0.7 * smoothstep(0.0, 0.7, dot(n, l3)) * occ;
+    col += vec3(1.0, 0.96, 0.92) * KEYC * s * gloss * mix(0.6, 1.0, occ);
+    col += vec3(0.55, 0.42, 1.0) * fr * 0.7 * RIM * smoothstep(0.0, 0.7, dot(n, l3)) * occ;
     col += fr * env(reflect(-v, n)) * gloss * occ;
     return col;
 }
@@ -445,6 +453,8 @@ vec3 shade(vec3 p, vec3 rd, float foot, out float ink) {
 
 void main() {
     MAT = MAT_ID;
+    KEY = normalize(dot(uKey.xyz, uKey.xyz) > 0.0 ? uKey.xyz : vec3(-0.55, 0.80, 0.55));
+    KEYC = 1.0 + uKeyCol.rgb; RIM = 1.0 + uKey.w; AMB = 1.0 + uKeyCol.w;
     // Proportions from each reference: vinyl the pillowy original, cartoon rounder, plush boxier and taller,
     // chrome a crisp box with a flat face.
     float bottom = 0.45;
@@ -470,7 +480,8 @@ void main() {
     }
     BODY_Y = bottom + BODY.y;
 
-    vec2 sp = (2.0 * gl_FragCoord.xy - uRes) / uRes.y;
+    vec2 fc = gl_FragCoord.xy - vec2(0.0, uStage.y); // the stage's floor is drawn below the picture
+    vec2 sp = (2.0 * fc - uRes) / uRes.y;
     vec3 ta = vec3(0.0, 1.27, 0.0);
     vec3 ro = ta + 9.5 * vec3(sin(-0.17) * cos(0.18), sin(0.18), cos(-0.17) * cos(0.18));
     vec3 ww = normalize(ta - ro), uu = normalize(cross(ww, vec3(0.0, 1.0, 0.0))), vv = cross(uu, ww);
@@ -544,6 +555,9 @@ void main() {
     }
     // The soft contact shadow on an invisible floor; it fades as he leaves the ground.
     float shadow = 0.0;
+    // the stage's shadow and reflection fade out before the picture's edges (and the floor's front, at its bottom)
+    float edge = smoothstep(-uStage.y, -uStage.y + (uShadow.z > 0.0 ? uShadow.z : 30.0 * logical), fc.y)
+        * smoothstep(0.0, 16.0 * logical, fc.x) * smoothstep(0.0, 16.0 * logical, uRes.x - fc.x);
     if (rd.y < 0.0) {
         float tf = -ro.y / rd.y;
         vec3 f = ro + rd * tf;
@@ -556,8 +570,51 @@ void main() {
             }
             shadow = clamp(o * 0.85, 0.0, 0.82);
         }
+        // the stage's key light casts his shadow on the floor
+        vec3 os = f - bc;
+        float sb = dot(os, KEY), sc = dot(os, os) - 2.3 * 2.3;
+        if (uShadow.x > 0.0 && (tf < tHit || cover < 1.0) && sb * sb - sc > 0.0 && (sb < 0.0 || sc < 0.0)) {
+            float res = 1.0, t = 0.04;
+            for (int i = 0; i < 40; i++) {
+                float d = map(f + KEY * t);
+                res = min(res, uShadow.y * d / t);
+                t += clamp(d, 0.03, 0.4);
+                if (res < 0.01 || t > 6.0) break;
+            }
+            shadow = max(shadow, uShadow.x * edge * (1.0 - smoothstep(0.0, 1.0, res)));
+        }
     }
-    float a = cover + shadow * (1.0 - cover);
-    col = col * cover / max(a, 1e-4);
+    // The stage's glossy floor: the ray mirrored at the floor, marched the same way; softer and fainter the higher the
+    // point it sees, and faded out before the bottom of the picture.
+    vec3 rcol = vec3(0.0);
+    float ra = 0.0;
+    if (uStage.x > 0.0 && rd.y < 0.0) {
+        float tf = -ro.y / rd.y;
+        vec3 f = ro + rd * tf, r = vec3(rd.x, -rd.y, rd.z);
+        vec3 of = f - bc;
+        float rb = dot(of, r), rdisc = rb * rb - dot(of, of) + 2.3 * 2.3;
+        if ((tf < tHit || cover < 1.0) && rdisc > 0.0) {
+            float t = max(-rb - sqrt(rdisc), 0.0), tEnd = -rb + sqrt(rdisc);
+            float best = 1e9, tBest = t;
+            for (int i = 0; i < 64; i++) {
+                float d = map(f + r * t);
+                float px = d / (pix * (tf + t));
+                if (px < best) { best = px; tBest = t; }
+                if (d < 0.25 * pix * (tf + t)) { best = 0.0; tBest = t; break; }
+                t += d;
+                if (t > tEnd) break;
+            }
+            vec3 p = f + r * tBest;
+            float blur = 1.0 + uStage.z * p.y / (pix * (tf + tBest));
+            ra = clamp(1.0 - best / blur, 0.0, 1.0) * uStage.x * exp(-p.y * uStage.w);
+            ra *= edge;
+            float ink2;
+            if (ra > 0.0) rcol = shade(p, r, pix * (tf + tBest), ink2);
+        }
+    }
+    // floor shadow, then the reflection, then him
+    float a2 = ra + shadow * (1.0 - ra);
+    float a = cover + a2 * (1.0 - cover);
+    col = (col * cover + rcol * ra * (1.0 - cover)) / max(a, 1e-4);
     outColor = vec4(pow(clamp(col, 0.0, 1.0), vec3(1.0 / 2.2)), a);
 }

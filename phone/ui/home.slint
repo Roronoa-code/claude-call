@@ -5,6 +5,7 @@ import { T, Icon, Icons, Morph, Round } from "parts.slint";
 import { Home, Mode, SetupCard } from "home_parts.slint";
 import { Toys, Clawd, Null } from "toys.slint";
 import { Chats, ChatList, ChatThread, PickRow } from "chat.slint";
+import { StageBack, Look } from "stage.slint";
 
 // A choice in a sheet: icon, title and a line under it.
 component Choice {
@@ -97,12 +98,17 @@ component ModeRow inherits Rectangle {
 }
 
 export component HomeScreen inherits Window {
-    background: T.bg;
+    background: Look.bg;
     title: "Claude Call";
     property <string> draft;
     property <length> row-y: self.height - Home.sab - 24px - 88px; // the round buttons
     property <length> col-w: (self.width - 40px) / 4;
     property <length> sheet-w: self.width - 40px;
+    // PREVIEW (stage.slint): the moon stage has its title and status at the top left; each stage leaves its own room
+    // under the pair, so the status sits clear of the floor they stand on.
+    property <bool> status-top: Toys.stage == 3;
+    property <length> top-room: root.status-top ? 104px : 52px;
+    property <length> under: Toys.stage == 1 ? 112px : Toys.stage == 2 ? 74px : Toys.stage == 3 ? 104px : Toys.stage == 4 ? 84px : 28px;
 
     // Clawd's eyes follow a finger anywhere on the screen that nothing else takes.
     TouchArea {
@@ -112,8 +118,13 @@ export component HomeScreen inherits Window {
         pointer-event(e) => { self.point(e.kind == PointerEventKind.down || e.kind == PointerEventKind.move); }
         moved => { self.point(true); }
     }
+    StageBack {
+        width: parent.width;
+        height: parent.height;
+        feet: stage.y + 176px * Toys.k * 0.967;
+    }
     // The stage light behind Clawd and Null.
-    Rectangle {
+    if Toys.stage == 0: Rectangle {
         x: (parent.width - 440px) / 2;
         y: stage.y + 40px - 220px; // centred on the pair
         width: 440px;
@@ -121,13 +132,24 @@ export component HomeScreen inherits Window {
         background: @radial-gradient(circle, #d977572e 0%, #8a5cff14 40%, #11121400 70%);
     }
     Text {
+        x: root.status-top ? 24px : 0px;
         y: Home.sat + 14px;
-        width: parent.width;
+        width: parent.width - self.x;
         text: "Claude Call";
-        font-size: 18px;
+        font-size: root.status-top ? 15px : 18px;
+        font-weight: root.status-top ? 600 : 700;
+        color: root.status-top ? T.fg2 : T.fg;
+        horizontal-alignment: root.status-top ? left : center;
+    }
+    if root.status-top: Text {
+        x: 24px;
+        y: Home.sat + 40px;
+        width: parent.width - 48px;
+        text: Home.ready ? Home.current.title : "Almost ready";
+        font-size: 30px;
         font-weight: 700;
         color: T.fg;
-        horizontal-alignment: center;
+        horizontal-alignment: left;
     }
     // The stage, centred between the title and the buttons.
     stage := VerticalLayout {
@@ -136,29 +158,30 @@ export component HomeScreen inherits Window {
         animate opacity { duration: 200ms; easing: T.out; }
         x: 20px;
         width: parent.width - 40px;
-        y: Home.sat + 52px + (root.row-y - Home.sat - 52px - self.preferred-height) / 2;
+        y: Home.sat + root.top-room + (root.row-y - Home.sat - root.top-room - self.preferred-height) / 2;
         height: self.preferred-height;
         // The vinyl Clawd and Null (toys.slint), alive; the one the Call button asks for is lit, the other dimmed.
         HorizontalLayout {
             alignment: center;
-            spacing: 4px;
+            spacing: 4px * Toys.k;
             clawd := Clawd {
-                width: 230px;
-                height: 176px;
-                opacity: Home.caller == "claude" ? 1 : 0.55;
+                width: 230px * Toys.k;
+                height: 176px * Toys.k;
+                // on a stage the one not asked for is dimmed in its light (stage.rs), not see-through
+                opacity: Home.caller == "claude" || Toys.stage > 0 ? 1 : 0.55;
                 animate opacity { duration: 250ms; easing: T.out; }
                 tapped => { Home.caller = "claude"; Toys.tapped("claude"); }
             }
             Null {
-                width: 96px;
-                height: 172px;
-                opacity: Home.caller == "codex" ? 1 : 0.55;
+                width: 96px * Toys.k;
+                height: 172px * Toys.k;
+                opacity: Home.caller == "codex" || Toys.stage > 0 ? 1 : 0.55;
                 animate opacity { duration: 250ms; easing: T.out; }
                 tapped => { Home.caller = "codex"; Toys.tapped("codex"); }
             }
         }
-        Rectangle { height: 28px; }
-        Text {
+        Rectangle { height: root.under; }
+        if !root.status-top: Text {
             text: Home.ready ? Home.current.title : "Almost ready";
             font-size: 26px;
             font-weight: 700;
@@ -174,7 +197,7 @@ export component HomeScreen inherits Window {
             horizontal-alignment: center;
             wrap: word-wrap;
         }
-        Rectangle { height: 26px; }
+        if !root.status-top: Rectangle { height: 26px; }
         // How agents can reach you, and under it the two Sleep modes.
         ModeRow { modes: Home.modes; sel: Home.index < 4 ? Home.index : -1; }
         Rectangle { height: 10px; }

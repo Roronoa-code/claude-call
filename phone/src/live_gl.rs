@@ -220,6 +220,10 @@ impl Gl {
                 gl.viewport(0, 0, slot.view.0.min(t.size.0), slot.view.1.min(t.size.1));
                 gl.use_program(Some(p.program));
                 gl.uniform_2_f32(p.loc(gl, "uRes").as_ref(), slot.res.0 as f32, slot.res.1 as f32);
+                // PREVIEW: the home stage's uniforms (stage.rs) stay set in a program; other screens draw without them
+                for name in ["uStage", "uKey", "uKeyCol", "uShadow"] {
+                    gl.uniform_4_f32(p.loc(gl, name).as_ref(), 0.0, 0.0, 0.0, 0.0);
+                }
                 for (name, v) in &slot.frame {
                     gl.uniform_4_f32(p.loc(gl, name).as_ref(), v[0], v[1], v[2], v[3]);
                 }

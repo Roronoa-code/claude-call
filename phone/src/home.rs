@@ -1,6 +1,6 @@
 //! The home screen: whether calls can reach this phone, how agents may reach you, a test ring, the widget and the
 //! private channel (settings.rs, widget.rs, ring.rs).
-use crate::{Chats, Home, HomeScreen, Toys, alive, android, faces, jx, live_gl, ring, service, settings};
+use crate::{Chats, Home, HomeScreen, Toys, alive, android, cast, faces, jx, live_gl, ring, service, settings, stage};
 use slint::ComponentHandle;
 use std::{
     cell::Cell,
@@ -102,7 +102,23 @@ pub fn run(_app: android_activity::AndroidApp) {
     });
     let scene = Rc::new(std::cell::RefCell::new(live_gl::Scene::new(4)));
     let [small, big] = faces::sizes();
-    let sizes = [alive::CLAWD_SIZE, alive::NULL_SIZE, small, big];
+    // PREVIEW: the stage they stand in (stage.rs); its floor is drawn under each picture, so the textures are taller.
+    let v = stage::pick();
+    let st = &stage::STAGES[v];
+    let who = [cast::Who::Clawd(cast::Mat::Vinyl), cast::Who::Null];
+    let below = who.map(|w| st.below(w));
+    {
+        let t = ui.global::<Toys>();
+        t.set_stage(v as i32);
+        t.set_k(st.k);
+        t.set_clawd_below(below[0]);
+        t.set_null_below(below[1]);
+    }
+    let home_size = |i: usize, extra: f32| {
+        let (w, h) = [alive::CLAWD_SIZE, alive::NULL_SIZE][i];
+        (w * st.k, (h + extra) * st.k)
+    };
+    let sizes = [home_size(0, below[0]), home_size(1, below[1]), small, big];
     live_gl::attach(&ui, scene.clone(), sizes.to_vec(), {
         let ui = ui.as_weak();
         move |images| {
@@ -116,6 +132,8 @@ pub fn run(_app: android_activity::AndroidApp) {
         }
     });
     let mut drawn = [0.0f32; 2];
+    let mut lit = [1.0f32; 2]; // PREVIEW: each one's light on a stage, easing to 1 or DIM as the Call button's pick changes
+    let mut last_now = 0.0f32;
     let mut shown = false;
     let mut last_refresh = Instant::now();
     let timer = slint::Timer::default();
@@ -156,10 +174,18 @@ pub fn run(_app: android_activity::AndroidApp) {
             let show = !s.failed && !ui.global::<Chats>().get_open() && kb == 0.0;
             let sf = ui.window().scale_factor();
             let mut any = false;
+            let codex = home.get_caller() == "codex";
+            let ease = 1.0 - (-(now - last_now) * 12.0).exp(); // about 250 ms, as the opacity it replaces
+            last_now = now;
             for (i, c) in [&p.clawd, &p.null].into_iter().enumerate() {
-                if show && (!shown || alive::due(c, drawn[i], now)) {
-                    let px = live_gl::texture_px(sizes[i], sf);
-                    s.slots[i] = live_gl::Slot { who: c.who, res: px, view: px, frame: c.uniforms(), fresh: true };
+                let want = if v == 0 || (i == 1) == codex { 1.0 } else { 0.5 };
+                let dimming = (lit[i] - want).abs() > 0.002;
+                lit[i] = if dimming { lit[i] + (want - lit[i]) * ease } else { want };
+                if show && (!shown || dimming || alive::due(c, drawn[i], now)) {
+                    let (res, view) = (live_gl::texture_px(home_size(i, 0.0), sf), live_gl::texture_px(sizes[i], sf));
+                    let mut frame = c.uniforms();
+                    frame.extend(st.uniforms(c.who, res.1, view.1, sf, lit[i]));
+                    s.slots[i] = live_gl::Slot { who: c.who, res, view, frame, fresh: true };
                     drawn[i] = now;
                     any = true;
                 }

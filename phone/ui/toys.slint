@@ -9,8 +9,14 @@ export global Toys {
     in property <bool> live: true; // false: the GPU couldn't build them, so the sprites show
     // The finger, from Clawd's eyes; down false when it lifts. Both watch it.
     callback point(length, length, bool);
+    // PREVIEW (stage.rs): which stage they stand in (0: as shipped), their scale in it, and the logical px of floor
+    // drawn under each picture at k = 1.
+    in property <int> stage;
+    in property <float> k: 1;
+    in property <length> clawd-below;
+    in property <length> null-below;
     // How far right Null's middle stands from Clawd's (home.slint: Clawd's 230 px, a 4 px gap, half Null's 96 px).
-    out property <length> null-dx: 230px / 2 + 4px + 96px / 2;
+    out property <length> null-dx: (230px / 2 + 4px + 96px / 2) * k;
 }
 
 // The fallback: a still sprite that breathes on its soft contact shadow, pivoting on its feet.
@@ -50,10 +56,10 @@ export component Clawd inherits Rectangle {
     }
     if Toys.live: Image {
         source: Toys.clawd-live;
-        width: 300px; // alive.rs CLAWD_SIZE
-        height: 250px;
+        width: 300px * Toys.k; // alive.rs CLAWD_SIZE, and the stage's floor under it
+        height: (250px + Toys.clawd-below) * Toys.k;
         x: (root.width - self.width) / 2;
-        y: root.height * 0.967 - self.height * 0.885; // his feet at 0.885 of the image
+        y: root.height * 0.967 - 250px * Toys.k * 0.885; // his feet at 0.885 of the picture
         image-fit: fill;
     }
     TouchArea {
@@ -78,10 +84,10 @@ export component Null inherits Rectangle {
     }
     if Toys.live: Image {
         source: Toys.null-live;
-        width: 150px; // alive.rs NULL_SIZE
-        height: 230px;
+        width: 150px * Toys.k; // alive.rs NULL_SIZE, and the stage's floor under it
+        height: (230px + Toys.null-below) * Toys.k;
         x: (root.width - self.width) / 2;
-        y: root.height * 0.975 - self.height * 0.846; // his feet at 0.846 of the image
+        y: root.height * 0.975 - 230px * Toys.k * 0.846; // his feet at 0.846 of the picture
         image-fit: fill;
     }
     TouchArea {
