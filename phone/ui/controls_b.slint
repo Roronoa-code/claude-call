@@ -1,0 +1,283 @@
+// PREVIEW (branch preview/home-controls): home control directions 3 and 4 (controls.slint has the others).
+import { T, Icon, Icons } from "parts.slint";
+import { Home, SetupCard } from "home_parts.slint";
+import { Chats } from "chat.slint";
+import { Ctl, Status } from "controls.slint";
+
+// A mode as a word: tapped, a bar grows in under it once the last one's has shrunk away, in or across rows (the
+// approved "shrink out, grow in").
+component Word inherits Rectangle {
+    in property <int> i;
+    property <bool> on: Home.index == self.i;
+    property <float> k: self.on ? 1 : 0;
+    animate k { duration: self.on ? 300ms : 160ms; delay: self.on ? 120ms : 0ms; easing: self.on ? T.spring : T.out; }
+    height: 46px;
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        Text {
+            text: Ctl.mode(root.i).label;
+            font-size: 22px;
+            font-weight: 600;
+            vertical-alignment: center;
+            color: root.on ? T.fg : touch.pressed ? #ffffff80 : #ffffff42;
+            animate color { duration: 220ms; easing: T.out; }
+        }
+    }
+    Rectangle {
+        x: 10px;
+        y: parent.height - 7px;
+        width: max(0px, (parent.width - 20px) * root.k);
+        height: 3px;
+        border-radius: 1.5px;
+        background: root.i >= 4 ? Ctl.night : T.accent;
+        opacity: min(1, root.k * 3);
+    }
+    touch := TouchArea { clicked => { Home.set-mode(Ctl.mode(root.i).id); } }
+}
+
+// A link in the bottom row: just its name.
+component Link inherits Rectangle {
+    in property <string> label;
+    in property <bool> dot;
+    in property <int> i;
+    height: 56px;
+    Text {
+        x: 0;
+        text: root.label;
+        font-size: 15px;
+        font-weight: 500;
+        vertical-alignment: center;
+        color: touch.pressed ? #ffffff70 : T.fg2;
+        animate color { duration: 140ms; }
+    }
+    if root.dot: Rectangle { x: root.width - 2px; y: 16px; width: 7px; height: 7px; border-radius: 3.5px; background: T.accent; }
+    touch := TouchArea { clicked => { Ctl.act(root.i); } }
+}
+
+// 3 Type: no controls drawn, only words. The status is a headline set left like a magazine's; the modes are the words
+// under it, the chosen one white with a bar under it; the actions are a line of names under a hairline, and Call is
+// the one round, orange thing on the screen.
+export component Type inherits Rectangle {
+    in property <length> block-y;
+    property <float> fade: Home.kb > 0 ? 0 : 1;
+    animate fade { duration: 200ms; easing: T.out; }
+    property <float> mfade: Ctl.sheet ? 0 : self.fade;
+    animate mfade { duration: 200ms; easing: T.out; }
+    Status { x: 24px; y: root.block-y; width: root.width - 48px; title-size: 30px; desc-max: 300px; centre: false; opacity: root.fade; }
+    HorizontalLayout {
+        x: 14px;
+        y: root.block-y + 105px;
+        height: 46px;
+        alignment: start;
+        opacity: root.mfade;
+        for i in 4: Word { i: i; }
+    }
+    HorizontalLayout {
+        x: 14px;
+        y: root.block-y + 150px;
+        height: 46px;
+        alignment: start;
+        opacity: root.mfade;
+        for i in 2: Word { i: i + 4; }
+    }
+    if !Home.ready: SetupCard { x: 20px; y: root.block-y + 196px + 20px; width: root.width - 40px; opacity: root.mfade; }
+
+    property <length> zt: root.height - Home.sab - Ctl.act-h;
+    Rectangle { x: 24px; y: root.zt; width: root.width - 48px; height: 1px; background: #ffffff16; }
+    Link { x: 24px; y: root.zt + 12px; width: 66px; label: "Test ring"; i: 0; }
+    Link { x: 108px; y: root.zt + 12px; width: 50px; label: "Widget"; i: 1; }
+    Link { x: 176px; y: root.zt + 12px; width: 42px; label: "Chats"; i: 2; dot: Chats.unread; }
+    Rectangle {
+        x: root.width - 24px - 180px;
+        y: root.zt + 16px;
+        width: 180px;
+        height: 48px;
+        property <bool> down: call.pressed;
+        Text {
+            x: 0;
+            width: parent.width - 48px - 12px;
+            text: Ctl.call-label;
+            font-size: 16px;
+            font-weight: 600;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+            color: Home.requested ? T.accent : parent.down ? T.fg2 : T.fg;
+            animate color { duration: 200ms; }
+        }
+        Rectangle {
+            x: parent.width - 48px;
+            width: 48px;
+            height: 48px;
+            border-radius: 24px;
+            background: Home.requested ? #2a1c17 : parent.down ? #c4664a : T.accent;
+            border-width: Home.requested ? 1.5px : 0px;
+            border-color: Home.requested ? T.accent.with-alpha(0.55 + 0.45 * Math.sin(animation-tick() / 1000ms * 360deg)) : T.accent;
+            transform-origin: { x: 24px, y: 24px };
+            transform-scale: parent.down ? 0.93 : 1;
+            animate background { duration: 200ms; easing: T.out; }
+            animate transform-scale { duration: 160ms; easing: T.out; }
+            Icon { d: Icons.phone; x: 14px; y: 14px; width: 20px; height: 20px; stroke: Home.requested ? T.accent : #ffffff; }
+        }
+        call := TouchArea { clicked => { Ctl.act(3); } }
+    }
+}
+
+// 4 Pucks: the modes are six vinyl tokens, glossy like Clawd and Null, set in a gentle curve under the record. The
+// chosen one rises and Clawd's orange (the Sleep pair a moonlit lilac) grows in it from the middle as the last one's
+// shrinks away and it sinks back. The
+// actions sit in one floating dock under them, Call as an orange pill a thumb can't miss.
+export component Pucks inherits Rectangle {
+    in property <length> block-y;
+    property <float> fade: Home.kb > 0 ? 0 : 1;
+    animate fade { duration: 200ms; easing: T.out; }
+    property <float> mfade: Ctl.sheet ? 0 : self.fade;
+    animate mfade { duration: 200ms; easing: T.out; }
+    property <length> slot: (self.width - 32px - 14px) / 6;
+    property <length> pz: self.block-y + 94px;
+    Status { x: 20px; y: root.block-y; width: root.width - 40px; opacity: root.fade; }
+    for i in 6: tok := Rectangle {
+        property <bool> on: Home.index == i;
+        property <length> c: 16px + root.slot * (i + 0.5) + (i >= 4 ? 14px : 0px);
+        property <float> u: (self.c - root.width / 2) / (root.width / 2 - 16px - root.slot / 2);
+        property <length> cy: root.pz + 6px + 24px + 20px * (1 - self.u * self.u);
+        property <float> k: self.on ? 1 : 0;
+        animate k { duration: self.on ? 380ms : 220ms; delay: self.on ? 90ms : 0ms; easing: self.on ? T.spring : T.close; }
+        x: self.c - root.slot / 2;
+        y: self.cy - 30px - 6px;
+        width: root.slot;
+        height: 92px;
+        opacity: root.mfade;
+        puck := Rectangle {
+            x: (parent.width - 48px) / 2;
+            y: 6px + 6px * (1 - parent.k);
+            width: 48px;
+            height: 48px;
+            border-radius: 24px;
+            background: @linear-gradient(180deg, #2e2f35 0%, #16171a 100%);
+            border-width: 1px;
+            border-color: #ffffff0d;
+            drop-shadow-blur: 6px + 10px * parent.k;
+            drop-shadow-offset-y: 3px + 6px * parent.k;
+            drop-shadow-color: #000000b0;
+            transform-origin: { x: 24px, y: 24px };
+            transform-scale: touch.pressed ? 0.92 : 1;
+            animate transform-scale { duration: 160ms; easing: T.out; }
+            // its colour grows from the middle as the last one's shrinks away (the approved "shrink out, grow in")
+            Rectangle {
+                x: 24px * (1 - min(1, tok.k));
+                y: 24px * (1 - min(1, tok.k));
+                width: 48px * min(1, tok.k);
+                height: 48px * min(1, tok.k);
+                border-radius: self.width / 2;
+                background: i >= 4 ? @linear-gradient(180deg, #dcd6ff 0%, #9286dc 100%) : @linear-gradient(180deg, #f59c6c 0%, #d2602f 100%);
+                opacity: min(1, tok.k * 3);
+            }
+            // gloss
+            Rectangle {
+                x: 9px;
+                y: 3px;
+                width: 30px;
+                height: 16px;
+                border-radius: 8px;
+                background: @linear-gradient(180deg, #ffffff38 0%, #ffffff00 100%);
+                opacity: 0.45 + 0.55 * tok.k;
+            }
+            Icon {
+                d: Ctl.mode(i).icon;
+                x: 14px;
+                y: 14px;
+                width: 20px;
+                height: 20px;
+                stroke: tok.on ? (i >= 4 ? #221c45 : #3a1607) : T.fg2;
+                animate stroke { duration: 240ms; }
+            }
+        }
+        Text {
+            y: 66px;
+            width: parent.width;
+            height: 16px;
+            text: Ctl.mode(i).label;
+            font-size: 12px;
+            font-weight: 600;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            color: parent.on ? T.fg : #878990;
+            animate color { duration: 220ms; easing: T.out; }
+        }
+        touch := TouchArea { clicked => { Home.set-mode(Ctl.mode(i).id); } }
+    }
+    if !Home.ready: SetupCard { x: 20px; y: root.block-y + 212px + 20px; width: root.width - 40px; opacity: root.mfade; }
+
+    // the dock
+    Rectangle {
+        x: 16px;
+        y: root.height - Home.sab - Ctl.act-h;
+        width: root.width - 32px;
+        height: 70px;
+        border-radius: 35px;
+        background: @linear-gradient(180deg, #1b1c20 0%, #151619 100%);
+        border-width: 1px;
+        border-color: #ffffff10;
+        drop-shadow-blur: 20px;
+        drop-shadow-offset-y: 8px;
+        drop-shadow-color: #00000090;
+        for k[i] in [
+            { icon: Icons.bell, label: "Test ring" },
+            { icon: Icons.grid, label: "Widget" },
+            { icon: Icons.chat, label: "Chats" },
+        ]: Rectangle {
+            x: 10px + 62px * i;
+            y: 4px;
+            width: 62px;
+            height: 62px;
+            Rectangle {
+                border-radius: 20px;
+                background: #ffffff;
+                opacity: item.pressed ? 0.07 : (i == 1 && (Home.widgets || Home.channel)) ? 0.05 : 0;
+                animate opacity { duration: 140ms; }
+            }
+            Icon { d: k.icon; x: 21px; y: 11px; width: 20px; height: 20px; stroke: T.fg; }
+            if i == 2 && Chats.unread: Rectangle { x: 39px; y: 8px; width: 9px; height: 9px; border-radius: 4.5px; background: T.accent; border-width: 2px; border-color: #18191c; }
+            Text {
+                y: 37px;
+                width: parent.width;
+                height: 14px;
+                text: k.label;
+                font-size: 11px;
+                font-weight: 500;
+                color: T.fg2;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            item := TouchArea { clicked => { Ctl.act(i); } }
+        }
+        Rectangle {
+            x: parent.width - 9px - 160px;
+            y: 9px;
+            width: 160px;
+            height: 52px;
+            border-radius: 26px;
+            background: Home.requested ? #2a1c17 : pill.pressed ? #c4664a : T.accent;
+            border-width: Home.requested ? 1.5px : 0px;
+            border-color: Home.requested ? T.accent.with-alpha(0.55 + 0.45 * Math.sin(animation-tick() / 1000ms * 360deg)) : T.accent;
+            transform-origin: { x: 80px, y: 26px };
+            transform-scale: pill.pressed ? 0.96 : 1;
+            animate background { duration: 200ms; easing: T.out; }
+            animate transform-scale { duration: 160ms; easing: T.out; }
+            HorizontalLayout {
+                alignment: center;
+                spacing: 8px;
+                Icon { d: Icons.phone; width: 18px; height: 18px; y: 17px; stroke: Home.requested ? T.accent : #ffffff; }
+                Text {
+                    text: Ctl.call-label;
+                    font-size: 15px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                    color: Home.requested ? T.accent : #ffffff;
+                }
+            }
+            pill := TouchArea { clicked => { Ctl.act(3); } }
+        }
+    }
+}

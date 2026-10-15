@@ -6,6 +6,8 @@ import { Home, Mode, SetupCard } from "home_parts.slint";
 import { Toys, Clawd, Null } from "toys.slint";
 import { Chats, ChatList, ChatThread, PickRow } from "chat.slint";
 import { StageBack, Look } from "stage.slint";
+import { Ctl, Tuner, Amp } from "controls.slint";
+import { Type, Pucks } from "controls_b.slint";
 
 // A choice in a sheet: icon, title and a line under it.
 component Choice {
@@ -101,12 +103,18 @@ export component HomeScreen inherits Window {
     background: Look.bg;
     title: "Claude Call";
     property <string> draft;
-    property <length> row-y: self.height - Home.sab - 24px - 88px; // the round buttons
+    property <length> row-y: Ctl.v > 0 ? self.height - Home.sab - Ctl.act-h : self.height - Home.sab - 24px - 88px; // the round buttons
+    // PREVIEW (controls.slint): where the Widget and Chats sheets grow from, the centre of each one's button.
+    property <length> widget-x: Ctl.v == 3 ? 108px + 25px : Ctl.v == 4 ? 26px + 62px + 31px : Ctl.v > 0 ? 16px + (self.width - 32px) * 1.5 / 4 : 20px + root.col-w * 1.5;
+    property <length> chats-x: Ctl.v == 3 ? 176px + 21px : Ctl.v == 4 ? 26px + 124px + 31px : Ctl.v > 0 ? 16px + (self.width - 32px) * 2.5 / 4 : 20px + root.col-w * 2.5;
+    property <length> sheet-bottom: Ctl.v > 0 ? self.height - Home.sab - 16px : self.row-y + 88px;
+    property <length> act-y: Ctl.v == 1 ? 30px : Ctl.v == 2 ? 27px : Ctl.v == 3 ? 40px : Ctl.v == 4 ? 25px : 32px;
     property <length> col-w: (self.width - 40px) / 4;
-    property <length> sheet-w: self.width - 40px;
+    property <length> sheet-x: Ctl.v == 1 || Ctl.v == 4 ? 16px : 20px; // PREVIEW: as wide as the key bar or dock it covers
+    property <length> sheet-w: self.width - 2 * self.sheet-x;
     // PREVIEW (stage.slint): the moon stage has its title and status at the top left; each stage leaves its own room
     // under the pair, so the status sits clear of the floor they stand on.
-    property <bool> status-top: Toys.stage == 3;
+    property <bool> status-top: Toys.stage == 3 && Ctl.v == 0;
     property <length> top-room: root.status-top ? 104px : 52px;
     property <length> under: Toys.stage == 1 ? 112px : Toys.stage == 2 ? 74px : Toys.stage == 3 ? 104px : Toys.stage == 4 ? 84px : 28px;
 
@@ -158,7 +166,9 @@ export component HomeScreen inherits Window {
         animate opacity { duration: 200ms; easing: T.out; }
         x: 20px;
         width: parent.width - 40px;
-        y: Home.sat + root.top-room + (root.row-y - Home.sat - root.top-room - self.preferred-height) / 2;
+        // PREVIEW (controls.slint): with the new controls, two thirds of the spare room goes above, so the controls sit
+        // nearer the thumb
+        y: Home.sat + root.top-room + (root.row-y - Home.sat - root.top-room - self.preferred-height) * (Ctl.v > 0 ? 0.66 : 0.5);
         height: self.preferred-height;
         // The vinyl Clawd and Null (toys.slint), alive; the one the Call button asks for is lit, the other dimmed.
         HorizontalLayout {
@@ -181,7 +191,9 @@ export component HomeScreen inherits Window {
             }
         }
         Rectangle { height: root.under; }
-        if !root.status-top: Text {
+        // PREVIEW: the room the controls' block takes (controls.slint draws it there)
+        block := Rectangle { height: Ctl.v > 0 ? Ctl.block-h : 0px; }
+        if !root.status-top && Ctl.v == 0: Text {
             text: Home.ready ? Home.current.title : "Almost ready";
             font-size: 26px;
             font-weight: 700;
@@ -189,25 +201,29 @@ export component HomeScreen inherits Window {
             horizontal-alignment: center;
         }
         // Only the setup hint: the modes need no explaining.
-        if !Home.ready: Rectangle { height: 8px; }
-        if !Home.ready: Text {
+        if !Home.ready && Ctl.v == 0: Rectangle { height: 8px; }
+        if !Home.ready && Ctl.v == 0: Text {
             text: "A few phone settings first, then they can call.";
             font-size: 15px;
             color: T.muted;
             horizontal-alignment: center;
             wrap: word-wrap;
         }
-        if !root.status-top: Rectangle { height: 26px; }
+        if !root.status-top && Ctl.v == 0: Rectangle { height: 26px; }
         // How agents can reach you, and under it the two Sleep modes.
-        ModeRow { modes: Home.modes; sel: Home.index < 4 ? Home.index : -1; }
-        Rectangle { height: 10px; }
-        ModeRow { modes: Home.sleep-modes; sel: Home.index >= 4 ? Home.index - 4 : -1; }
-        if !Home.ready: Rectangle { height: 20px; }
-        if !Home.ready: SetupCard { }
+        if Ctl.v == 0: ModeRow { modes: Home.modes; sel: Home.index < 4 ? Home.index : -1; }
+        if Ctl.v == 0: Rectangle { height: 10px; }
+        if Ctl.v == 0: ModeRow { modes: Home.sleep-modes; sel: Home.index >= 4 ? Home.index - 4 : -1; }
+        if !Home.ready && Ctl.v == 0: Rectangle { height: 20px; }
+        if !Home.ready && Ctl.v == 0: SetupCard { }
     }
+    if Ctl.v == 1: Tuner { width: root.width; height: root.height; block-y: stage.y + block.y; }
+    if Ctl.v == 2: Amp { width: root.width; height: root.height; block-y: stage.y + block.y; }
+    if Ctl.v == 3: Type { width: root.width; height: root.height; block-y: stage.y + block.y; }
+    if Ctl.v == 4: Pucks { width: root.width; height: root.height; block-y: stage.y + block.y; }
 
     // The round buttons.
-    HorizontalLayout {
+    if Ctl.v == 0: HorizontalLayout {
         x: 20px;
         y: root.row-y;
         width: parent.width - 40px;
@@ -264,12 +280,12 @@ export component HomeScreen inherits Window {
     Morph {
         open: Home.widgets;
         panel: #1c1d21;
-        fx: 20px + root.col-w * 1.5 - 32px;
-        fy: root.row-y;
-        tx: 20px;
+        fx: root.widget-x - 32px;
+        fy: root.row-y + root.act-y - 32px;
+        tx: root.sheet-x;
         tw: root.sheet-w;
         th: Home.can-pin ? 244px : 96px; // three (or one) rows, clear of the mode control
-        ty: root.row-y + 88px - self.th; // over the buttons, clear of the mode control
+        ty: root.sheet-bottom - self.th; // over the buttons, clear of the mode control
         face: Icons.grid;
         VerticalLayout {
             padding: 16px;
@@ -288,13 +304,13 @@ export component HomeScreen inherits Window {
     Morph {
         open: Home.channel;
         panel: #1c1d21;
-        fx: 20px + root.col-w * 1.5 - 32px; // opened from the Widget sheet
-        fy: root.row-y;
-        tx: 20px;
+        fx: root.widget-x - 32px; // opened from the Widget sheet
+        fy: root.row-y + root.act-y - 32px;
+        tx: root.sheet-x;
         tw: root.sheet-w;
         th: 196px;
         // Over the buttons; above the keyboard while typing.
-        ty: min(root.row-y + 88px - self.th, root.height - Home.kb - self.th - 12px);
+        ty: min(root.sheet-bottom - self.th, root.height - Home.kb - self.th - 12px);
         face: Icons.hash;
         VerticalLayout {
             padding: 16px;
@@ -352,8 +368,8 @@ export component HomeScreen inherits Window {
     Morph {
         open: Chats.open;
         panel: #1c1d21;
-        fx: 20px + root.col-w * 2.5 - 32px;
-        fy: root.row-y;
+        fx: root.chats-x - 32px;
+        fy: root.row-y + root.act-y - 32px;
         tx: 0px;
         ty: 0px;
         tw: root.width;
