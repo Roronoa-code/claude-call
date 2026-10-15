@@ -8,8 +8,29 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// `fake` (preview only): 0, or keep the mode chosen on this screen (1) and also pretend setup isn't finished and a
-/// chat is unread (2).
+/// PREVIEW: with `fake` 2 or 3 a chat is unread, and as the test emulator has no chats two stand-ins show where the
+/// latest chats appear. Run every frame: opening Chats reloads the (empty) stored list, and they would flash out.
+fn fake_chats(ui: &HomeScreen) {
+    let c = ui.global::<Chats>();
+    c.set_unread(true);
+    if slint::Model::row_count(&c.get_rows()) == 0 {
+        let row = |id: &str, name: &str, face: &str, preview: &str, time: &str, unread| crate::ChatRow {
+            id: id.into(),
+            name: name.into(),
+            face: face.into(),
+            preview: preview.into(),
+            time: time.into(),
+            unread,
+        };
+        c.set_rows(slint::ModelRc::new(slint::VecModel::from(vec![
+            row("preview-1", "Claude · Opus", "opus", "Done. The widget now shows the mode.", "2m", true),
+            row("preview-2", "Codex", "null", "Tests pass on the phone build.", "1h", false),
+        ])));
+    }
+}
+
+/// `fake` (preview only): 0, or keep the mode chosen on this screen (1), and also pretend setup isn't finished and a
+/// chat is unread (2), or only that a chat is unread (3).
 fn refresh(ui: &HomeScreen, fake: usize, first: bool) {
     let home = ui.global::<Home>();
     let read = android::with(|env, act| {
@@ -17,9 +38,6 @@ fn refresh(ui: &HomeScreen, fake: usize, first: bool) {
     });
     if let Some((missing, mode, topic, can_pin)) = read {
         let missing = if fake == 2 { "Notifications, Microphone".to_string() } else { missing };
-        if fake == 2 {
-            ui.global::<Chats>().set_unread(true); // and a chat with something new
-        }
         home.set_ready(missing.is_empty());
         home.set_missing(format!("Still needed: {missing}").into());
         if fake == 0 || first {
@@ -37,9 +55,9 @@ fn refresh(ui: &HomeScreen, fake: usize, first: bool) {
 pub fn run(_app: android_activity::AndroidApp) {
     let ui = HomeScreen::new().expect("home screen");
     let home = ui.global::<Home>();
-    // PREVIEW (branch preview/home-controls-2): which home controls show (controls.slint), and `debug.callme.fake` set
+    // PREVIEW (branch preview/home-controls-3): which home controls show (controls.slint), and `debug.callme.fake` set
     // keeps mode taps and the Call button on this screen only (nothing stored, published or asked of the PC).
-    let fake = stage::prop(c"debug.callme.fake", 2);
+    let fake = stage::prop(c"debug.callme.fake", 3);
     ui.global::<Toys>().set_controls(stage::prop(c"debug.callme.controls", 4) as i32);
     home.on_set_mode({
         let ui = ui.as_weak();
@@ -165,6 +183,9 @@ pub fn run(_app: android_activity::AndroidApp) {
             let Some(ui) = ui.upgrade() else { return };
             let home = ui.global::<Home>();
             chats.tick(&ui);
+            if fake >= 2 {
+                fake_chats(&ui);
+            }
             // Permissions granted in Settings, or a mode changed elsewhere, show up within a second.
             if last_refresh.elapsed() > Duration::from_secs(1) {
                 last_refresh = Instant::now();

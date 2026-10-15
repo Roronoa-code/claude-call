@@ -1,0 +1,282 @@
+// PREVIEW (branch preview/home-controls-3): home control direction 2 (controls.slint has 1 and the shared parts).
+import { T, Icon, Icons } from "parts.slint";
+import { Home, Mode, SetupCard } from "home_parts.slint";
+import { Chats } from "chat.slint";
+import { Actor } from "actor.slint";
+import { Ctl, Glyphs, SwapLines, CallPill } from "controls.slint";
+
+// 2 Drawer: under the status, one chevron over the Call button. Drag up (the drawer follows the finger) or tap it,
+// and a drawer rises with everything: the six modes as tiles with what the chosen one means, Test ring and Widget,
+// and your latest chats right there, so one swipe shows them. As the drawer's edge reaches the chevron it carries
+// it up and flattens it into its grabber. The chevron carries the unread (or setup) dot.
+export component Drawer inherits Rectangle {
+    in property <length> block-y;
+    in property <length> pill-y;
+    property <float> fade: Home.kb > 0 ? 0 : 1;
+    animate fade { duration: 200ms; easing: T.out; }
+    property <float> mfade: Ctl.sheet ? 0 : 1;
+    animate mfade { duration: 200ms; easing: T.out; }
+    property <length> pad: 16px;
+    property <length> tile-w: (self.width - 2 * self.pad - 16px) / 3;
+    property <length> setup-h: Home.ready ? 0px : 96px;
+    property <int> n: min(2, Chats.rows.length);
+    property <length> y-tiles: 34px + self.setup-h;
+    property <length> y-desc: self.y-tiles + 152px + 12px;
+    property <length> y-tools: self.y-desc + 34px;
+    property <length> y-chats: self.y-tools + 48px + 20px;
+    property <length> dh: self.y-chats + 46px + max(1, self.n) * 64px + Home.sab + 10px;
+    // the drag: finger travel up, from where the drawer was when it started
+    property <bool> drag;
+    property <length> base;
+    property <length> d;
+    property <length> raw: self.base + self.d;
+    property <length> lift: self.drag ? (self.raw < 0 ? 0px : self.raw > self.dh ? self.dh + (self.raw - self.dh) / 4 : self.raw) : Ctl.open ? self.dh : 0px;
+    animate lift { duration: root.drag ? 0ms : Ctl.open ? 540ms : 360ms; easing: Ctl.open ? T.spring : T.close; }
+    property <float> p: max(0, min(1, self.lift / self.dh));
+    property <length> top: self.height - self.lift; // the drawer's top edge
+    property <length> rest: self.pill-y - 30px; // the chevron's middle at rest
+    function settle() {
+        Ctl.open = root.base > 0 ? root.lift > root.dh * 0.7 : root.lift > root.dh * 0.22;
+        root.drag = false;
+        root.d = 0;
+    }
+
+    // at rest: the status, the chevron, Call. Drag up anywhere here.
+    SwipeGestureHandler {
+        y: root.block-y - 24px;
+        width: root.width;
+        height: root.height - self.y;
+        handle-swipe-up: !Ctl.open && !Ctl.sheet;
+        moved => {
+            root.base = 0;
+            root.d = self.pressed-position.y - self.current-position.y;
+            root.drag = true;
+        }
+        swiped => { root.settle(); }
+        cancelled => { root.drag = false; root.d = 0; }
+        Rectangle {
+            y: 24px;
+            height: Ctl.block-h;
+            opacity: root.fade;
+            accessible-role: button;
+            accessible-label: "Mode: " + Ctl.line;
+            SwapLines {
+                y: (parent.height - 26px) / 2;
+                width: parent.width;
+                height: 26px;
+                text: Ctl.line;
+                font-size: 20px;
+                weight: 600;
+                spacing: -0.2px;
+                color: T.fg;
+            }
+            TouchArea { clicked => { Ctl.open = true; } }
+        }
+        Rectangle {
+            x: (root.width - 96px) / 2;
+            y: root.rest - 22px - parent.y;
+            width: 96px;
+            height: 44px;
+            accessible-role: button;
+            accessible-label: "More: modes, chats, test ring, widget";
+            TouchArea { clicked => { Ctl.open = true; } }
+        }
+        CallPill { x: (root.width - self.width) / 2; y: root.pill-y - parent.y; opacity: root.fade; }
+    }
+
+    Rectangle { background: #000000; opacity: 0.55 * root.p; }
+    if Ctl.open: TouchArea { clicked => { Ctl.open = false; } }
+    SwipeGestureHandler {
+        y: root.top;
+        width: root.width;
+        height: root.dh + 80px; // past the bottom, so the spring's overshoot never lifts it clear
+        visible: root.lift > 0.5px;
+        handle-swipe-down: Ctl.open && !Ctl.sheet;
+        moved => {
+            root.base = root.dh;
+            root.d = self.pressed-position.y - self.current-position.y;
+            root.drag = true;
+        }
+        swiped => { root.settle(); }
+        cancelled => { root.drag = false; root.d = 0; }
+        Rectangle {
+            border-top-left-radius: 28px;
+            border-top-right-radius: 28px;
+            background: #141413;
+            border-width: 1px;
+            border-color: #ffffff12;
+            drop-shadow-blur: 36px;
+            drop-shadow-offset-y: -6px;
+            drop-shadow-color: #000000b0;
+            opacity: root.mfade;
+        }
+        TouchArea { } // a tap on the drawer stays on it
+        Rectangle {
+            opacity: root.mfade * max(0, min(1, (root.p - 0.25) * 2.5));
+            if !Home.ready: SetupCard { x: root.pad; y: 34px; width: root.width - 2 * root.pad; height: 84px; }
+            for i in 6: Rectangle {
+                property <bool> on: Home.index == i;
+                property <Mode> m: Ctl.mode(i);
+                x: root.pad + (root.tile-w + 8px) * Math.mod(i, 3);
+                y: root.y-tiles + 80px * Math.floor(i / 3);
+                width: root.tile-w;
+                height: 72px;
+                border-radius: 18px;
+                background: tile.pressed ? #222221 : #1b1b1a;
+                accessible-role: button;
+                accessible-label: self.m.label;
+                property <float> c: self.on ? 1 : 0;
+                animate c { duration: self.on ? 300ms : 160ms; delay: self.on ? 120ms : 0ms; easing: self.on ? T.spring : T.out; }
+                Rectangle {
+                    x: parent.width * (1 - parent.c) / 2;
+                    y: parent.height * (1 - parent.c) / 2;
+                    width: parent.width * parent.c;
+                    height: parent.height * parent.c;
+                    border-radius: 18px;
+                    background: #2e2d2b;
+                    border-width: 1px;
+                    border-color: #ffffff10;
+                    opacity: min(1, parent.c * 3);
+                }
+                Icon {
+                    d: parent.m.icon;
+                    x: (parent.width - 22px) / 2;
+                    y: 14px;
+                    width: 22px;
+                    height: 22px;
+                    stroke-width: 1.8px;
+                    stroke: parent.on ? (i >= 4 ? Ctl.night : T.fg) : #8e8e93;
+                    animate stroke { duration: 200ms; }
+                }
+                Text {
+                    y: 43px;
+                    width: parent.width;
+                    height: 18px;
+                    text: parent.m.label;
+                    font-size: 13.5px;
+                    font-weight: 600;
+                    color: parent.on ? T.fg : #a1a1a6;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    animate color { duration: 200ms; }
+                }
+                tile := TouchArea { clicked => { Home.set-mode(parent.m.id); } }
+            }
+            SwapLines {
+                x: root.pad;
+                y: root.y-desc;
+                width: root.width - 2 * root.pad;
+                height: 20px;
+                text: Home.current.desc;
+                font-size: 13.5px;
+            }
+            for a[j] in [{ icon: Icons.bell, label: "Test ring" }, { icon: Icons.grid, label: "Widget" }]: Rectangle {
+                x: root.pad + (root.width - 2 * root.pad + 8px) / 2 * j;
+                y: root.y-tools;
+                width: (root.width - 2 * root.pad - 8px) / 2;
+                height: 48px;
+                border-radius: 16px;
+                background: tl.pressed ? #222221 : j == 1 && (Home.widgets || Home.channel) ? #2a2a29 : #1b1b1a;
+                accessible-role: button;
+                accessible-label: a.label;
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 8px;
+                    Icon { d: a.icon; width: 18px; height: 18px; y: 15px; stroke-width: 1.8px; stroke: T.fg2; }
+                    Text { text: a.label; font-size: 14.5px; font-weight: 500; color: T.fg2; vertical-alignment: center; }
+                }
+                tl := TouchArea {
+                    clicked => {
+                        Ctl.from(self.absolute-position.x + self.width / 2, self.absolute-position.y + self.height / 2);
+                        Ctl.act(j);
+                    }
+                }
+            }
+            // the latest chats, right in the drawer
+            Rectangle { x: root.pad; y: root.y-chats; width: root.width - 2 * root.pad; height: 1px; background: Ctl.line-c; }
+            Rectangle {
+                x: root.pad;
+                y: root.y-chats + 1px;
+                width: root.width - 2 * root.pad;
+                height: 44px;
+                accessible-role: button;
+                accessible-label: "All chats";
+                Text { x: 4px; text: "Chats"; font-size: 15px; font-weight: 600; color: T.fg; vertical-alignment: center; height: parent.height; }
+                Text { x: parent.width - 100px; width: 78px; text: "All chats"; font-size: 13.5px; color: T.muted; horizontal-alignment: right; vertical-alignment: center; height: parent.height; }
+                Icon { d: Glyphs.right; x: parent.width - 20px; y: (parent.height - 16px) / 2; width: 16px; height: 16px; stroke-width: 2px; stroke: T.muted; }
+                TouchArea {
+                    clicked => {
+                        Ctl.from(self.absolute-position.x + self.width - 40px, self.absolute-position.y + self.height / 2);
+                        Ctl.act(2);
+                    }
+                }
+            }
+            for r[i] in Chats.rows: Rectangle {
+                visible: i < 2;
+                x: root.pad - 8px;
+                y: root.y-chats + 46px + 64px * i;
+                width: root.width - 2 * root.pad + 16px;
+                height: 64px;
+                border-radius: 16px;
+                background: row.pressed ? #ffffff0b : transparent;
+                accessible-role: button;
+                accessible-label: r.name;
+                Actor { x: 8px; y: 6px; width: 46px; height: 47px; face: r.face; k: 0.185; }
+                Text { x: 66px; y: 12px; width: parent.width - 66px - 70px; text: r.name; font-size: 15px; font-weight: 600; color: T.fg; overflow: elide; }
+                Text { x: 66px; y: 35px; width: parent.width - 66px - 46px; text: r.preview; font-size: 13.5px; color: r.unread ? T.fg2 : T.muted; overflow: elide; }
+                Text { x: parent.width - 70px; y: 14px; width: 58px; text: r.time; font-size: 12px; color: T.muted; horizontal-alignment: right; }
+                if r.unread: Rectangle { x: parent.width - 24px; y: 40px; width: 9px; height: 9px; border-radius: 4.5px; background: T.accent; }
+                row := TouchArea {
+                    clicked => {
+                        Ctl.from(self.absolute-position.x + 31px, self.absolute-position.y + 32px);
+                        Ctl.act(2);
+                        Chats.open-chat(r.id);
+                    }
+                }
+            }
+            if Chats.rows.length == 0: Text {
+                x: root.pad + 4px;
+                y: root.y-chats + 46px;
+                height: 56px;
+                text: "No chats yet. Start one from All chats.";
+                font-size: 13.5px;
+                color: T.muted;
+                vertical-alignment: center;
+            }
+        }
+    }
+    // The chevron over Call: it waits until the drawer's edge reaches it, rides up on it and flattens into its
+    // grabber. Its dot: a chat unread (orange) or setup unfinished (amber).
+    property <float> flat: self.top + 14px < self.rest ? min(1, (self.rest - self.top - 14px) / 80px) : 0;
+    property <length> cy: min(self.rest, self.top + 14px);
+    property <length> hw: 7px + 11px * self.flat;
+    property <length> dy: 4px * (1 - self.flat);
+    Path {
+        x: (root.width - 40px) / 2;
+        y: root.cy - 12px;
+        width: 40px;
+        height: 24px;
+        viewbox-width: 40;
+        viewbox-height: 24;
+        commands: "M" + (20 - root.hw / 1px) + " " + (12 + root.dy / 1px) + " L20 " + (12 - root.dy / 1px) + " L" + (20 + root.hw / 1px) + " " + (12 + root.dy / 1px);
+        fill: transparent;
+        stroke: root.flat > 0.5 ? #ffffff33 : #ffffff66;
+        stroke-width: 3px + 1px * root.flat;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        opacity: root.fade * root.mfade;
+        animate stroke { duration: 200ms; }
+    }
+    property <bool> waiting: (Chats.unread || !Home.ready) && !Ctl.open;
+    property <float> c: self.waiting ? 1 : 0;
+    animate c { duration: root.waiting ? 360ms : 160ms; easing: root.waiting ? T.spring : T.out; }
+    Rectangle {
+        x: root.width / 2 + 17px - 3.5px * root.c;
+        y: root.rest - 3px - 3.5px * root.c;
+        width: 7px * root.c;
+        height: 7px * root.c;
+        border-radius: self.width / 2;
+        background: Chats.unread ? T.accent : Ctl.amber;
+        opacity: root.fade * (1 - root.p);
+    }
+}

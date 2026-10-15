@@ -1,9 +1,10 @@
-// PREVIEW (branch preview/home-controls-2, not for main): round two of the home controls (the contact-mode selector,
-// the status line and the four actions), picked at run time with `adb shell setprop debug.callme.controls <n>` and a
-// restart of the app (0, or unset: the pills and round buttons as they shipped). Same functions and states in all four.
-// Each draws its block (status, modes, setup card) from block-y, under the pair, and its actions at the bottom;
-// home.slint keeps the room for them (Ctl) and grows the Widget and Chats sheets out of their buttons.
-// No props, no metaphors: type, spacing, one quiet material, hairlines, and the approved "shrink out, grow in".
+// PREVIEW (branch preview/home-controls-3, not for main): round three of the home controls, picked at run time with
+// `adb shell setprop debug.callme.controls <n>` and a restart of the app (0, or unset: the pills and round buttons as
+// they shipped). Radical reduction: at rest the home is the pair, ONE status line (the mode) and ONE Call button.
+// Everything else (the six modes, Test ring, Widget, Chats, setup, unread) is out of sight until wanted, and each
+// direction hides it a different way: 1 Unfold here, 2 Drawer in controls_drawer.slint, 3 Steps and 4 Pages in
+// controls_b.slint.
+// Everything grows out of what opened it (Liquid spring open, sine close); a moving highlight shrinks out and grows in.
 import { T, Icon, Icons } from "parts.slint";
 import { Home, Mode, SetupCard } from "home_parts.slint";
 import { Toys } from "toys.slint";
@@ -11,23 +12,35 @@ import { Chats } from "chat.slint";
 
 export global Ctl {
     out property <int> v: Toys.controls;
-    out property <length> setup: Home.ready ? 0px : 112px; // the setup card and the gap over it
-    // The block's height under the pair, and the actions' room above the bottom inset.
-    out property <length> block-h: (v == 1 ? 194px : v == 2 ? 0px : v == 3 ? 0px : 144px) + setup;
-    out property <length> act-h: v == 1 ? 84px : v == 2 ? 256px : v == 3 ? 210px : 124px;
+    // The status line's room under the pair, and the Call button's above the bottom inset.
+    out property <length> block-h: 40px;
+    out property <length> pill-h: 54px;
+    out property <length> act-h: self.pill-h + 30px;
     out property <string> call-label: Home.requested ? "Calling you…" : Home.caller == "codex" ? "Call Codex" : "Call Claude";
-    out property <string> title: Home.ready ? Home.current.title : "Almost ready";
-    out property <string> desc: Home.ready ? Home.current.desc : "A few phone settings first, then they can call.";
+    // One line has to say which mode it is on its own (two modes shared "Ready when they call").
+    out property <[string]> lines: ["Calls only", "Messages only", "Calls and messages", "Quiet for now", "Asleep, wake me", "Asleep"];
+    out property <string> line: Home.ready ? self.lines[Home.index] : "Almost ready";
+    // What each mode means, cut to one line.
+    out property <[string]> short: [
+        "They phone you. No Discord messages.",
+        "They message you on Discord. No calls.",
+        "They phone you or message you on Discord.",
+        "They keep working and save their questions.",
+        "Calls ring like an alarm till you pick up.",
+        "No calls or texts. They carry on alone.",
+    ];
     out property <color> night: #aa9dff;
-    // Warm graphite, the one material: a recessed track, a raised face, a hairline.
-    out property <color> well: #121212;
-    out property <color> face: #2b2a29;
-    out property <color> line: #ffffff14;
-    out property <color> dim: #8e8e93; // a label not chosen
-    // A sheet grown out of an action covers the modes: they fade out under it, so no sliver of them shows round it.
+    out property <color> amber: #e8a33d;
+    out property <color> card: #181817; // the one surface material
+    out property <color> face: #2a2928; // the chosen row's raised face
+    out property <color> line-c: #ffffff14; // a hairline
+    // A sheet grown out of an action covers what is under it: that fades out, so no sliver of it shows round it.
     out property <bool> sheet: Home.widgets || Home.channel;
-    // 3 Sheet: the mode list is open (Back and a tap outside close it).
+    // The direction's hidden layer is out (1 the unfolded list, 2 the drawer, 3 the corner card, 4 the modes page).
     in-out property <bool> open;
+    // Where the Widget and Chats surfaces grow from: the middle of the control that opened them, in window px.
+    in-out property <length> fx: 206px; // (until something sets it: about where Call is)
+    in-out property <length> fy: 820px;
     // The four actions, as the shipped round buttons do them.
     public function act(i: int) {
         if (i == 0) {
@@ -45,9 +58,21 @@ export global Ctl {
             Home.call(Home.caller);
         }
     }
+    public function from(x: length, y: length) {
+        self.fx = x;
+        self.fy = y;
+    }
     public pure function mode(i: int) -> Mode {
         return i < 4 ? Home.modes[i] : Home.sleep-modes[i - 4];
     }
+}
+
+export global Glyphs {
+    out property <string> down: "M7 10l5 5l5 -5";
+    out property <string> left: "M14.5 6l-6 6l6 6";
+    out property <string> right: "M9.5 6l6 6l-6 6";
+    out property <string> more: "M4.6 12a1.1 1.1 0 1 0 2.2 0a1.1 1.1 0 1 0 -2.2 0z M10.9 12a1.1 1.1 0 1 0 2.2 0a1.1 1.1 0 1 0 -2.2 0z M17.2 12a1.1 1.1 0 1 0 2.2 0a1.1 1.1 0 1 0 -2.2 0z";
+    out property <string> tune: "M4 7h9 M17 7h3 M15 4.5v5 M4 17h3 M11 17h9 M9 14.5v5";
 }
 
 // Text that crossfades when it changes (as SwapText), wrapped onto balanced lines: a line too long for `max` is set
@@ -98,339 +123,346 @@ export component SwapLines {
     }
 }
 
-// The status: what the mode means, title over a line or two.
-export component Status inherits Rectangle {
-    in property <bool> centre: true;
-    in property <length> title-size: 24px;
-    in property <length> desc-size: 14.5px;
-    in property <length> desc-max: 330px;
-    height: self.title-size * 1.3 + 6px + 40px;
-    SwapLines {
-        y: 0;
-        width: parent.width;
-        height: root.title-size * 1.3;
-        max: parent.width;
-        text: Ctl.title;
-        font-size: root.title-size;
-        weight: 600;
-        spacing: -0.2px;
-        color: T.fg;
-        centre: root.centre;
-    }
-    SwapLines {
-        y: root.title-size * 1.3 + 6px;
-        width: parent.width;
-        height: 40px;
-        max: root.desc-max;
-        font-size: root.desc-size;
-        text: Ctl.desc;
-        centre: root.centre;
-    }
-}
-
-// A segmented track of modes first .. first + count - 1. The chosen one sits on a raised graphite face that slides
-// to it; when the choice moves to the other track the face shrinks out here and grows in there just after (the
-// approved "shrink out, grow in"). `bare`: no recessed well (on a panel). `icons`: icons only, the title names it.
-export component Track inherits Rectangle {
-    in property <int> first;
-    in property <int> count;
-    in property <bool> bare;
-    in property <bool> icons;
-    property <int> sel: Home.index >= self.first && Home.index < self.first + self.count ? Home.index - self.first : -1;
-    property <int> shown: 0;
-    init => { if (sel >= 0) { shown = sel; } }
-    changed sel => { if (sel >= 0) { shown = sel; } }
-    property <length> pad: self.bare ? 0px : 3px;
-    property <length> seg: (self.width - 2 * self.pad) / self.count;
-    height: 44px;
-    border-radius: 12px;
-    background: self.bare ? transparent : Ctl.well;
-    border-width: self.bare ? 0px : 1px;
-    border-color: #ffffff0c;
-    // hairlines between the segments, gone beside the face (as a native segmented control)
-    if !root.bare: Rectangle {
-        for i in root.count - 1: Rectangle {
-            x: root.pad + root.seg * (i + 1) - 0.5px;
-            y: (root.height - 16px) / 2;
-            width: 1px;
-            height: 16px;
-            background: #ffffff17;
-            // gone while the face is over or beside it
-            opacity: max(1 - root.k, min(1, max(0, (abs(root.fx + root.seg / 2 - self.x) - root.seg / 2 - 2px) / 10px)));
-        }
-    }
-    // where the face is (gliding) and how much of it shows (1 = shown; shrinking out is quick, growing in waits
-    // for the other track's to have shrunk)
-    property <length> fx: self.pad + self.seg * self.shown;
-    animate fx { duration: 500ms; easing: T.spring; }
-    property <float> k: self.sel >= 0 ? 1 : 0;
-    animate k { duration: root.sel >= 0 ? 260ms : 160ms; delay: root.sel >= 0 ? 120ms : 0ms; easing: root.sel >= 0 ? T.spring : T.out; }
+// The one primary action: Call whoever is picked (tap Clawd or Null). While a call is on its way it turns to an
+// outline; the phone slides as the words change, so the pair stays centred.
+export component CallPill inherits Rectangle {
+    width: 224px;
+    height: Ctl.pill-h;
+    accessible-role: button;
+    accessible-label: Ctl.call-label;
+    m := Text { visible: false; text: Ctl.call-label; font-size: 16px; font-weight: 600; }
+    property <length> gw: 20px + 9px + m.preferred-width;
     Rectangle {
-        x: root.fx;
-        y: root.pad;
-        width: root.seg;
-        height: root.height - 2 * root.pad;
-        Rectangle {
-            x: parent.width * (1 - root.k) / 2;
-            y: parent.height * (1 - root.k) / 2;
-            width: parent.width * root.k;
-            height: parent.height * root.k;
-            border-radius: root.bare ? 12px : 9px;
-            background: Ctl.face;
-            opacity: min(1, root.k * 3);
-            drop-shadow-blur: 5px;
-            drop-shadow-offset-y: 1px;
-            drop-shadow-color: #000000a0;
-            // its top edge catching the stage light
-            Rectangle { x: 9px; y: 0; width: max(0px, parent.width - 18px); height: 1px; background: #ffffff1c; }
-        }
+        border-radius: self.height / 2;
+        background: Home.requested ? #1c1411 : t.pressed ? #c4664a : T.accent;
+        border-width: 1px;
+        border-color: Home.requested ? T.accent.with-alpha(0.55) : transparent;
+        animate background, border-color { duration: 240ms; easing: T.out; }
     }
-    for i in root.count: cell := Rectangle {
-        property <Mode> m: Ctl.mode(root.first + i);
-        // a label brightens as the face arrives under it and dims as it leaves (no jump ahead of the face)
-        property <float> lit: max(0, 1 - abs(root.fx - self.x) / root.seg) * max(0, (root.k - 0.4) / 0.6);
-        x: root.pad + root.seg * i;
-        y: root.pad;
-        width: root.seg;
-        height: root.height - 2 * root.pad;
-        accessible-role: button;
-        accessible-label: self.m.label;
-        for c in [0, 1]: Rectangle {
-            opacity: c == 0 ? 1 - cell.lit : cell.lit;
-            if !root.icons: Text {
-                text: cell.m.label;
-                font-size: 14px;
-                font-weight: 600;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-                color: c == 1 ? T.fg : touch.pressed ? T.fg2 : Ctl.dim;
-            }
-            if root.icons: Icon {
-                d: cell.m.icon;
-                x: (parent.width - 20px) / 2;
-                y: (parent.height - 20px) / 2;
-                width: 20px;
-                height: 20px;
-                stroke-width: 1.8px;
-                stroke: c == 1 ? T.fg : touch.pressed ? T.fg2 : #77777c;
-            }
-        }
-        touch := TouchArea { clicked => { Home.set-mode(parent.m.id); } }
+    icon := Icon {
+        d: Icons.phone;
+        x: (root.width - root.gw) / 2;
+        y: (root.height - 20px) / 2;
+        width: 20px;
+        height: 20px;
+        stroke-width: 1.9px;
+        stroke: Home.requested ? T.accent : #ffffff;
+        animate x { duration: 300ms; easing: T.out; }
+        animate stroke { duration: 240ms; }
     }
+    SwapLines {
+        x: icon.x + 29px;
+        y: (root.height - 22px) / 2;
+        width: root.width - self.x;
+        height: 22px;
+        max: 400px;
+        text: Ctl.call-label;
+        font-size: 16px;
+        weight: 600;
+        color: Home.requested ? T.accent : #ffffff;
+        centre: false;
+    }
+    t := TouchArea { clicked => { Ctl.act(3); } }
 }
 
-// The unread dot on Chats.
-component Dot inherits Rectangle {
-    width: 7px;
-    height: 7px;
-    border-radius: 3.5px;
-    background: T.accent;
+// A quiet icon button: no surface until pressed. `dot`: something waiting (it grows in, and shrinks away).
+export component Glyph inherits Rectangle {
+    in property <string> icon;
+    in property <string> label;
+    in property <bool> dot;
+    in property <color> dot-color: T.accent;
+    in property <color> stroke: T.fg2;
+    in property <length> weight: 1.8px;
+    callback clicked;
+    width: 48px;
+    height: 48px;
+    accessible-role: button;
+    accessible-label: self.label;
+    Rectangle {
+        border-radius: self.height / 2;
+        background: t.pressed ? #ffffff14 : transparent;
+        animate background { duration: 140ms; }
+    }
+    Icon { d: root.icon; x: 13px; y: 13px; width: 22px; height: 22px; stroke-width: root.weight; stroke: root.stroke; }
+    property <float> c: root.dot ? 1 : 0;
+    animate c { duration: root.dot ? 360ms : 160ms; easing: root.dot ? T.spring : T.out; }
+    // a ring of the background round the dot, so it reads cut out of the icon's corner
+    for r in [{ s: 13px, c: #010101 }, { s: 8px, c: root.dot-color }]: Rectangle {
+        x: 35px - r.s * root.c / 2;
+        y: 13px - r.s * root.c / 2;
+        width: r.s * root.c;
+        height: r.s * root.c;
+        border-radius: self.width / 2;
+        background: r.c;
+    }
+    t := TouchArea { clicked => { root.clicked(); } }
 }
 
-// 1 Hairline: no surfaces, only a precise segmented system on the floor. The status centred; the four awake modes in
-// one recessed track and the Sleep pair in a half-width track under its middle (on the same segment grid); the
-// actions a toolbar of four equal cells under one hairline, Call the only orange. An action that is on (a sheet out
-// of it, a call on its way) lights its stretch of the hairline.
-export component Hairline inherits Rectangle {
+// 1 Unfold: tap the status line and the six modes unfold out of the words themselves. The current mode stays on the
+// line under your finger and the others spread above and below it, each with what it means. Pick one: its face
+// shrinks out of the old row and grows into the new one, then the rows fold back into it and it is the status.
+// Chats is one quiet glyph in the top corner (with the unread dot); Test ring and Widget sit in the list's foot.
+export component Unfold inherits Rectangle {
     in property <length> block-y;
+    in property <length> pill-y;
     property <float> fade: Home.kb > 0 ? 0 : 1;
     animate fade { duration: 200ms; easing: T.out; }
-    property <float> mfade: Ctl.sheet ? 0 : self.fade;
+    property <float> mfade: Ctl.sheet ? 0 : 1;
     animate mfade { duration: 200ms; easing: T.out; }
-    property <length> tw: self.width - 40px;
-    Status { x: 20px; y: root.block-y; width: root.width - 40px; opacity: root.fade; }
-    Track { x: 20px; y: root.block-y + 96px; width: root.tw; first: 0; count: 4; opacity: root.mfade; }
-    Track { x: 20px + root.tw / 4; y: root.block-y + 150px; width: root.tw / 2; first: 4; count: 2; opacity: root.mfade; }
-    if !Home.ready: SetupCard { x: 20px; y: root.block-y + 194px + 20px; width: root.width - 40px; opacity: root.mfade; }
+    property <float> k: Ctl.open ? 1 : 0;
+    animate k { duration: Ctl.open ? 560ms : 380ms; easing: Ctl.open ? T.spring : T.close; }
+    property <float> g: max(0, min(1, self.k));
+    property <length> row-h: 60px;
+    property <length> gap-h: 17px; // the hairline before the Asleep pair
+    property <length> setup-h: Home.ready ? 0px : 84px;
+    property <length> foot-h: 56px;
+    property <length> cw: min(self.width - 32px, 344px);
+    property <length> ch: 8px + self.setup-h + 6 * self.row-h + self.gap-h + 8px + self.foot-h;
+    pure function ry(i: int) -> length {
+        return 8px + root.setup-h + root.row-h * i + (i >= 4 ? root.gap-h : 0px);
+    }
+    property <length> sy: self.block-y + Ctl.block-h / 2; // the status line's middle
+    property <int> at; // the mode chosen as it opened: its row sits on the status line
+    property <length> top: max(Home.sat + 60px, min(self.height - Home.sab - 16px - self.ch, self.sy - self.ry(self.at) - self.row-h / 2));
+    // The list keeps its spacing: it slides so the chosen row sits on the status line when shut, and the card (its
+    // clip) grows out of the words to unveil the rest, then shrinks back round the chosen row.
+    property <length> shift: (self.sy - (self.top + self.ry(Home.index) + self.row-h / 2)) * (1 - self.g);
+    pure function fold(final: length, h: length) -> length {
+        return final + root.shift;
+    }
+    m := Text { visible: false; text: Ctl.line; font-size: 20px; font-weight: 600; }
+    property <length> sw: m.preferred-width + 30px + 28px; // the words and chevron, as the card starts
+    property <length> sh: 40px;
+    function unfold() {
+        root.at = Home.index;
+        Ctl.open = true;
+    }
 
-    property <length> zt: root.height - Home.sab - Ctl.act-h;
-    property <length> cw: (self.width - 40px) / 4;
-    Rectangle { x: 20px; y: root.zt; width: root.width - 40px; height: 1px; background: Ctl.line; }
-    for k[i] in [
-        { icon: Icons.bell, label: "Test ring", on: false },
-        { icon: Icons.grid, label: "Widget", on: Home.widgets || Home.channel },
-        { icon: Icons.chat, label: "Chats", on: false },
-        { icon: Icons.phone, label: Ctl.call-label, on: Home.requested },
-    ]: Rectangle {
-        x: 20px + root.cw * i;
-        y: root.zt;
-        width: root.cw;
-        height: 72px;
+    // the status: its words and a small chevron
+    Rectangle {
+        y: root.block-y;
+        width: root.width;
+        height: Ctl.block-h;
+        opacity: root.fade * (1 - min(1, root.g * 6));
         accessible-role: button;
-        accessible-label: k.label;
-        // its stretch of the hairline, lit while it is on
-        Rectangle {
-            x: (parent.width - self.width) / 2;
-            y: 0;
-            width: k.on ? parent.width - 28px : 0px;
-            height: 1px;
-            background: i == 3 ? T.accent : T.fg2;
-            animate width { duration: 420ms; easing: T.spring; }
-        }
-        Rectangle {
-            x: 6px;
-            y: 6px;
-            width: parent.width - 12px;
-            height: parent.height - 8px;
-            border-radius: 14px;
-            background: cell.pressed ? #ffffff0a : transparent;
-            animate background { duration: 140ms; }
+        accessible-label: "Mode: " + Ctl.line;
+        SwapLines {
+            x: -11px;
+            y: (parent.height - 26px) / 2;
+            width: parent.width;
+            height: 26px;
+            text: Ctl.line;
+            font-size: 20px;
+            weight: 600;
+            spacing: -0.2px;
+            color: T.fg;
         }
         Icon {
-            d: k.icon;
-            x: (parent.width - 22px) / 2;
-            y: 16px;
-            width: 22px;
-            height: 22px;
-            stroke-width: 1.8px;
-            stroke: i == 3 ? T.accent : cell.pressed ? T.fg2 : T.fg;
+            d: Glyphs.down;
+            x: (root.width + m.preferred-width) / 2 - 11px + 3px;
+            y: (parent.height - 18px) / 2 + 1px;
+            width: 18px;
+            height: 18px;
+            stroke-width: 2px;
+            stroke: T.muted;
+            animate x { duration: 300ms; easing: T.out; }
         }
-        if i == 2 && Chats.unread: Dot { x: parent.width / 2 + 9px; y: 13px; }
-        Text {
-            y: 44px;
-            width: parent.width;
-            height: 16px;
-            text: k.label;
-            font-size: 12.5px;
-            font-weight: 500;
-            color: i == 3 && Home.requested ? T.accent : k.on ? T.fg : T.fg2;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-            animate color { duration: 200ms; }
+        if !Home.ready: Rectangle {
+            x: (root.width - m.preferred-width) / 2 - 11px - 15px;
+            y: (parent.height - 7px) / 2 + 1px;
+            width: 7px;
+            height: 7px;
+            border-radius: 3.5px;
+            background: Ctl.amber;
         }
-        cell := TouchArea { clicked => { Ctl.act(i); } }
+        TouchArea { clicked => { root.unfold(); } }
     }
-}
-
-// 2 Panel: everything in one object, a smoked-graphite slab resting on the floor under the light, read top to bottom
-// like a grouped list: the status beside a small state dot, a hairline, the six modes as icons (the title names the
-// chosen one), a hairline, then three quiet actions and Call as the one filled pill.
-export component Panel inherits Rectangle {
-    in property <length> block-y;
-    property <float> fade: Home.kb > 0 ? 0 : 1;
-    animate fade { duration: 200ms; easing: T.out; }
-    property <float> mfade: Ctl.sheet ? 0 : self.fade;
-    animate mfade { duration: 200ms; easing: T.out; }
-    if !Home.ready: SetupCard { x: 20px; y: root.block-y + 4px; width: root.width - 40px; opacity: root.fade; }
-    property <color> state: Home.index >= 4 ? Ctl.night : Home.index == 3 ? Ctl.dim : T.accent;
-    animate state { duration: 300ms; easing: T.out; }
-    // a description on two lines makes the slab 20 px taller, upwards; everything under the status keeps its place
-    probe := Text { visible: false; text: Ctl.desc; font-size: 14px; }
-    property <bool> two: probe.preferred-width > root.width - 32px - 58px;
-    property <length> ph: self.two ? 244px : 224px;
-    animate ph { duration: 420ms; easing: T.spring; }
-    slab := Rectangle {
-        x: 16px;
-        y: root.height - Home.sab - 12px - root.ph;
-        width: root.width - 32px;
-        height: root.ph;
+    CallPill { x: (root.width - self.width) / 2; y: root.pill-y; opacity: root.fade; }
+    Glyph {
+        x: root.width - 56px;
+        y: Home.sat + 2px;
+        icon: Icons.chat;
+        label: Chats.unread ? "Chats, something new" : "Chats";
+        dot: Chats.unread;
         opacity: root.fade;
-        border-radius: 28px;
-        background: #191918;
+        clicked => {
+            Ctl.from(self.absolute-position.x + 24px, self.absolute-position.y + 24px);
+            Ctl.act(2);
+        }
+    }
+
+    // the stage dims behind the open list; a tap on it folds the list away
+    Rectangle { background: #000000; opacity: 0.55 * root.g; }
+    if Ctl.open: TouchArea { clicked => { Ctl.open = false; } }
+    card := Rectangle {
+        property <length> sx: (root.width - root.sw) / 2;
+        property <length> sy0: root.sy - root.sh / 2;
+        x: self.sx + ((root.width - root.cw) / 2 - self.sx) * root.g;
+        y: self.sy0 + (root.top - self.sy0) * root.g;
+        width: root.sw + (root.cw - root.sw) * root.g;
+        height: root.sh + (root.ch - root.sh) * root.g;
+        visible: root.k > 0.004;
+        opacity: root.mfade * min(1, root.k * 10);
+        border-radius: 20px + 4px * root.g;
+        background: Ctl.card;
         border-width: 1px;
-        border-color: #ffffff10;
-        drop-shadow-blur: 32px;
-        drop-shadow-offset-y: 12px;
-        drop-shadow-color: #000000d0;
-        property <length> iw: self.width - 40px;
-        // the slab's top edge in the stage light
-        Rectangle { x: 28px; y: 0; width: parent.width - 56px; height: 1px; background: #ffffff16; }
-        // the status
-        Rectangle {
-            x: 20px;
-            y: 27px;
-            width: 8px;
-            height: 8px;
-            border-radius: 4px;
-            background: root.state;
-        }
-        SwapLines {
-            x: 38px;
-            y: 18px;
-            width: parent.iw - 18px;
-            height: 26px;
-            text: Ctl.title;
-            font-size: 19px;
-            weight: 600;
-            spacing: -0.1px;
-            color: T.fg;
-            centre: false;
-        }
-        SwapLines {
-            x: 38px;
-            y: 47px;
-            width: parent.iw - 18px;
-            height: 40px;
-            text: Ctl.desc;
-            font-size: 14px;
-            centre: false;
-        }
-        Rectangle { x: 20px; y: parent.height - 143px; width: parent.iw; height: 1px; background: Ctl.line; }
-        // the modes: four awake, a hairline, the Sleep pair
-        property <length> mc: (self.iw - 17px) / 6;
-        Track { x: 20px; y: parent.height - 132px; width: parent.mc * 4; first: 0; count: 4; bare: true; icons: true; opacity: root.mfade; }
-        Rectangle { x: 20px + parent.mc * 4 + 8px; y: parent.height - 120px; width: 1px; height: 20px; background: Ctl.line; opacity: root.mfade; }
-        Track { x: 20px + parent.mc * 4 + 17px; y: parent.height - 132px; width: parent.mc * 2; first: 4; count: 2; bare: true; icons: true; opacity: root.mfade; }
-        Rectangle { x: 20px; y: parent.height - 77px; width: parent.iw; height: 1px; background: Ctl.line; }
-        // the actions
-        for k[i] in [
-            { icon: Icons.bell, label: "Test ring", on: false },
-            { icon: Icons.grid, label: "Widget", on: Home.widgets || Home.channel },
-            { icon: Icons.chat, label: "Chats", on: false },
-        ]: Rectangle {
-            x: 14px + 48px * i;
-            y: parent.height - 62px;
-            width: 44px;
-            height: 44px;
-            border-radius: 22px;
-            background: b.pressed ? #ffffff14 : k.on ? #ffffff10 : transparent;
-            animate background { duration: 160ms; }
-            accessible-role: button;
-            accessible-label: k.label;
-            Icon {
-                d: k.icon;
-                x: 11px;
-                y: 11px;
-                width: 22px;
-                height: 22px;
-                stroke-width: 1.8px;
-                stroke: k.on ? T.fg : T.fg2;
-            }
-            if i == 2 && Chats.unread: Dot { x: 30px; y: 8px; }
-            b := TouchArea { clicked => { Ctl.act(i); } }
-        }
-        Rectangle {
-            x: 14px + 48px * 3 + 10px;
-            y: parent.height - 62px;
-            width: parent.width - self.x - 14px;
-            height: 44px;
-            border-radius: 22px;
-            background: Home.requested ? transparent : call.pressed ? #c4664a : T.accent;
+        border-color: #ffffff12;
+        drop-shadow-blur: 40px;
+        drop-shadow-offset-y: 10px;
+        drop-shadow-color: #000000c0;
+        clip: true;
+        TouchArea { } // a tap on the card stays on it
+        property <length> lx: (root.width - root.cw) / 2 - self.x; // the list's left, in the card
+        if !Home.ready: Rectangle {
+            x: card.lx + 8px;
+            y: root.fold(root.top + 8px, 76px) - card.y;
+            width: root.cw - 16px;
+            height: 76px;
+            opacity: max(0, min(1, (root.g - 0.1) * 3));
+            border-radius: 16px;
+            background: #e8a33d12;
             border-width: 1px;
-            border-color: Home.requested ? T.accent.with-alpha(0.7) : transparent;
-            animate background, border-color { duration: 240ms; easing: T.out; }
+            border-color: #e8a33d3a;
+            Text { x: 16px; y: 14px; width: parent.width - 120px; height: 26px; text: "Finish setting up"; font-size: 15px; font-weight: 600; color: T.fg; vertical-alignment: center; overflow: elide; }
+            Text { x: 16px; y: 46px; width: parent.width - 32px; text: Home.missing; font-size: 12.5px; color: T.muted; overflow: elide; }
+            Rectangle {
+                x: parent.width - 12px - 76px;
+                y: 10px;
+                width: 76px;
+                height: 34px;
+                border-radius: 17px;
+                background: su.pressed ? #c4664a : T.accent;
+                accessible-role: button;
+                accessible-label: "Set up";
+                Text { text: "Set up"; font-size: 14px; font-weight: 600; color: white; }
+                su := TouchArea { clicked => { Home.set-up(); } }
+            }
+        }
+        for i in 6: Rectangle {
+            property <bool> on: Home.index == i;
+            property <float> late: max(0, min(1, (root.g - 0.2) * 3));
+            x: card.lx;
+            y: root.fold(root.top + root.ry(i), root.row-h) - card.y;
+            width: root.cw;
+            height: root.row-h;
+            // the chosen row is the status itself; the card's edge unveils the others
+            opacity: self.on ? min(1, root.g * 6) : max(0, min(1, (root.g - 0.08) * 3));
             accessible-role: button;
-            accessible-label: Ctl.call-label;
-            HorizontalLayout {
-                alignment: center;
-                spacing: 8px;
-                Icon {
-                    d: Icons.phone;
-                    width: 18px;
-                    height: 18px;
-                    y: (parent.height - 18px) / 2;
-                    stroke-width: 1.9px;
-                    stroke: Home.requested ? T.accent : #ffffff;
-                }
-                Text {
-                    text: Ctl.call-label;
-                    font-size: 15px;
-                    font-weight: 600;
-                    vertical-alignment: center;
-                    color: Home.requested ? T.accent : #ffffff;
+            accessible-label: Ctl.lines[i];
+            // the face: shrinks out of the old row, grows into the new one
+            property <float> c: self.on ? 1 : 0;
+            animate c { duration: self.on ? 300ms : 160ms; delay: self.on ? 120ms : 0ms; easing: self.on ? T.spring : T.out; }
+            Rectangle {
+                x: 8px + (parent.width - 16px) * (1 - parent.c) / 2;
+                y: 3px + (parent.height - 6px) * (1 - parent.c) / 2;
+                width: (parent.width - 16px) * parent.c;
+                height: (parent.height - 6px) * parent.c;
+                border-radius: 16px;
+                background: pick.pressed ? #302f2d : Ctl.face;
+                opacity: min(1, parent.c * 3) * max(0, min(1, (root.g - 0.25) * 3));
+            }
+            if Home.index != i: Rectangle {
+                x: 8px;
+                y: 3px;
+                width: parent.width - 16px;
+                height: parent.height - 6px;
+                border-radius: 16px;
+                background: pick.pressed ? #ffffff0b : transparent;
+            }
+            Text {
+                x: parent.on ? -11px * (1 - root.g) : 0px; // the status's words sit 11 px left, beside the chevron
+                y: (30px - 13px) * (1 - root.g) + 9px * root.g;
+                width: parent.width;
+                height: 26px;
+                text: Ctl.lines[i];
+                font-size: 17px + 3px * (1 - root.g);
+                font-weight: 600;
+                letter-spacing: -0.2px * (1 - root.g);
+                color: parent.on ? T.fg : #b9b9bd;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                animate color { duration: 200ms; }
+            }
+            Text {
+                y: 34px;
+                width: parent.width;
+                height: 18px;
+                text: Ctl.short[i];
+                font-size: 13px;
+                color: i >= 4 && parent.on ? #a59cd6 : T.muted;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                opacity: parent.late;
+            }
+            pick := TouchArea {
+                clicked => {
+                    if (Home.index != i) {
+                        Home.set-mode(Ctl.mode(i).id);
+                    }
+                    closer.running = true;
                 }
             }
-            call := TouchArea { clicked => { Ctl.act(3); } }
+        }
+        // the hairline before the Asleep pair
+        Rectangle {
+            x: card.lx + 28px;
+            y: root.fold(root.top + root.ry(4) - root.gap-h / 2, 1px) - card.y;
+            width: root.cw - 56px;
+            height: 1px;
+            background: Ctl.line-c;
+            opacity: max(0, min(1, (root.g - 0.1) * 3));
+        }
+        // the foot: Test ring and Widget
+        Rectangle {
+            x: card.lx;
+            y: root.fold(root.top + root.ch - root.foot-h, root.foot-h) - card.y;
+            width: root.cw;
+            height: root.foot-h;
+            opacity: max(0, min(1, (root.g - 0.1) * 3));
+            Rectangle { x: 0; y: 0; width: parent.width; height: 1px; background: Ctl.line-c; }
+            Rectangle { x: parent.width / 2; y: 14px; width: 1px; height: parent.height - 28px; background: Ctl.line-c; }
+            for a[j] in [{ icon: Icons.bell, label: "Test ring" }, { icon: Icons.grid, label: "Widget" }]: Rectangle {
+                x: parent.width / 2 * j;
+                y: 1px;
+                width: parent.width / 2;
+                height: parent.height - 1px;
+                accessible-role: button;
+                accessible-label: a.label;
+                property <bool> on: j == 1 && (Home.widgets || Home.channel);
+                Rectangle {
+                    x: 6px;
+                    y: 5px;
+                    width: parent.width - 12px;
+                    height: parent.height - 10px;
+                    border-radius: 14px;
+                    background: ft.pressed ? #ffffff0d : transparent;
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 8px;
+                    Icon { d: a.icon; width: 18px; height: 18px; y: (parent.height - 18px) / 2; stroke-width: 1.8px; stroke: T.fg2; }
+                    Text { text: a.label; font-size: 14.5px; font-weight: 500; color: T.fg2; vertical-alignment: center; }
+                }
+                ft := TouchArea {
+                    clicked => {
+                        if (j == 0) {
+                            Ctl.open = false;
+                            Ctl.act(0);
+                        } else {
+                            Ctl.from(self.absolute-position.x + self.width / 2, self.absolute-position.y + self.height / 2);
+                            Ctl.act(1);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    closer := Timer {
+        interval: 440ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            Ctl.open = false;
         }
     }
 }
