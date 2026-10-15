@@ -118,8 +118,11 @@ pub fn run(_app: android_activity::AndroidApp) {
                 requested_at.set(None);
                 home.set_requested(false);
             }
-            // The channel sheet (and a chat's field) rides above the keyboard.
-            let kb = if editing.get() { android::keyboard() } else { 0.0 };
+            // The channel sheet (and a chat's field) rides above the keyboard. An open chat always follows it: back from
+            // another app, Android raises the keyboard again for the field without it taking focus anew.
+            let chats = ui.global::<Chats>();
+            let in_chat = chats.get_open() && !chats.get_current().is_empty();
+            let kb = if editing.get() || in_chat { android::keyboard() } else { 0.0 };
             if home.get_kb() != kb {
                 home.set_kb(kb);
             }

@@ -82,6 +82,28 @@ impl Media {
         })
     }
 
+    /// A photo or video picked on the phone to send: a known type, at most MEDIA_MAX. Its name says only what it is
+    /// ("photo.jpg"); the caller saves it at `path` (file_name()). Err: why it can't be sent, to show.
+    pub fn picked(bytes: &[u8], mime: &str) -> Result<Self, String> {
+        use sha2::Digest;
+        let what = if mime.starts_with("video/") { "video" } else { "photo" };
+        let Some((mime, ext)) = MIMES.iter().find(|(m, _)| *m == mime) else {
+            return Err(format!("Only photos and videos can be sent ({})", if mime.is_empty() { "unknown type" } else { mime }));
+        };
+        match bytes.len() as u64 {
+            0 => Err(format!("That {what} is empty")),
+            n if n > MEDIA_MAX => Err(format!("That {what} is over 10 MB")),
+            size => Ok(Media {
+                name: format!("{what}.{ext}"),
+                mime: mime.to_string(),
+                size,
+                sha256: hex(&Sha256::digest(bytes)),
+                state: "ready".into(),
+                ..Media::default()
+            }),
+        }
+    }
+
     pub fn video(&self) -> bool {
         self.mime.starts_with("video/")
     }
@@ -153,11 +175,17 @@ fn id(prefix: &str) -> String {
     format!("{prefix}{}{}", base36(now() as u64, 0), base36(r, 4))
 }
 
-/// "v1", the ids, the agent, the model, the time and the text, signed with the shared key (lowercase hex).
-pub fn sign(key: &str, chat: &str, msg: &str, agent: &str, model: Option<&str>, ts: i64, text: &str) -> String {
+/// "v1", the ids, the agent, the model, the time and the text, signed with the shared key (lowercase hex). With a
+/// photo or video it is "v2" and its link, name, type, size and sha256 follow, so a v1 signature never vouches for a file.
+#[allow(clippy::too_many_arguments)]
+pub fn sign(key: &str, chat: &str, msg: &str, agent: &str, model: Option<&str>, ts: i64, text: &str, att: Option<&Media>) -> String {
     let mut mac = Hmac::<Sha256>::new_from_slice(key.as_bytes()).expect("any key length");
-    mac.update(format!("v1\n{chat}\n{msg}\n{agent}\n{}\n{ts}\n{text}", model.unwrap_or("")).as_bytes());
-    mac.finalize().into_bytes().iter().map(|b| format!("{b:02x}")).collect()
+    let v = if att.is_some() { "v2" } else { "v1" };
+    mac.update(format!("{v}\n{chat}\n{msg}\n{agent}\n{}\n{ts}\n{text}", model.unwrap_or("")).as_bytes());
+    if let Some(m) = att {
+        mac.update(format!("\n{}\n{}\n{}\n{}\n{}", m.url, m.name, m.mime, m.size, m.sha256).as_bytes());
+    }
+    hex(&mac.finalize().into_bytes())
 }
 
 /// Whether a "Chat reply" really came from the PC: signed with the same key (constant-time check). A fake reply
@@ -210,7 +238,7 @@ pub fn ago(ms: i64) -> String {
 /// What a bubble from the PC says.
 pub fn shown(l: &Line) -> String {
     match (l.text.as_str(), l.state.as_str()) {
-        ("", "done") if !l.media.is_empty() => sent(&l.media),
+        ("", _) if !l.media.is_empty() => sent(&l.media),
         ("", "failed") => "Something went wrong.".into(),
         ("", "stopped") => "Stopped.".into(),
         ("", "missed") => "No agent was free to take this.".into(),
@@ -224,7 +252,8 @@ pub fn status(c: &Chat, now: i64) -> (&'static str, &'static str) {
     let Some(l) = c.lines.iter().rev().find(|l| l.me) else { return ("", "") };
     let age = now - l.since;
     match l.state.as_str() {
-        "sending" if age < 15_000 => ("Sending…", ""),
+        // A photo or video goes up first, which takes longer.
+        "sending" if age < if l.media.is_empty() { 15_000 } else { 120_000 } => ("Sending…", ""),
         "sending" | "not_sent" => ("Not sent · tap to retry", "retry"),
         "sent" if age > 60_000 => ("PC hasn't picked this up yet", ""),
         "sent" => ("Sent", ""),
@@ -272,31 +301,57 @@ impl Store {
         c.id
     }
 
-    /// Adds my message (sending) and returns its id; None when there is nothing to send.
-    pub fn add_mine(&mut self, chat: &str, text: &str) -> Option<String> {
+    /// Adds my message (sending), with a photo or video picked to go with it, and returns its id; None when there is
+    /// nothing to send.
+    pub fn add_mine(&mut self, chat: &str, text: &str, media: Option<Media>) -> Option<String> {
         let mut text = cut(text.trim(), MAX_TEXT);
         // Quotes and backslashes grow when escaped; keep the whole signed message under MAX_BODY.
         while serde_json::to_string(text).ok()?.len() > MAX_BODY - 500 {
             text = &text[..text.char_indices().last()?.0];
         }
-        let c = self.get_mut(chat).filter(|_| !text.is_empty())?;
+        let c = self.get_mut(chat).filter(|_| !text.is_empty() || media.is_some())?;
         let (at, msg) = (now(), id("m"));
         if c.title.is_empty() {
             // The first line; the header elides it with "…" to fit.
-            c.title = text.lines().next().unwrap_or("").chars().take(120).collect();
+            c.title = match (text, &media) {
+                ("", Some(m)) => if m.video() { "Video" } else { "Photo" }.into(),
+                _ => text.lines().next().unwrap_or("").chars().take(120).collect(),
+            };
         }
         c.updated = at;
-        c.lines.push(Line { id: msg.clone(), me: true, text: text.into(), at, since: at, state: "sending".into(), ..Line::default() });
+        let media = media.into_iter().map(|m| Media { part: 1, url: String::new(), ..m }).collect();
+        c.lines.push(Line { id: msg.clone(), me: true, text: text.into(), at, since: at, state: "sending".into(), media, ..Line::default() });
         Some(msg)
     }
 
-    /// The signed message for one of my lines; a retry sends the very same one.
+    /// The signed message for one of my lines; a retry sends the very same one. None while its file has no link yet.
     pub fn body(&self, chat: &str, msg: &str, key: &str) -> Option<String> {
         let c = self.get(chat)?;
         let l = c.lines.iter().find(|l| l.me && l.id == msg)?;
         let model = c.model.as_deref();
-        let sig = sign(key, chat, msg, &c.agent, model, l.at, &l.text);
-        Some(json!({"v": 1, "chat": chat, "msg": msg, "agent": c.agent, "model": model, "ts": l.at, "text": l.text, "sig": sig}).to_string())
+        let att = l.media.first();
+        if att.is_some_and(|m| m.url.is_empty()) {
+            return None;
+        }
+        let sig = sign(key, chat, msg, &c.agent, model, l.at, &l.text, att);
+        let mut v = json!({"v": 1, "chat": chat, "msg": msg, "agent": c.agent, "model": model, "ts": l.at, "text": l.text, "sig": sig});
+        if let Some(m) = att {
+            v["att"] = json!({"url": m.url, "name": m.name, "type": m.mime, "size": m.size, "sha256": m.sha256});
+        }
+        Some(v.to_string())
+    }
+
+    /// The photo or video of my message still to upload (it has no link yet).
+    pub fn to_upload(&self, chat: &str, msg: &str) -> Option<Media> {
+        let l = self.get(chat)?.lines.iter().find(|l| l.me && l.id == msg)?;
+        l.media.first().filter(|m| m.url.is_empty()).cloned()
+    }
+
+    /// Its upload finished: the ntfy link the PC fetches it from.
+    pub fn uploaded(&mut self, chat: &str, msg: &str, url: &str) {
+        if let Some(m) = self.get_mut(chat).and_then(|c| c.lines.iter_mut().find(|l| l.me && l.id == msg)).and_then(|l| l.media.first_mut()) {
+            m.url = url.into();
+        }
     }
 
     /// The send finished (or failed). Only a message still "sending" changes: a reply may already have come.
@@ -312,8 +367,10 @@ impl Store {
         if !matches!(l.state.as_str(), "sending" | "not_sent") {
             return None;
         }
-        // A fresh time, so a retry long after the first try isn't turned away as too old (same id: no double run).
+        // A fresh time, so a retry long after the first try isn't turned away as too old (same id: no double run), and
+        // its file goes up again (ntfy keeps a file only 3 hours).
         (l.state, l.since, l.at) = ("sending".into(), now(), now());
+        l.media.iter_mut().for_each(|m| m.url.clear());
         Some(l.id.clone())
     }
 
@@ -403,7 +460,7 @@ mod tests {
     fn store() -> (Store, String, String) {
         let mut s = Store::default();
         let chat = s.new_chat("claude", Some("haiku-5.5"));
-        let msg = s.add_mine(&chat, "hello").unwrap();
+        let msg = s.add_mine(&chat, "hello", None).unwrap();
         (s, chat, msg)
     }
 
@@ -440,7 +497,7 @@ mod tests {
     #[test]
     fn unread_only_when_not_open_and_mark_read() {
         let (mut s, c, m) = store();
-        let m2 = s.add_mine(&c, "again").unwrap();
+        let m2 = s.add_mine(&c, "again", None).unwrap();
         assert!(s.apply_reply(&reply(&c, &m, "done", "a", 1, 1), Some(&c)).is_none());
         assert_eq!(s.get(&c).unwrap().unread, 0);
         let (id, name, text) = s.apply_reply(&reply(&c, &m2, "failed", "", 1, 1), Some("other")).unwrap();
@@ -550,33 +607,78 @@ mod tests {
         assert_eq!(shown(&line(&["image/png", "video/webm", "video/mp4"])), "Sent a photo and 2 videos");
         let mut bad = reply(&c, &m, "done", "", 1, 1);
         bad["att"] = json!({"url": "https://example.com/x.png"});
-        let m2 = s.add_mine(&c, "again").unwrap();
+        let m2 = s.add_mine(&c, "again", None).unwrap();
         bad["re"] = json!(m2);
         assert_eq!(s.apply_reply(&bad, None).unwrap().2, "Done.", "an unsafe file is dropped");
     }
 
     #[test]
     fn signature_matches_shared_vector() {
-        let sig = sign("test-key", "c1", "m1", "claude", Some("haiku-5.5"), 1700000000000, "héllo 👋");
+        let sig = sign("test-key", "c1", "m1", "claude", Some("haiku-5.5"), 1700000000000, "héllo 👋", None);
         assert_eq!(sig, "ab529206c0c5da8e9c12efc38dac2b71aacc25df75a33f8d9c1b230be8b2f44e");
+    }
+
+    #[test]
+    fn file_signature_matches_shared_vector() {
+        let m = Media { url: "https://ntfy.sh/file/abc123.jpg".into(), name: "pic é.jpg".into(), mime: "image/jpeg".into(), size: 1234, sha256: "ab".repeat(32), ..Media::default() };
+        let sig = |m: &Media| sign("test-key", "c1", "m1", "claude", Some("haiku-5.5"), 1700000000000, "héllo 👋", Some(m));
+        assert_eq!(sig(&m), "f61fe75b634ec0074a302a1f927b60591ae6d5a1028b6cd8a4203befa10d0cf5");
+        assert_ne!(sig(&Media { size: 1, ..m.clone() }), sig(&m));
+    }
+
+    #[test]
+    fn picked_files_are_checked() {
+        let m = Media::picked(b"abc", "image/jpeg").unwrap();
+        assert_eq!((m.name.as_str(), m.size, m.state.as_str()), ("photo.jpg", 3, "ready"));
+        assert_eq!(m.sha256, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+        assert_eq!(Media::picked(b"x", "video/quicktime").unwrap().name, "video.mov");
+        assert_eq!(Media::picked(b"x", "image/heic").unwrap_err(), "Only photos and videos can be sent (image/heic)");
+        assert_eq!(Media::picked(b"", "video/mp4").unwrap_err(), "That video is empty");
+        assert_eq!(Media::picked(&vec![0; MEDIA_MAX as usize + 1], "image/png").unwrap_err(), "That photo is over 10 MB");
+    }
+
+    #[test]
+    fn a_photo_goes_up_first_then_the_signed_message_carries_it() {
+        let (mut s, c, _) = store();
+        let c2 = s.new_chat("codex", None);
+        let pic = Media { path: "/data/x.jpg".into(), ..Media::picked(b"abc", "image/jpeg").unwrap() };
+        let m = s.add_mine(&c2, "", Some(pic)).unwrap();
+        assert_eq!(s.get(&c2).unwrap().title, "Photo");
+        assert_eq!(shown(&s.get(&c2).unwrap().lines[0]), "Sent a photo");
+        assert!(s.body(&c2, &m, "k").is_none(), "not before the upload");
+        assert_eq!(s.to_upload(&c2, &m).unwrap().path, "/data/x.jpg");
+        s.uploaded(&c2, &m, "https://ntfy.sh/file/up.jpg");
+        assert!(s.to_upload(&c2, &m).is_none());
+        let v: Value = serde_json::from_str(&s.body(&c2, &m, "k").unwrap()).unwrap();
+        assert_eq!(v["att"], json!({"url": "https://ntfy.sh/file/up.jpg", "name": "photo.jpg", "type": "image/jpeg", "size": 3,
+            "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}));
+        let l = &s.get(&c2).unwrap().lines[0];
+        assert_eq!(v["sig"], sign("k", &c2, &m, "codex", None, l.at, "", l.media.first()).as_str());
+        s.sent(&c2, &m, false);
+        assert_eq!(s.retry(&c2), Some(m.clone()));
+        assert!(s.to_upload(&c2, &m).is_some(), "a retry uploads again");
+        assert!(s.downloads().is_empty(), "my own file is never fetched");
+        let m2 = s.add_mine(&c, &"\"".repeat(5000), Some(Media::picked(b"abc", "video/webm").unwrap())).unwrap();
+        s.uploaded(&c, &m2, &format!("https://ntfy.sh/file/{}.webm", "a".repeat(20)));
+        assert!(s.body(&c, &m2, "k").unwrap().len() < 4000, "the longest text and a file still fit");
     }
 
     #[test]
     fn body_fits_at_the_cap_and_retry_resends_the_same() {
         let (mut s, c, _) = store();
         for text in ["x".repeat(5000), "é".repeat(5000), "\"".repeat(5000)] {
-            let m = s.add_mine(&c, &text).unwrap();
+            let m = s.add_mine(&c, &text, None).unwrap();
             let body = s.body(&c, &m, "k").unwrap();
             assert!(body.len() < 4000, "{} bytes", body.len());
             let v: Value = serde_json::from_str(&body).unwrap();
             assert!(v["text"].as_str().unwrap().len() <= 2800);
         }
-        let m = s.add_mine(&c, "retry me").unwrap();
+        let m = s.add_mine(&c, "retry me", None).unwrap();
         let first = s.body(&c, &m, "k");
         s.sent(&c, &m, false);
         assert_eq!(status(s.get(&c).unwrap(), now()).1, "retry");
         assert_eq!(s.retry(&c), Some(m.clone()));
         assert_eq!(s.body(&c, &m, "k"), first);
-        assert!(s.add_mine(&c, "  ").is_none());
+        assert!(s.add_mine(&c, "  ", None).is_none());
     }
 }

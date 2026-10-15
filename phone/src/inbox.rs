@@ -1,7 +1,7 @@
 //! In-app chats on the phone: the store file, sending, notifications for the PC's replies, and the Chats models of
 //! the home screen. The rules themselves (signing, replies, unread) are in chats.rs.
 use crate::{
-    ChatMsg, Chats, ChatRow, HomeScreen, android,
+    ChatMsg, Chats, ChatRow, HomeScreen, android, attach,
     chats::{self, Media, Store},
     jx::{self, s, service},
     net, ring, settings,
@@ -9,7 +9,7 @@ use crate::{
 use jni::{
     JNIEnv,
     errors::Result,
-    objects::{GlobalRef, JByteArray, JObject, JValue},
+    objects::{GlobalRef, JByteArray, JObject, JObjectArray, JValue},
 };
 use serde_json::Value;
 use slint::{ComponentHandle, ModelRc, VecModel};
@@ -40,6 +40,16 @@ static FETCHING: Mutex<Vec<String>> = Mutex::new(Vec::new());
 thread_local! {
     /// Thumbnails already drawn, by file (None: it couldn't be read).
     static THUMBS: RefCell<HashMap<String, Option<(slint::Image, f32)>>> = RefCell::new(HashMap::new());
+}
+
+/// The store changed: the home screen redraws.
+pub fn changed() {
+    VERSION.fetch_add(1, Relaxed);
+}
+
+/// Where photos and videos are kept (filesDir/media), both the PC's and mine.
+pub fn media_dir() -> Option<PathBuf> {
+    PATH.get().map(|p| p.with_file_name("media"))
 }
 
 /// Finds the store file (filesDir/chats.json).
@@ -77,6 +87,26 @@ fn notification_id(chat: &str) -> i32 {
     100 + (chat.bytes().fold(0u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32)) & 0xf_ffff) as i32
 }
 
+/// Chat notifications are their own group, with a summary that opens the newest chat. Left ungrouped, Android bundled
+/// them with "Ready for Claude's calls", and a tap on the bundle opened the home screen instead of the chat.
+const GROUP: &str = "chats";
+const SUMMARY_ID: i32 = 99; // chat notifications are 100 and up
+
+/// A chat was read: its notification goes, and the summary too once no chat notification is left.
+fn cancel(env: &mut JNIEnv, ctx: &JObject, chat: &str) -> Result<()> {
+    let nm = service(env, ctx, "notification")?;
+    env.call_method(&nm, "cancel", "(I)V", &[JValue::Int(notification_id(chat))])?;
+    let all = JObjectArray::from(env.call_method(&nm, "getActiveNotifications", "()[Landroid/service/notification/StatusBarNotification;", &[])?.l()?);
+    for i in 0..env.get_array_length(&all)? {
+        let n = env.get_object_array_element(&all, i)?;
+        if env.call_method(&n, "getId", "()I", &[])?.i()? > SUMMARY_ID {
+            return Ok(());
+        }
+    }
+    env.call_method(&nm, "cancel", "(I)V", &[JValue::Int(SUMMARY_ID)])?;
+    Ok(())
+}
+
 /// The PC's reply arrived over ntfy: file it, and notify unless that chat is being looked at.
 pub fn reply_arrived(env: &mut JNIEnv, ctx: &JObject, body: &str) -> Result<()> {
     path(env, ctx)?;
@@ -88,7 +118,7 @@ pub fn reply_arrived(env: &mut JNIEnv, ctx: &JObject, body: &str) -> Result<()> 
     }
     let open = if focused(env) { VIEWING.lock().unwrap().clone() } else { None };
     let note = update(|s| s.apply_reply(&v, open.as_deref())).flatten();
-    VERSION.fetch_add(1, Relaxed);
+    changed();
     fetch_media();
     let Some((chat, name, text)) = note else { return Ok(()) };
 
@@ -108,45 +138,66 @@ pub fn reply_arrived(env: &mut JNIEnv, ctx: &JObject, body: &str) -> Result<()> 
     jx::put(env, &home, "chat", JValue::Object(&c))?;
     let id = notification_id(&chat);
     let tap = jx::pending(env, ctx, "getActivity", id, &home)?;
-    let channel = s(env, channel_id)?;
-    let b = env.new_object("android/app/Notification$Builder", "(Landroid/content/Context;Ljava/lang/String;)V", &[JValue::Object(ctx), JValue::Object(&channel)])?;
-    let icon = env.get_static_field("android/R$drawable", "sym_action_chat", "I")?.i()?;
     let builder = "Landroid/app/Notification$Builder;";
-    jx::call(env, &b, "setSmallIcon", &format!("(I){builder}"), &[JValue::Int(icon)])?;
-    ring::set_text(env, &b, "setContentTitle", &name)?;
-    ring::set_text(env, &b, "setContentText", &text)?;
-    let big = env.new_object("android/app/Notification$BigTextStyle", "()V", &[])?;
-    let t = s(env, &text)?;
-    env.call_method(&big, "bigText", "(Ljava/lang/CharSequence;)Landroid/app/Notification$BigTextStyle;", &[JValue::Object(&t)])?;
-    jx::call(env, &b, "setStyle", &format!("(Landroid/app/Notification$Style;){builder}"), &[JValue::Object(&big)])?;
-    jx::call(env, &b, "setContentIntent", &format!("(Landroid/app/PendingIntent;){builder}"), &[JValue::Object(&tap)])?;
-    jx::call(env, &b, "setAutoCancel", &format!("(Z){builder}"), &[JValue::Bool(1)])?;
-    let cat = s(env, "msg")?;
-    jx::call(env, &b, "setCategory", &format!("(Ljava/lang/String;){builder}"), &[JValue::Object(&cat)])?;
-    let n = env.call_method(&b, "build", "()Landroid/app/Notification;", &[])?.l()?;
-    env.call_method(&nm, "notify", "(ILandroid/app/Notification;)V", &[JValue::Int(id), JValue::Object(&n)])?;
+    let (channel, group) = (s(env, channel_id)?, s(env, GROUP)?);
+    let icon = env.get_static_field("android/R$drawable", "sym_action_chat", "I")?.i()?;
+    // The reply, then the group's summary (silent: the reply alerts) with the same tap.
+    for summary in [false, true] {
+        let b = env.new_object("android/app/Notification$Builder", "(Landroid/content/Context;Ljava/lang/String;)V", &[JValue::Object(ctx), JValue::Object(&channel)])?;
+        jx::call(env, &b, "setSmallIcon", &format!("(I){builder}"), &[JValue::Int(icon)])?;
+        ring::set_text(env, &b, "setContentTitle", &name)?;
+        ring::set_text(env, &b, "setContentText", &text)?;
+        jx::call(env, &b, "setContentIntent", &format!("(Landroid/app/PendingIntent;){builder}"), &[JValue::Object(&tap)])?;
+        // A tapped summary stays (cancelling it would clear every chat's reply); reading the last chat removes it.
+        jx::call(env, &b, "setAutoCancel", &format!("(Z){builder}"), &[JValue::Bool(u8::from(!summary))])?;
+        jx::call(env, &b, "setGroup", &format!("(Ljava/lang/String;){builder}"), &[JValue::Object(&group)])?;
+        if summary {
+            jx::call(env, &b, "setGroupSummary", &format!("(Z){builder}"), &[JValue::Bool(1)])?;
+            jx::call(env, &b, "setGroupAlertBehavior", &format!("(I){builder}"), &[JValue::Int(2)])?; // GROUP_ALERT_CHILDREN
+        } else {
+            let big = env.new_object("android/app/Notification$BigTextStyle", "()V", &[])?;
+            let t = s(env, &text)?;
+            env.call_method(&big, "bigText", "(Ljava/lang/CharSequence;)Landroid/app/Notification$BigTextStyle;", &[JValue::Object(&t)])?;
+            jx::call(env, &b, "setStyle", &format!("(Landroid/app/Notification$Style;){builder}"), &[JValue::Object(&big)])?;
+            let cat = s(env, "msg")?;
+            jx::call(env, &b, "setCategory", &format!("(Ljava/lang/String;){builder}"), &[JValue::Object(&cat)])?;
+        }
+        let n = env.call_method(&b, "build", "()Landroid/app/Notification;", &[])?.l()?;
+        let nid = if summary { SUMMARY_ID } else { id };
+        env.call_method(&nm, "notify", "(ILandroid/app/Notification;)V", &[JValue::Int(nid), JValue::Object(&n)])?;
+    }
     Ok(())
 }
 
-/// Adds or retries a message of mine (`f` says which) and posts it, signed.
+/// Adds or retries a message of mine (`f` says which) and sends it in the background.
 fn post(env: &mut JNIEnv, ctx: &JObject, chat: &str, f: impl FnOnce(&mut Store) -> Option<String>) -> Result<()> {
     let Some(key) = settings::chat_key(env, ctx)? else { return Ok(()) };
     let topic = settings::topic(env, ctx)?;
     path(env, ctx)?;
-    let out = update(|s| {
-        let msg = f(s)?;
-        Some((s.body(chat, &msg, &key)?, msg))
-    })
-    .flatten();
-    VERSION.fetch_add(1, Relaxed);
-    if let Some((body, msg)) = out {
-        let chat = chat.to_string();
-        net::publish_chat(topic, body, move |ok| {
-            update(|s| s.sent(&chat, &msg, ok));
-            VERSION.fetch_add(1, Relaxed);
-        });
-    }
+    let msg = update(f).flatten();
+    changed();
+    let Some(msg) = msg else { return Ok(()) };
+    let chat = chat.to_string();
+    net::RT.spawn(async move {
+        let ok = deliver(&topic, &key, &chat, &msg).await;
+        update(|s| s.sent(&chat, &msg, ok));
+        changed();
+    });
     Ok(())
+}
+
+/// Uploads my message's photo or video first (a retry uploads it again), then posts the signed message.
+async fn deliver(topic: &str, key: &str, chat: &str, msg: &str) -> bool {
+    if let Some(m) = update(|s| s.to_upload(chat, msg)).flatten() {
+        let Some(bytes) = std::fs::read(&m.path).ok() else { return false };
+        let Some(url) = net::upload(topic, &m.name, bytes).await else {
+            android::log("chats: a photo or video couldn't be uploaded");
+            return false;
+        };
+        update(|s| s.uploaded(chat, msg, &url));
+    }
+    let Some(body) = update(|s| s.body(chat, msg, key)).flatten() else { return false };
+    net::publish_chat(topic, body).await
 }
 
 /// Fetches every photo and video still loading, in the background, right away (ntfy keeps them only 3 hours). Each
@@ -180,7 +231,7 @@ fn fetch_media() {
             }
             update(|s| s.media_done(&m.url, saved.as_deref()));
             FETCHING.lock().unwrap().retain(|u| *u != m.url);
-            VERSION.fetch_add(1, Relaxed);
+            changed();
         });
     }
 }
@@ -251,6 +302,11 @@ fn play(env: &mut JNIEnv, act: &JObject, path: &str) -> Result<()> {
     jx::start_activity(env, act, &i)
 }
 
+/// A file's thumbnail, drawn once (a photo, or a video's first frame).
+pub fn thumb(m: &Media) -> Option<(slint::Image, f32)> {
+    THUMBS.with(|t| t.borrow_mut().entry(m.path.clone()).or_insert_with(|| picture(&m.path, m.video(), 720)).clone())
+}
+
 /// The bubble for a photo or video: its thumbnail once it is here, else a grey note.
 fn media_msg(me: bool, m: &Media) -> ChatMsg {
     let what = if m.video() { "video" } else { "photo" };
@@ -258,8 +314,7 @@ fn media_msg(me: bool, m: &Media) -> ChatMsg {
     match m.state.as_str() {
         "loading" => note(format!("Downloading {what}…")),
         "ready" => {
-            let thumb = THUMBS.with(|t| t.borrow_mut().entry(m.path.clone()).or_insert_with(|| picture(&m.path, m.video(), 720)).clone());
-            match thumb {
+            match thumb(m) {
                 // A video whose frame can't be read still gets its card (and plays).
                 None if !m.video() => note(format!("Couldn't show this {what}")),
                 t => {
@@ -281,8 +336,7 @@ fn show(ui: &HomeScreen) {
     let seen = android::with(|env, act| {
         let f = focused(env);
         if f && !cur.is_empty() {
-            let nm = service(env, act, "notification")?;
-            env.call_method(&nm, "cancel", "(I)V", &[JValue::Int(notification_id(&cur))])?;
+            cancel(env, act, &cur)?;
         }
         Ok(f)
     })
@@ -300,7 +354,7 @@ fn show(ui: &HomeScreen) {
     all.sort_by_key(|c| -c.updated);
     let preview = |c: &chats::Chat| {
         let last = c.lines.iter().rev().find(|l| l.me || l.state != "partial");
-        last.map_or("New chat".to_string(), |l| if l.me { l.text.clone() } else { chats::shown(l) }).replace('\n', " ")
+        last.map_or("New chat".to_string(), chats::shown).replace('\n', " ")
     };
     let rows: Vec<ChatRow> = all
         .iter()
@@ -318,17 +372,20 @@ fn show(ui: &HomeScreen) {
         Some(chat) => {
             let mut msgs: Vec<ChatMsg> = vec![];
             for l in chat.lines.iter().filter(|l| l.me || l.state != "partial") {
-                // A reply of only files has no text bubble, just theirs.
-                if l.me || !l.text.is_empty() || l.media.is_empty() {
-                    let text = if l.me { l.text.clone() } else { chats::shown(l) };
-                    msgs.push(ChatMsg { me: l.me, text: text.into(), ..ChatMsg::default() });
+                // Only files: no text bubble, just theirs. Mine show the photo above its text; the PC's after it.
+                let text = (!l.text.is_empty() || l.media.is_empty()).then(|| ChatMsg { me: l.me, text: chats::shown(l).into(), ..ChatMsg::default() });
+                let media = l.media.iter().map(|m| media_msg(l.me, m));
+                if l.me {
+                    msgs.extend(media.chain(text));
+                } else {
+                    msgs.extend(text.into_iter().chain(media));
                 }
-                msgs.extend(l.media.iter().map(|m| media_msg(l.me, m)));
             }
             c.set_name(chats::name(&chat.agent, chat.model.as_deref()).into());
             c.set_title(chat.title.clone().into());
             c.set_msgs(ModelRc::new(VecModel::from(msgs)));
             status(ui);
+            attach::show(ui);
         }
         None => {
             c.set_current("".into());
@@ -423,10 +480,24 @@ pub fn wire(ui: &HomeScreen) -> Tracker {
         move |text| {
             let Some(ui) = ui.upgrade() else { return };
             let chat = ui.global::<Chats>().get_current().to_string();
-            android::with(|env, act| post(env, act, &chat, |s| s.add_mine(&chat, &text)));
+            let media = attach::take();
+            android::with(|env, act| post(env, act, &chat, |s| s.add_mine(&chat, &text, media)));
             show(&ui);
         }
     });
+    c.on_stop({
+        let ui = ui.as_weak();
+        move || {
+            let Some(ui) = ui.upgrade() else { return };
+            let chat = ui.global::<Chats>().get_current().to_string();
+            android::with(|env, act| post(env, act, &chat, |s| s.add_mine(&chat, "stop", None)));
+            show(&ui);
+        }
+    });
+    c.on_attach(|| {
+        android::with(attach::open);
+    });
+    c.on_unpick(attach::clear);
     c.on_retry({
         let ui = ui.as_weak();
         move || {

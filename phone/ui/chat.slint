@@ -19,14 +19,20 @@ export global Chats {
     in property <string> action; // what tapping it does: "retry" or "stop"
     in property <bool> ready: true; // false until the PC has set chat up
     in property <bool> unread; // any chat has something new
+    in property <string> pick; // what goes with the next message: "" nothing, "loading", "image", "video" or "error"
+    in property <image> pick-pic; // its thumbnail
+    in property <string> pick-text; // "Photo · 1.2 MB", or why it can't be sent
     in-out property <bool> open; // the Chats screen
     in-out property <string> current; // the open chat's id ("" = the list)
     in-out property <bool> picker; // the new-chat picker
     in-out property <bool> want-focus; // put the cursor in the field once it is on screen
     callback open-chat(string);
     callback new-chat(string, string); // agent, model
-    callback send(string);
+    callback send(string); // with what is picked, if anything
+    callback stop(); // a bare "stop", never with what is picked
     callback retry();
+    callback attach(); // opens the photo and video picker
+    callback unpick();
     callback open-media(string, string); // path, kind: a photo opens full screen here, a video in the video player
     // Back steps out one level: photo, picker, thread, Chats screen. False when there is nothing left to close.
     public function back() -> bool {
@@ -97,8 +103,11 @@ export component ChatList inherits Rectangle {
 export component ChatThread inherits Rectangle {
     property <string> draft;
     property <length> field-y: self.height - max(Home.kb, Home.sab) - 12px - 64px; // 12px above the keyboard
+    property <length> chip-h: Chats.pick == "" || !Chats.ready ? 0px : 72px + 8px; // the picked file sits above the field
+    property <bool> picked-media: Chats.pick == "image" || Chats.pick == "video";
+    property <bool> can-send: Chats.pick != "loading" && (draft != "" || picked-media);
     function send() {
-        if (draft != "") { Chats.send(draft); draft = ""; }
+        if (can-send) { Chats.send(draft); draft = ""; }
     }
     Rectangle {
         y: Home.sat;
@@ -112,7 +121,7 @@ export component ChatThread inherits Rectangle {
     log := Flickable {
         y: Home.sat + 61px;
         width: parent.width;
-        height: root.field-y - 8px - self.y;
+        height: root.field-y - 8px - root.chip-h - self.y;
         content-height: rows.preferred-height;
         property <length> bottom: Math.min(0px, self.height - rows.preferred-height);
         init => { self.content-y = self.bottom; }
@@ -182,9 +191,56 @@ export component ChatThread inherits Rectangle {
                     width: stop-label.preferred-width;
                     height: 20px;
                     stop-label := Text { text: "Stop"; font-size: 13px; font-weight: 600; color: T.accent; vertical-alignment: center; }
-                    TouchArea { clicked => { Chats.send("stop"); } }
+                    TouchArea { clicked => { Chats.stop(); } }
                 }
             }
+        }
+    }
+    // The photo or video picked to send, until it is sent or removed with the cross.
+    if root.chip-h > 0: Rectangle {
+        x: 16px;
+        y: root.field-y - root.chip-h;
+        width: parent.width - 32px;
+        height: 72px;
+        border-radius: 24px;
+        background: T.btn;
+        if root.picked-media: Rectangle {
+            x: 8px;
+            y: 8px;
+            width: 56px;
+            height: 56px;
+            border-radius: 16px;
+            background: #202227;
+            clip: true;
+            Image { width: parent.width; height: parent.height; source: Chats.pick-pic; image-fit: cover; }
+            if Chats.pick == "video": Rectangle {
+                width: 28px;
+                height: 28px;
+                border-radius: 14px;
+                background: #000000a6;
+                Path { x: 11px; y: 8.5px; width: 9px; height: 11px; viewbox-width: 20; viewbox-height: 22; commands: "M2 2 L18 11 L2 20 Z"; fill: white; }
+            }
+        }
+        Text {
+            x: root.picked-media ? 76px : 20px;
+            width: parent.width - self.x - 56px;
+            height: parent.height;
+            text: Chats.pick-text;
+            font-size: 15px;
+            color: Chats.pick == "error" ? T.muted : T.fg;
+            vertical-alignment: center;
+            wrap: word-wrap;
+            overflow: elide;
+        }
+        Rectangle {
+            x: parent.width - 56px;
+            y: 12px;
+            width: 48px;
+            height: 48px;
+            border-radius: 24px;
+            background: unpick.pressed ? #3a3c42 : transparent;
+            Icon { d: Icons.close; x: 12px; y: 12px; stroke: T.muted; }
+            unpick := TouchArea { clicked => { Chats.unpick(); } }
         }
     }
     Rectangle {
@@ -204,9 +260,19 @@ export component ChatThread inherits Rectangle {
             vertical-alignment: center;
         }
         if Chats.ready: HorizontalLayout {
-            padding-left: 20px;
+            padding-left: 8px;
             padding-right: 8px;
             spacing: 4px;
+            // Attach a photo or video.
+            Rectangle {
+                width: 48px;
+                height: 48px;
+                y: 8px;
+                border-radius: 24px;
+                background: plus.pressed ? #3a3c42 : transparent;
+                Icon { d: Icons.plus; x: 12px; y: 12px; stroke: T.fg2; }
+                plus := TouchArea { clicked => { Chats.attach(); } }
+            }
             // Back (the system key) reaches the screen even while the cursor is in the field.
             FocusScope {
                 // Takes the room left by the send button and never grows with long text (it pushed the button off).
@@ -219,24 +285,36 @@ export component ChatThread inherits Rectangle {
                     if (e.text == Key.Back && Chats.back()) { return accept; }
                     reject
                 }
-                input := TextInput {
-                    width: parent.width;
-                    height: parent.height;
-                    text <=> root.draft;
-                    font-size: 17px;
-                    color: T.fg;
-                    vertical-alignment: center;
-                    single-line: true;
-                    accepted => { root.send(); }
-                    changed has-focus => { Home.editing(self.has-focus); }
+                // Long text slides left inside this window so the caret (and the end of the text) stays in view.
+                window := Rectangle {
+                    clip: true;
+                    property <length> scroll: 0px; // <= 0: how far the text is slid left
+                    input := TextInput {
+                        x: min(0px, max(parent.width - self.width, parent.scroll));
+                        width: max(parent.width, self.preferred-width + 4px);
+                        height: parent.height;
+                        text <=> root.draft;
+                        font-size: 17px;
+                        color: T.fg;
+                        vertical-alignment: center;
+                        single-line: true;
+                        accepted => { root.send(); }
+                        changed has-focus => { Home.editing(self.has-focus); }
+                        cursor-position-changed(at) => {
+                            if (at.x + window.scroll < 0px) {
+                                window.scroll = -at.x;
+                            } else if (at.x + window.scroll > window.width - 4px) {
+                                window.scroll = window.width - 4px - at.x;
+                            }
+                        }
+                    }
                     Text {
-                        x: 0;
-                        width: parent.width;
                         visible: root.draft == "";
                         text: "Message";
                         font-size: 17px;
                         color: #8c8f97;
                         vertical-alignment: center;
+                        width: parent.width;
                         height: parent.height;
                     }
                 }
@@ -246,9 +324,9 @@ export component ChatThread inherits Rectangle {
                 height: 48px;
                 y: 8px;
                 border-radius: 24px;
-                background: root.draft != "" ? T.accent : transparent;
-                Icon { d: Icons.send; x: 12px; y: 12px; stroke: root.draft != "" ? white : T.muted; }
-                TouchArea { enabled: root.draft != ""; clicked => { root.send(); } }
+                background: root.can-send ? T.accent : transparent;
+                Icon { d: Icons.send; x: 12px; y: 12px; stroke: root.can-send ? white : T.muted; }
+                TouchArea { enabled: root.can-send; clicked => { root.send(); } }
             }
         }
     }

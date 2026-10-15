@@ -111,12 +111,19 @@ fn publish(topic: String, title: &'static str, body: String) {
     });
 }
 
-/// A signed chat message for the PC; `done` says whether ntfy took it.
-pub fn publish_chat(topic: String, body: String, done: impl FnOnce(bool) + Send + 'static) {
-    RT.spawn(async move {
-        let req = HTTP.post(format!("https://ntfy.sh/{topic}")).header("Title", "Chat").header("Priority", "1").body(body);
-        done(req.timeout(Duration::from_secs(10)).send().await.is_ok_and(|r| r.status().is_success()));
-    });
+/// A signed chat message for the PC; true when ntfy took it.
+pub async fn publish_chat(topic: &str, body: String) -> bool {
+    let req = HTTP.post(format!("https://ntfy.sh/{topic}")).header("Title", "Chat").header("Priority", "1").body(body);
+    req.timeout(Duration::from_secs(10)).send().await.is_ok_and(|r| r.status().is_success())
+}
+
+/// A photo or video for the PC, as an ntfy attachment (its own "Chat file" message, which both sides skip); returns
+/// its https ntfy.sh download link.
+pub async fn upload(topic: &str, name: &str, bytes: Vec<u8>) -> Option<String> {
+    let req = HTTP.put(format!("https://ntfy.sh/{topic}")).query(&[("filename", name)]).header("Title", "Chat file").header("Priority", "1");
+    let r = req.body(bytes).timeout(Duration::from_secs(120)).send().await.ok()?.error_for_status().ok()?;
+    let url = r.json::<Value>().await.ok()?["attachment"]["url"].as_str()?.to_string();
+    url.strip_prefix("https://ntfy.sh/file/").is_some_and(|f| !f.is_empty() && f.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c))).then_some(url)
 }
 
 /// A photo or video the PC sent: an https ntfy.sh link only, at most `max` bytes (stops reading past that).

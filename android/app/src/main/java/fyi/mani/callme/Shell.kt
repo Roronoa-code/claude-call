@@ -38,6 +38,7 @@ object Native {
     @JvmStatic external fun homeOpened(activity: Activity)
     @JvmStatic external fun homeResumed(activity: Activity)
     @JvmStatic external fun permissionsAnswered(activity: Activity)
+    @JvmStatic external fun picked(activity: Activity, data: Intent?)
     @JvmStatic external fun declined(context: Context, intent: Intent)
     @JvmStatic external fun modeTapped(context: Context, intent: Intent)
     @JvmStatic external fun widgets(context: Context)
@@ -49,6 +50,8 @@ class MainActivity : NativeActivity() {
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); Native.homeOpened(this) }
     override fun onResume() { super.onResume(); if (!isFinishing) Native.homeResumed(this) }
     override fun onRequestPermissionsResult(code: Int, permissions: Array<out String>, results: IntArray) = Native.permissionsAnswered(this)
+    @Deprecated("One picker: the result API needs androidx")
+    override fun onActivityResult(code: Int, result: Int, data: Intent?) { super.onActivityResult(code, result, data); if (code == 7) Native.picked(this, data) }
 }
 
 /** The call screen (phone/src/screen.rs). */
@@ -98,7 +101,7 @@ open class ModeWidget : AppWidgetProvider() {
 class ModeWidgetWide : ModeWidget()
 
 /**
- * Lets the video player read a video the PC sent in a chat (filesDir/media, phone/src/inbox.rs). Not exported: only
+ * Lets the video player read a video sent in a chat, by the PC or from this phone (filesDir/media, phone/src/inbox.rs). Not exported: only
  * the one-time read grant on the link the app opens reaches a file, and only a plain name inside that folder.
  */
 class MediaProvider : ContentProvider() {
