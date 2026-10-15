@@ -18,6 +18,10 @@ import android.os.Bundle
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
+import android.text.Editable
+import android.view.Surface
+import android.view.inputmethod.InputMethodManager
+import android.view.SurfaceHolder
 import java.io.File
 import java.io.FileNotFoundException
 import android.window.OnBackInvokedDispatcher
@@ -37,6 +41,7 @@ object Native {
     @JvmStatic external fun callClosed(activity: Activity)
     @JvmStatic external fun homeOpened(activity: Activity)
     @JvmStatic external fun homeResumed(activity: Activity)
+    @JvmStatic external fun homeShown(shown: Boolean)
     @JvmStatic external fun permissionsAnswered(activity: Activity)
     @JvmStatic external fun picked(activity: Activity, data: Intent?)
     @JvmStatic external fun declined(context: Context, intent: Intent)
@@ -44,18 +49,64 @@ object Native {
     @JvmStatic external fun widgets(context: Context)
 }
 
+/**
+ * Keeps Android's starting window (the app's dark background, themes.xml) on screen until Rust has drawn a frame
+ * into the new surface (live_gl.rs). Without it the window counted as drawn while still empty, so a tap on the icon
+ * showed the launcher until the GPU's first frame popped the app in.
+ */
+open class Shown : NativeActivity() {
+    @JvmField @Volatile var waiting = false
+    private var finish: Runnable? = null
+    override fun surfaceRedrawNeededAsync(holder: SurfaceHolder, drawingFinished: Runnable) {
+        finish?.run()
+        finish = drawingFinished
+        waiting = true
+        surfaceRedrawNeeded(holder) // Rust draws now
+        window.decorView.postDelayed({ drawn() }, 3000) // never held by a frame that doesn't come
+    }
+    fun drawn() = runOnUiThread { waiting = false; finish?.run(); finish = null }
+
+    // How often the screen's picture changes, told to the display so it can slow down while it rests (home.rs);
+    // 0: no preference. A touch lifts it at once.
+    private var surface: Surface? = null
+    private var fps = 0f
+    override fun surfaceCreated(holder: SurfaceHolder) { super.surfaceCreated(holder); surface = holder.surface; fps = 0f }
+    override fun surfaceDestroyed(holder: SurfaceHolder) { surface = null; super.surfaceDestroyed(holder) }
+    fun rate(want: Float) = runOnUiThread {
+        if (want != fps && Build.VERSION.SDK_INT >= 30) {
+            fps = want
+            surface?.takeIf { it.isValid }?.setFrameRate(want, Surface.FRAME_RATE_COMPATIBILITY_DEFAULT)
+        }
+    }
+    override fun onUserInteraction() { super.onUserInteraction(); rate(0f) }
+
+    /**
+     * Empties the text field's copy of the text on the keyboard's side (Slint's input view) and restarts the keyboard
+     * on it, as a text box does when the app sets its text: a message was just sent while the keyboard was still
+     * putting a word together, and that word must not come back in the empty field.
+     */
+    fun clearField() = runOnUiThread {
+        val v = currentFocus ?: return@runOnUiThread
+        val f = runCatching { v.javaClass.getDeclaredField("mEditable").apply { isAccessible = true } }.getOrNull() ?: return@runOnUiThread
+        (f.get(v) as? Editable)?.clear()
+        (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).restartInput(v)
+    }
+}
+
 /** The home screen (phone/src/home.rs). */
-class MainActivity : NativeActivity() {
+class MainActivity : Shown() {
     override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); Native.homeOpened(this) }
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); Native.homeOpened(this) }
     override fun onResume() { super.onResume(); if (!isFinishing) Native.homeResumed(this) }
+    override fun onStart() { super.onStart(); Native.homeShown(true) }
+    override fun onStop() { Native.homeShown(false); super.onStop() }
     override fun onRequestPermissionsResult(code: Int, permissions: Array<out String>, results: IntArray) = Native.permissionsAnswered(this)
     @Deprecated("One picker: the result API needs androidx")
     override fun onActivityResult(code: Int, result: Int, data: Intent?) { super.onActivityResult(code, result, data); if (code == 7) Native.picked(this, data) }
 }
 
 /** The call screen (phone/src/screen.rs). */
-class CallActivity : NativeActivity() {
+class CallActivity : Shown() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Native.callOpened(this, intent)

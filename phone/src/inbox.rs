@@ -499,13 +499,8 @@ fn show(ui: &HomeScreen) {
             status(ui);
             attach::show(ui);
         }
-        None => {
-            c.set_current("".into());
-            // PREVIEW (chats-4): a direction's chat shrinks back into its row still showing its lines
-            if crate::chats4::look() == 0 {
-                MSGS.with(|model| model.set_vec(vec![]));
-            }
-        }
+        // The closed chat's lines stay: its screen is still on its way back into its row (home.slint).
+        None => c.set_current("".into()),
     }
 }
 
@@ -693,6 +688,9 @@ pub fn wire(ui: &HomeScreen) -> Tracker {
             android::with(|env, act| post(env, act, &chat, |s| s.add_mine(&chat, "stop", None)));
             show(&ui);
         }
+    });
+    c.on_clear_field(|| {
+        android::with(|env, act| env.call_method(act, "clearField", "()V", &[]).map(drop));
     });
     c.on_attach(|| {
         if crate::fake_chat::on() {

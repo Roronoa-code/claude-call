@@ -29,6 +29,12 @@ export!(Java_fyi_mani_callme_Native_widgets, |env, ctx| widget::update_all(env, 
 export!(Java_fyi_mani_callme_Native_stopRinging, |env, act| service::screen_touched(env, &act));
 export!(Java_fyi_mani_callme_Native_picked, |env, act, data| attach::picked(env, &act, &data));
 
+/// The home screen came on screen (true, onStart) or went off it (false, onStop).
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_fyi_mani_callme_Native_homeShown(_env: JNIEnv, _class: JClass, on: jni::sys::jboolean) {
+    crate::android::set_home_shown(on != 0);
+}
+
 /// ListenService stopped: the listener ends within a second.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_fyi_mani_callme_Native_stop(_env: JNIEnv, _class: JClass) {

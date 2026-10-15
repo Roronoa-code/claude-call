@@ -54,7 +54,7 @@ export component ListB inherits Rectangle {
             // Who matters now, standing on the floor, and where things stand.
             if h.id != "": Rectangle {
                 height: 196px;
-                TouchArea { clicked => { Chats.from-y = parent.absolute-position.y; Chats.open-chat(h.id); } }
+                TouchArea { clicked => { Chats.from-y = parent.absolute-position.y; Chats.from-h = parent.height; Chats.open-chat(h.id); } }
                 Floor { x: 4px; y: 128px; width: 170px; height: 56px; }
                 Figure {
                     x: 10px;
@@ -97,7 +97,7 @@ export component ListB inherits Rectangle {
                     face-bg: B.row;
                     radius: 22px;
                     margin: 12px;
-                    tapped(y) => { Chats.from-y = y; Chats.open-chat(r.id); }
+                    tapped(y) => { Chats.from-y = y; Chats.from-h = 76px; Chats.open-chat(r.id); }
                     // the character standing in its card, feet on the card's floor line
                     Figure { x: 6px; y: 0; width: 62px; height: 66px; face: r.face; pose: r.busy ? "think" : "idle"; k: 0.21; }
                     Text {

@@ -7,7 +7,8 @@ import { Home, RoundIcon } from "home_parts.slint";
 import { Toys, Clawd, Null } from "toys.slint";
 import { Chats, ChatThread, NewChat, Ink } from "chat.slint";
 import { ChatList } from "chat_list.slint";
-import { Chats4 } from "chats4/host.slint";
+import { ListA, ThreadA } from "chats4/a.slint";
+import { ListB, ThreadB } from "chats4/b.slint";
 import { StageBack, Look } from "stage.slint";
 
 // A choice in a sheet: icon, title and a line under it.
@@ -17,24 +18,27 @@ component Choice {
     in property <string> title;
     in property <string> desc;
     callback clicked;
-    height: 64px;
+    min-height: 64px;
     Rectangle {
         border-radius: 18px;
         background: touch.pressed ? #34363c : #26282d;
     }
+    // The line under the title wraps (a large font, a narrow phone) and the row grows to fit it.
     HorizontalLayout {
         padding-left: 14px;
         padding-right: 14px;
+        padding-top: 11px;
+        padding-bottom: 11px;
         spacing: 14px;
         Rectangle {
             width: 24px;
-            Icon { d: root.icon; y: 20px; stroke: root.tint; }
+            Icon { d: root.icon; y: (parent.height - self.height) / 2; stroke: root.tint; }
         }
         VerticalLayout {
             alignment: center;
             spacing: 2px;
             Text { text: root.title; font-size: 16px; font-weight: 600; color: T.fg; }
-            Text { text: root.desc; font-size: 13px; color: T.muted; }
+            Text { text: root.desc; font-size: 13px; color: T.muted; wrap: word-wrap; }
         }
     }
     touch := TouchArea { clicked => { root.clicked(); } }
@@ -155,13 +159,18 @@ export component HomeScreen inherits Window {
         animate opacity { duration: 600ms; easing: T.out; }
     }
 
-    // The bottom row: Chats, Call, •••.
+    // The bottom row: Chats, Call, •••. It steps back under an open sheet (which grows out of ••• over it), so the
+    // Call button is never seen cut by the sheet's edge.
+    property <bool> sheet-open: Home.more || Home.widgets || Home.channel;
+    property <float> under-sheet: sheet-open ? 0 : 1;
+    // back only once the closing sheet is small, so it isn't cut by it either
+    animate under-sheet { duration: 200ms; delay: root.sheet-open ? 0ms : 170ms; easing: T.out; }
     Rectangle {
         x: 24px;
         y: root.row-y;
         width: parent.width - 48px;
         height: 56px;
-        opacity: root.rest;
+        opacity: root.rest * root.under-sheet;
         RoundIcon {
             x: 0;
             y: 2px;
@@ -240,15 +249,16 @@ export component HomeScreen inherits Window {
         fsize: 52px;
         tx: root.sheet-x;
         tw: root.sheet-w;
-        th: Home.ready ? 170px : 244px;
+        th: more-rows.preferred-height;
         ty: root.sheet-bottom - self.th;
         face: Icons.more;
-        VerticalLayout {
+        from: T.btn;
+        more-rows := VerticalLayout {
             padding: 16px;
             spacing: 10px;
             if !Home.ready: Choice { icon: Icons.alert; tint: #e8a33d; title: "Finish setting up"; desc: Home.missing; clicked => { Home.more = false; Home.set-up(); } }
             Choice { icon: Icons.bell; title: "Test ring"; desc: "Rings like a real call, to check the sound."; clicked => { Home.more = false; Home.test-ring(); } }
-            Choice { icon: Icons.grid; title: "Widget"; desc: "The mode on your home screen, and the channel."; clicked => { Home.more = false; Home.widgets = true; } }
+            Choice { icon: Icons.grid; title: "Widget"; desc: "Home screen widget and the channel."; clicked => { Home.more = false; Home.widgets = true; } }
         }
     }
 
@@ -260,10 +270,11 @@ export component HomeScreen inherits Window {
         fsize: 52px;
         tx: root.sheet-x;
         tw: root.sheet-w;
-        th: Home.can-pin ? 244px : 96px; // three (or one) rows
+        th: widget-rows.preferred-height; // three (or one) rows
         ty: root.sheet-bottom - self.th; // over the bottom row
         face: Icons.grid;
-        VerticalLayout {
+        from: T.btn;
+        widget-rows := VerticalLayout {
             padding: 16px;
             spacing: 10px;
             if Home.can-pin: Choice { icon: Icons.grid; title: "Small"; desc: "The mode, one tap to change it."; clicked => { Home.pin(false); Home.widgets = false; } }
@@ -289,6 +300,7 @@ export component HomeScreen inherits Window {
         // Over the bottom row; above the keyboard while typing.
         ty: min(root.sheet-bottom - self.th, root.height - Home.kb - self.th - 12px);
         face: Icons.hash;
+        from: T.btn;
         VerticalLayout {
             padding: 16px;
             spacing: 10px;
@@ -354,10 +366,30 @@ export component HomeScreen inherits Window {
         th: root.height;
         radius: 0px;
         face: Icons.chat;
-        if Chats.current == "" && Chats.look == 0: ChatList { width: root.width; height: root.height; }
-        if Chats.current != "" && Chats.look == 0: ChatThread { width: root.width; height: root.height; }
-        // PREVIEW (chats-4): the directions, debug.callme.chats 1-3
-        if Chats.look > 0: Chats4 { width: root.width; height: root.height; }
+        from: T.btn;
+        // PREVIEW (chats-4): the list of the direction showing (debug.callme.chats 1-3; 0 today's)
+        if Chats.look == 0: ChatList { width: root.width; height: root.height; visible: thread.g < 1; }
+        if Chats.look == 1: ListA { width: root.width; height: root.height; visible: thread.g < 1; }
+        if Chats.look == 2: ListB { width: root.width; height: root.height; visible: thread.g < 1; }
+        // A chat opens out of its row over the list, and closes back into it.
+        thread := Morph {
+            open: Chats.current != "";
+            panel: Ink.bg;
+            fx: 8px;
+            fy: Chats.from-y;
+            fw: root.width - 16px;
+            fh: Chats.from-h;
+            fradius: 18px;
+            tx: 0px;
+            ty: 0px;
+            tw: root.width;
+            th: root.height;
+            radius: 0px;
+            zoom: false;
+            if thread.shown && Chats.look == 0: ChatThread { width: root.width; height: root.height; }
+            if thread.shown && Chats.look == 1: ThreadA { width: root.width; height: root.height; }
+            if thread.shown && Chats.look == 2: ThreadB { width: root.width; height: root.height; }
+        }
     }
 
     // The list dims behind the picker; a tap there closes it.
@@ -370,11 +402,10 @@ export component HomeScreen inherits Window {
         clicked => { Chats.picker = false; }
     }
 
-    // Picking an agent opens its chat at once: the picker goes with a quick fade there, rather than shrinking back
-    // into a "+" that the chat doesn't have.
+    // Picking an agent opens its chat at once, out of the picker: the picker gives way to it there and then, rather
+    // than shrinking back into a "+" that the chat doesn't have (or fading out over it).
     Rectangle {
         opacity: Chats.current == "" ? 1 : 0;
-        animate opacity { duration: Chats.current == "" ? 0ms : 140ms; }
         Morph {
             open: Chats.picker;
             panel: #1c1c20;
@@ -382,6 +413,7 @@ export component HomeScreen inherits Window {
             fx: Chats.look == 1 ? root.width - 16px - 148px : root.width - 52px;
             fy: Chats.look == 1 ? root.height - Home.sab - 72px : Home.sat + 6px;
             fsize: Chats.look == 1 ? 56px : 48px;
+            fw: Chats.look == 1 ? 148px : 48px;
             tw: root.width - 24px;
             tx: 12px;
             th: 166px;

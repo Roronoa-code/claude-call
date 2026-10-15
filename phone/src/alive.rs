@@ -52,11 +52,13 @@ pub fn view(who: Who, k: f32, sf: f32) -> ((i32, i32), (i32, i32)) {
     ((px(f.w), px(f.h)), (px(f.w), px(f.h + HEAD)))
 }
 
-/// Whether a character last drawn at `last` needs a new frame at `now`: 60 fps while it moves, 30 while it only
-/// breathes, 15 asleep.
+/// Whether a character last drawn at `last` needs a new frame at `now`: 60 fps while it moves, 20 while it only
+/// breathes, 10 asleep. The frames fall on one shared clock, so characters on the same screen are drawn (and the
+/// screen redrawn) together, not each on its own beat (which redrew the screen twice as often).
 pub fn due(c: &Cast, last: f32, now: f32) -> bool {
-    let fps = if c.moving() { 60.0 } else if c.state() == State::Sleep { 15.0 } else { 30.0 };
-    now - last >= 1.0 / fps - 0.004
+    let fps = if c.moving() { 60.0 } else if c.state() == State::Sleep { 10.0 } else { 20.0 };
+    // a hair early, so a 16 ms timer that ticks just before the line still makes this frame
+    ((now + 0.004) * fps).floor() > ((last + 0.004) * fps).floor()
 }
 
 const WAKE_FOR: f32 = 8.0; // a tap in a quiet mode wakes him this long
