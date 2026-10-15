@@ -1,21 +1,9 @@
-// PREVIEW (preview/chats-4): one piece of a thread (inbox.rs thread: ChatMsg) as the chats directions draw it. Copied
-// from chat.slint's thread (today's design stays as it is) with the parts each direction styles as inputs, and the
-// fixes Mani's bugs need: a photo always shows as a framed picture (a tall one cropped from its top, never a tall
-// empty box).
+// One piece of a thread (inbox.rs thread: ChatMsg): my warm bubbles; the agent's turn on a soft card, joined across
+// its pieces (paragraphs, headings, lists, quotes, code, photos, an agent's question with its answers as buttons);
+// quiet lines. A photo always shows as a framed picture (a tall one from its top, never a tall empty box).
 import { T } from "../parts.slint";
 import { Chats, ChatMsg, Ink } from "../chat.slint";
-import { Bust } from "still.slint";
 import "../fonts/JetBrainsMonoNL-Regular.ttf";
-
-// The thread's look, per direction.
-export struct Look {
-    me-bg: color, // my bubble
-    me-heading: bool, // my message as a heading over the answer (Pages) instead of a bubble
-    prose: length, // the agent's text size
-    card: bool, // the agent's turn on a card (Companion)
-    card-bg: color,
-    who: bool, // a speaker line over each answer: portrait, name, when
-}
 
 // A word with a slow light passing through it while the PC works ("Thinking").
 export component Shimmer inherits Text {
@@ -28,20 +16,18 @@ export component Shimmer inherits Text {
 
 export component Piece inherits Rectangle {
     in property <ChatMsg> m;
-    in property <Look> look;
     in property <bool> settled; // rows that arrive once the thread is up rise in
-    in property <bool> newest; // the last speaker line: its portrait is the live one
-    callback landed(length); // an answer's first piece arrived: its y, to keep in view
-    property <bool> bubble: m.me && m.kind == "" && !look.me-heading;
-    property <bool> heading: m.me && m.kind == "" && look.me-heading;
+    callback landed(length); // an answer's first piece arrived: its y, to keep in view (-1: follow the end)
+    property <length> prose-size: 16px;
+    property <color> card-bg: #18181b;
+    property <bool> bubble: m.me && m.kind == "";
     property <bool> prose: m.kind == "p" || m.kind == "h" || m.kind == "li" || m.kind == "quote";
     property <bool> code: m.kind == "code";
     property <bool> media: m.kind == "image" || m.kind == "video";
     property <bool> quiet: m.kind == "note";
     property <bool> choice: m.kind == "choice";
-    property <bool> who: m.kind == "who";
-    // On a card: the agent's pieces sit inside it, the first and last with room above and below.
-    property <bool> carded: look.card && !m.me;
+    // The agent's pieces sit on its card, the first and last with room above and below.
+    property <bool> carded: !m.me;
     property <length> inset: carded ? 18px : 0px;
     property <length> pad-top: carded && (m.n == 0) ? 16px : 0px;
     property <length> pad-bottom: carded && m.last ? 16px : 0px;
@@ -52,8 +38,6 @@ export component Piece inherits Rectangle {
     property <length> media-w: min(inner * (m.me ? 0.74 : 0.86), 300px);
     property <length> bubble-w: min(inner * 0.8, said.preferred-width + 32px);
     property <length> h: bubble ? said.preferred-height + 22px
-        : heading ? asked.preferred-height + 2px
-        : who ? 32px
         : choice ? 50px
         : m.kind == "tag" ? 18px
         : prose ? words.preferred-height
@@ -61,8 +45,7 @@ export component Piece inherits Rectangle {
         : media ? self.media-w * ratio
         : quiet ? hush.preferred-height + 19px : 0px;
     property <float> k: 0;
-    // A speaker line that replaces "Thinking" is simply there (it takes its place); the rest rise in, staggered.
-    animate k { duration: settled && !who ? 460ms : 0ms; delay: settled ? m.n * 70ms : 0ms; easing: T.out; }
+    animate k { duration: settled ? 460ms : 0ms; delay: settled ? m.n * 70ms : 0ms; easing: T.out; }
     init => {
         // the newest answer's start stays in view as it lands; a message of mine goes back to following the end
         if (settled && m.anchor) {
@@ -73,13 +56,11 @@ export component Piece inherits Rectangle {
         self.k = 1;
     }
     height: top + pad-top + h + pad-bottom;
-    // Pages: a hairline between one exchange and the next, over the question that starts it.
-    if look.me-heading && m.me && m.n == 0 && m.gap > 30: Rectangle { y: root.top / 2; height: 1px; background: #ffffff12; }
     // The card behind the agent's turn, joined across its pieces.
     if carded: Rectangle {
         y: m.n == 0 ? root.top : 0px;
         height: root.height - self.y;
-        background: look.card-bg;
+        background: root.card-bg;
         border-top-left-radius: m.n == 0 ? 22px : 0px;
         border-top-right-radius: m.n == 0 ? 22px : 0px;
         border-bottom-left-radius: m.last ? 22px : 0px;
@@ -96,7 +77,7 @@ export component Piece inherits Rectangle {
         if bubble: Rectangle {
             x: parent.width - self.width;
             width: bubble-w;
-            background: look.me-bg;
+            background: Ink.me;
             border-radius: 21px;
             border-bottom-right-radius: 7px;
             transform-origin: { x: self.width, y: self.height };
@@ -112,43 +93,16 @@ export component Piece inherits Rectangle {
             font-size: 16.5px;
             color: #fff8f5;
         }
-        // Mine as a heading (Pages): what I asked, large, the answer under it.
-        asked := Text {
-            visible: heading;
-            width: parent.width;
-            text: heading ? m.text : "";
-            wrap: word-wrap;
-            font-size: 21px;
-            font-weight: 650;
-            color: Ink.text;
-        }
-        // The speaker over an answer: portrait, name, how long ago (the newest one alive).
-        if who: Rectangle {
-            Bust {
-                x: 0;
-                y: 1px;
-                width: 30px;
-                face: Chats.face;
-                live: root.newest && Chats.live;
-                source: Chats.face-live;
-                lw: Chats.face-w;
-                lh: Chats.face-h;
-                th: Chats.face-th;
-                TouchArea { clicked => { Chats.poke(); } }
-            }
-            Text { x: 40px; y: 0; height: 32px; text: m.text; font-size: 14.5px; font-weight: 600; color: Ink.text; vertical-alignment: center; }
-            Text { x: parent.width - self.width; y: 0; height: 32px; text: m.mark; font-size: 12.5px; color: Ink.muted; vertical-alignment: center; horizontal-alignment: right; }
-        }
         // The PC's text: a paragraph, a heading, a list item (its number or dot hanging in the margin) or a quote.
         if m.kind == "li" && m.mark == "•": Rectangle {
             x: m.level * 22px + 5px;
-            y: look.prose * 0.52;
+            y: root.prose-size * 0.52;
             width: 5px;
             height: 5px;
             border-radius: 2.5px;
             background: Ink.text2;
         }
-        if m.kind == "li" && m.mark != "•": Text { x: m.level * 22px; y: 0; text: m.mark; font-size: look.prose; color: Ink.muted; }
+        if m.kind == "li" && m.mark != "•": Text { x: m.level * 22px; y: 0; text: m.mark; font-size: root.prose-size; color: Ink.muted; }
         if m.kind == "quote": Rectangle { x: 0; width: 3px; border-radius: 1.5px; background: #3a3a40; }
         words := StyledText {
             visible: prose;
@@ -156,50 +110,28 @@ export component Piece inherits Rectangle {
             y: 0;
             width: parent.width - self.x;
             text: m.body;
-            default-font-size: m.kind == "h" ? look.prose + 2px : look.prose;
+            default-font-size: m.kind == "h" ? root.prose-size + 2px : root.prose-size;
             default-color: m.kind == "quote" ? Ink.text2 : Ink.text;
             link-color: Ink.warm;
         }
-        // Code: a quiet card, its language above, in a monospace face; long lines slide sideways.
+        // Code: a quiet card, its language above, in a monospace face; long lines wrap (nothing runs off the edge).
         Rectangle {
             visible: code;
-            background: carded ? #0e0e10 : #141416;
+            background: #0e0e10;
             border-radius: 14px;
             border-width: 1px;
             border-color: Ink.hair;
             if m.mark != "": Text { x: 14px; y: 11px; text: m.mark; font-size: 11.5px; color: Ink.muted; font-family: "JetBrains Mono NL"; }
-            wide := Rectangle {
-                property <length> pan: 0px;
-                property <length> from;
-                property <length> least: min(0px, self.width - lines.preferred-width - 28px);
-                x: 1px;
-                width: parent.width - 2px;
-                y: m.mark != "" ? 30px : 11px;
-                height: lines.preferred-height + 4px;
-                clip: true;
-                lines := Text {
-                    x: 13px + wide.pan;
-                    y: 2px;
-                    text: code ? m.text : "";
-                    font-family: "JetBrains Mono NL";
-                    font-size: 12.5px;
-                    line-height-factor: 1.3;
-                    color: #d6d6da;
-                }
-                TouchArea {
-                    enabled: wide.least < 0;
-                    changed pressed => { wide.from = wide.pan; }
-                    moved => { wide.pan = max(wide.least, min(0px, wide.from + self.mouse-x - self.pressed-x)); }
-                }
-            }
-            Rectangle {
-                x: parent.width - self.width - 1px;
-                y: wide.y;
-                width: 28px;
-                height: wide.height;
-                background: @linear-gradient(90deg, #14141600 0%, carded ? #0e0e10 : #141416 100%);
-                opacity: wide.pan > wide.least + 2px ? 1 : 0;
-                animate opacity { duration: 160ms; }
+            lines := Text {
+                x: 14px;
+                y: m.mark != "" ? 32px : 13px;
+                width: parent.width - 28px;
+                text: code ? m.text : "";
+                wrap: word-wrap;
+                font-family: "JetBrains Mono NL";
+                font-size: 12.5px;
+                line-height-factor: 1.3;
+                color: #d6d6da;
             }
         }
         // A quiet line: downloading, couldn't load, stopped.
@@ -226,7 +158,7 @@ export component Piece inherits Rectangle {
             property <bool> on: m.mark == "on";
             height: 50px;
             border-radius: 16px;
-            background: on ? look.me-bg : tap.pressed ? #3a3a40 : live ? #26262b : #ffffff00;
+            background: on ? Ink.me : tap.pressed ? #3a3a40 : live ? #26262b : #ffffff00;
             border-width: live || on ? 0px : 1px;
             border-color: Ink.hair;
             animate background { duration: 200ms; easing: T.out; }
@@ -267,7 +199,7 @@ export component Piece inherits Rectangle {
         if m.kind == "tag": Text { x: 2px; text: m.text; font-size: 12.5px; color: Ink.muted; vertical-alignment: center; }
         // A photo or video in a soft frame, so even a dark screenshot reads as a picture.
         if media: Rectangle {
-            x: m.me && !look.me-heading ? parent.width - self.width : 0px;
+            x: m.me ? parent.width - self.width : 0px;
             width: media-w;
             background: #232327;
             border-radius: 20px;

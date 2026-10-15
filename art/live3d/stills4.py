@@ -1,5 +1,5 @@
-# PREVIEW (branch preview/chats-4): sharper still pictures of the cast for the chats directions
-# (phone/ui/chats4/faces/<face>-<pose>.png), in three poses: idle, think (a chat the PC is working on) and happy (a
+# Sharper still pictures of the cast for the Chats screens
+# (phone/ui/chats/faces/<face>-<pose>.png), in three poses: idle, think (a chat the PC is working on) and happy (a
 # reply just in). Framed exactly like a live picture (alive.rs frame + HEAD of sky above), like stills.py, but at K
 # times home size so a bust crop up to that size stays crisp on a 2.75x screen.
 # Usage: python stills4.py
@@ -8,7 +8,7 @@ from render import np, Image, moderngl
 import render as R
 
 TL = r'D:\Outputs\CallMe\design\live3d\cast\timelines'
-OUT = os.path.join(R.HERE, '..', '..', 'phone', 'ui', 'chats4', 'faces')
+OUT = os.path.join(R.HERE, '..', '..', 'phone', 'ui', 'chats', 'faces')
 K, SF, HEAD = 0.42, 2.75, 40
 SOLO = {'null': 1.2}  # alive.rs NULL_SOLO
 FACES = {'clawd': (300, 250), 'haiku': (300, 250), 'sonnet': (300, 250), 'opus': (300, 250), 'null': (150, 230)}

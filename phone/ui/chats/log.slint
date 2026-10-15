@@ -1,12 +1,11 @@
-// PREVIEW (preview/chats-4): the scrolling thread for the chats directions (chat.slint's, shared): it sticks to its
-// end as lines arrive or the keyboard comes up, glides there instead of jumping, and keeps a long answer's start in
-// view as it lands. What a direction adds after the pieces (its "Thinking" row) goes in as children.
+// The scrolling thread: it sticks to its end as lines arrive or the keyboard comes up, glides there instead of
+// jumping, and keeps a long answer's start in view as it lands. What goes after the pieces ("Thinking", how my
+// last message is going) comes in as children.
 import { T } from "../parts.slint";
 import { Chats } from "../chat.slint";
-import { Piece, Look } from "msg.slint";
+import { Piece } from "msg.slint";
 
 export component Log inherits Flickable {
-    in property <Look> look;
     in property <length> pad-top: 12px;
     in property <length> pad-bottom; // room under the last piece (the field floats over the thread's end)
     in property <length> side: 20px;
@@ -16,8 +15,6 @@ export component Log inherits Flickable {
     property <length> hold: -1px;
     property <length> glide-to;
     property <bool> gliding;
-    // The last speaker line (its portrait is the live one).
-    property <int> newest: -1;
     Timer { interval: 450ms; running: !root.settled; triggered => { root.settled = true; } }
     Timer {
         interval: 16ms;
@@ -46,14 +43,9 @@ export component Log inherits Flickable {
         padding-right: root.side;
         padding-top: root.pad-top;
         padding-bottom: root.pad-bottom;
-        for m[i] in Chats.msgs: Piece {
+        for m in Chats.msgs: Piece {
             m: m;
-            look: root.look;
             settled: root.settled;
-            newest: m.kind == "who" && i >= root.newest;
-            init => {
-                if (m.kind == "who" && i > root.newest) { root.newest = i; }
-            }
             landed(y) => { root.hold = y; }
         }
         @children

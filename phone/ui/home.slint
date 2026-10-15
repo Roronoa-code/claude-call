@@ -5,11 +5,8 @@
 import { T, Icon, Icons, Morph, SwapText } from "parts.slint";
 import { Home, RoundIcon } from "home_parts.slint";
 import { Toys, Clawd, Null } from "toys.slint";
-import { Chats, ChatThread, NewChat, Ink } from "chat.slint";
-import { ChatList } from "chat_list.slint";
-import { ListA, ThreadA } from "chats4/a.slint";
-import { ListB, ThreadB } from "chats4/b.slint";
-import { ListC, ThreadC } from "chats4/c.slint";
+import { Chats, NewChat, Ink } from "chat.slint";
+import { ChatList, ChatThread } from "chats/screens.slint";
 import { StageBack, Look } from "stage.slint";
 
 // A choice in a sheet: icon, title and a line under it.
@@ -368,11 +365,7 @@ export component HomeScreen inherits Window {
         radius: 0px;
         face: Icons.chat;
         from: T.btn;
-        // PREVIEW (chats-4): the list of the direction showing (debug.callme.chats 1-3; 0 today's)
-        if Chats.look == 0: ChatList { width: root.width; height: root.height; visible: thread.g < 1; }
-        if Chats.look == 1: ListA { width: root.width; height: root.height; visible: thread.g < 1; }
-        if Chats.look == 2: ListB { width: root.width; height: root.height; visible: thread.g < 1; }
-        if Chats.look == 3: ListC { width: root.width; height: root.height; visible: thread.g < 1; }
+        ChatList { width: root.width; height: root.height; visible: thread.g < 1; }
         // A chat opens out of its row over the list, and closes back into it.
         thread := Morph {
             open: Chats.current != "";
@@ -388,10 +381,7 @@ export component HomeScreen inherits Window {
             th: root.height;
             radius: 0px;
             zoom: false;
-            if thread.shown && Chats.look == 0: ChatThread { width: root.width; height: root.height; }
-            if thread.shown && Chats.look == 1: ThreadA { width: root.width; height: root.height; }
-            if thread.shown && Chats.look == 2: ThreadB { width: root.width; height: root.height; }
-            if thread.shown && Chats.look == 3: ThreadC { width: root.width; height: root.height; }
+            if thread.shown: ChatThread { width: root.width; height: root.height; }
         }
     }
 
@@ -412,15 +402,13 @@ export component HomeScreen inherits Window {
         Morph {
             open: Chats.picker;
             panel: #1c1c20;
-            // PREVIEW (chats-4): A's picker grows out of New chat, at the bottom
-            fx: Chats.look == 1 ? root.width - 16px - 148px : Chats.look == 2 ? root.width - 60px : root.width - 52px;
-            fy: Chats.look == 1 ? root.height - Home.sab - 72px : Chats.look == 2 ? Home.sat + 6px : Home.sat + 6px;
-            fsize: Chats.look == 1 ? 56px : 48px;
-            fw: Chats.look == 1 ? 148px : 48px;
+            fx: root.width - 60px; // the list's + (chats/screens.slint)
+            fy: Home.sat + 6px;
+            fsize: 48px;
             tw: root.width - 24px;
             tx: 12px;
             th: 166px;
-            ty: Chats.look == 1 ? root.height - Home.sab - 16px - 166px : Home.sat + 58px;
+            ty: Home.sat + 58px;
             radius: 26px;
             face: Icons.plus;
             NewChat { width: parent.width; height: parent.height; }

@@ -1,7 +1,7 @@
-# PREVIEW (branch preview/chats-4): drives the chats directions on the headless test emulator only (emulator-5582,
+# Drives the Chats screens on the headless test emulator only (emulator-5582,
 # never a phone). Chats are local fixtures (chat_fixture/) and debug.callme.fake plays the PC on the emulator
-# (phone/src/fake_chat.rs): nothing is sent to the PC or ntfy. debug.callme.chats picks the direction (0 as shipped).
-# Usage: python chat4_capture.py <step> [args]   (fixture [working], start N, shot NAME DIR, tap X Y, key N, type ..., video N DIR)
+# (phone/src/fake_chat.rs): nothing is sent to the PC or ntfy.
+# Usage: python chat_capture.py <step> [args]   (fixture [working], start N, shot NAME DIR, tap X Y, key N, type ..., video N DIR)
 import os, sys, time, json, subprocess, io
 from PIL import Image
 
@@ -11,7 +11,7 @@ PKG = 'fyi.mani.callme'
 FILES = f'/data/data/{PKG}/files'
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIX = os.path.join(HERE, 'chat_fixture')
-OUT = r'D:\Outputs\CallMe\design\chats-4'
+OUT = r'D:\Outputs\CallMe\design\chats-5'
 FF = r'B:\Tools\MediaTools\bin\ffmpeg.exe'
 SF = 2.625
 W, H = 1080 / SF, 2400 / SF
@@ -161,8 +161,6 @@ def fixture(working=False):
 
 def start(look=None):
     adb('shell', 'setprop', 'debug.callme.fake', '1')
-    if look is not None:
-        adb('shell', 'setprop', 'debug.callme.chats', str(look))
     key(111)  # a keyboard left up by the last run goes first
     adb('shell', 'am', 'force-stop', PKG)
     key(3)

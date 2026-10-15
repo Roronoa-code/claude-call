@@ -1,19 +1,17 @@
-// PREVIEW (preview/chats-4) direction B, "Companion": the character is with you. At the top of the list the agent who
-// matters right now stands on a soft floor and says where things stand (thinking about your message, has a question,
+// The Chats screens: the character is with you. At the top of the list the agent who matters right now stands on a soft floor and says where things stand (thinking about your message, has a question,
 // just replied); the chats below are cards with their characters standing in them. Inside a chat the character
 // stands beside the text box, by your thumb: it thinks while the PC works, talks as the answer comes in, hops when
 // tapped. The agent's turns sit on cards; mine are warm bubbles.
 import { T, Icon, Icons } from "../parts.slint";
 import { Home } from "../home_parts.slint";
 import { Chats, ChatRow, Ink, IconButton, BackButton } from "../chat.slint";
-import { Figure, Bust } from "still.slint";
-import { Shimmer, Look } from "msg.slint";
+import { Figure } from "still.slint";
+import { Shimmer } from "msg.slint";
 import { Log } from "log.slint";
 import { Composer } from "field.slint";
 import { SlideRow, UndoBar, Count } from "rows.slint";
 
-global B {
-    out property <Look> look: { me-bg: Ink.me, me-heading: false, prose: 16px, card: true, card-bg: #18181b, who: false };
+global Look {
     out property <color> row: #151518;
 }
 
@@ -22,7 +20,7 @@ component Floor inherits Rectangle {
     background: @radial-gradient(circle, #2a221f 0%, #1a1716 38%, #0e0e1000 70%);
 }
 
-export component ListB inherits Rectangle {
+export component ChatList inherits Rectangle {
     background: Ink.bg;
     property <ChatRow> h: Chats.hero;
     property <bool> alive: h.id == Chats.live-row && Chats.live && h.id != "";
@@ -94,7 +92,7 @@ export component ListB inherits Rectangle {
                     face-h: r.id == root.h.id ? 0px : 76px;
                     gap: 6px;
                     visible: r.id != root.h.id;
-                    face-bg: B.row;
+                    face-bg: Look.row;
                     radius: 22px;
                     margin: 12px;
                     tapped(y) => { Chats.from-y = y; Chats.from-h = 76px; Chats.open-chat(r.id); }
@@ -144,7 +142,7 @@ export component ListB inherits Rectangle {
     UndoBar { x: 16px; width: parent.width - 32px; base: parent.height - Home.sab - 16px; }
 }
 
-export component ThreadB inherits Rectangle {
+export component ChatThread inherits Rectangle {
     background: Ink.bg;
     property <length> bottom: self.height - max(Home.kb, Home.sab) - 10px;
     // the character's room beside the field (a new chat's stands big in the middle until the first message)
@@ -154,7 +152,6 @@ export component ThreadB inherits Rectangle {
         y: Home.sat + 60px;
         width: parent.width;
         height: parent.height - self.y;
-        look: B.look;
         side: 14px;
         pad-bottom: Chats.readonly ? Home.sab + 28px : root.height - field.y + 18px;
         if Chats.action == "stop": Rectangle {

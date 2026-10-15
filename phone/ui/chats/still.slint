@@ -1,6 +1,5 @@
-// PREVIEW (preview/chats-4): the cast for the chats directions. A character's picture (sharp posed stills from
-// art/live3d/stills4.py, or the live texture while it moves), framed like actor.slint: full-body (Figure) or as a
-// portrait in a round seat (Bust).
+// The cast on the Chats screens: a character's picture (sharp posed stills from art/live3d/stills4.py, or the live
+// texture while it moves), framed like actor.slint, full-body.
 
 // The posed still of `face` in `pose` (idle, think, happy).
 export component Pic inherits Image {
@@ -79,43 +78,6 @@ export component Figure {
         th: root.th;
         left: round((root.width / 2 - root.cx * root.s * 1px) / 1phx) * 1phx;
         top: round((root.height - root.feet * root.s * 1px) / 1phx) * 1phx;
-    }
-    @children
-}
-
-// A portrait in a round seat `width` across: the face and upper body, eyes a little above the middle. At 52px the
-// figure is k = 0.33 (faces.rs LIST_K): the live texture drawn at that k fits it exactly.
-export component Bust inherits Rectangle {
-    in property <string> face: "clawd";
-    in property <string> pose: "idle";
-    in property <bool> live;
-    in property <image> source;
-    in property <int> lw;
-    in property <int> lh;
-    in property <int> th;
-    in property <brush> seat: #1c1c20;
-    property <float> s: 0.33 * root.width / 52px * (root.face == "null" ? 1.2 : 1);
-    property <float> cx: root.face == "null" ? 73 : 148;
-    property <float> eyes: root.face == "null" ? 150 : 162; // the eyes' height in the frame (with HEAD), at k = 1
-    height: self.width;
-    border-radius: self.width / 2;
-    background: seat;
-    clip: true;
-    Picture {
-        x: 0;
-        y: 0;
-        width: root.width;
-        height: root.height;
-        face: root.face;
-        pose: root.pose;
-        s: root.s;
-        live: root.live;
-        source: root.source;
-        lw: root.lw;
-        lh: root.lh;
-        th: root.th;
-        left: round((root.width / 2 - root.cx * root.s * 1px) / 1phx) * 1phx;
-        top: round((root.height * 0.56 - root.eyes * root.s * 1px) / 1phx) * 1phx;
     }
     @children
 }
