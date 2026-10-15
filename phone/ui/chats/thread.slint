@@ -132,8 +132,12 @@ export component ChatThread inherits Rectangle {
         background: @linear-gradient(180deg, #0e0e1000 0%, #0e0e10 46%);
     }
     // The character, standing by the field (it rides up with the keyboard). A tap: a hop.
+    // One character at a time: in a new chat it stands big in the middle; after the first message it appears here
+    // only once the big one has gone.
     if !Chats.readonly: Rectangle {
-        opacity: root.pal / 76px;
+        property <bool> stand: !Chats.empty;
+        opacity: stand ? 1 : 0;
+        animate opacity { duration: stand ? 220ms : 0ms; delay: stand ? 320ms : 0ms; }
         visible: self.opacity > 0.01;
         x: 4px;
         y: field.y + field.height - self.height + 2px;

@@ -20,31 +20,47 @@ pub fn topic(c: &chats::Chat) -> String {
     }
 }
 
-/// Who matters now: the chat being worked on, then a question waiting, then the newest; and one line on where it
-/// stands.
+/// Who matters now: the chat being worked on, then a question waiting, then the newest; and a short line on where it
+/// stands (never the reply itself): "Has a question for you", "Working on “…”", "Replied to “…”", "Done: …".
 pub fn hero(rows: &[ChatRow]) -> (ChatRow, String) {
     let pick = rows.iter().find(|r| r.busy).or_else(|| rows.iter().find(|r| r.asks)).or_else(|| rows.first());
     let Some(r) = pick else { return (ChatRow::default(), String::new()) };
-    let line = if r.busy {
-        format!("Working on \u{201c}{}\u{201d}", r.topic)
-    } else if r.asks {
+    let asked = short(&r.topic, 44);
+    let mine = r.topic != r.name && r.topic != "New chat"; // a PC-started thread (Updates) has nothing of mine
+    let line = if r.asks {
         "Has a question for you".to_string()
+    } else if r.busy {
+        format!("Working on \u{201c}{asked}\u{201d}")
+    } else if r.topic == "New chat" {
+        "Ready when you are".into()
+    } else if !mine {
+        if r.unread { "Has something new for you".into() } else { "All caught up".into() }
     } else if r.unread {
-        "Replied to you".to_string()
+        format!("Replied to \u{201c}{asked}\u{201d}")
     } else {
-        r.preview.to_string()
+        format!("Done: {asked}")
     };
     (r.clone(), line)
 }
 
+/// `s` in at most `n` characters, ending in "…" when cut (at a word where it can).
+fn short(s: &str, n: usize) -> String {
+    let s = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    if s.chars().count() <= n {
+        return s;
+    }
+    let cut: String = s.chars().take(n).collect();
+    let cut = cut.rsplit_once(' ').map_or(cut.as_str(), |(a, _)| a).trim_end_matches([',', '.', ':', ';']);
+    format!("{cut}\u{2026}")
+}
+
 /// The list in three groups, each headed by its first row: what needs Mani (a question, a new reply), what the PC is
-/// working on, and the rest; newest first within each. The chat standing at the top (`hero`) heads no group: the list
-/// doesn't show it again.
-pub fn arrange(mut rows: Vec<ChatRow>, hero: &str) -> Vec<ChatRow> {
+/// working on, and the rest; newest first within each.
+pub fn arrange(mut rows: Vec<ChatRow>) -> Vec<ChatRow> {
     let group = |r: &ChatRow| if r.asks || r.unread { 0 } else if r.busy { 1 } else { 2 };
     rows.sort_by_key(group); // stable: newest first stays within each group
     let mut last = None;
-    for r in rows.iter_mut().filter(|r| r.id != hero) {
+    for r in rows.iter_mut() {
         let g = group(r);
         if last != Some(g) {
             r.head = ["Needs you", "Working on it", "Earlier"][g].into();
@@ -78,6 +94,12 @@ pub fn soft_breaks(code: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn short_cuts_at_a_word() {
+        assert_eq!(super::short("why is the release build slow on the laptop today", 30), "why is the release build slow\u{2026}");
+        assert_eq!(super::short("short one", 30), "short one");
+    }
+
     #[test]
     fn breaks_only_long_words_at_natural_points() {
         assert_eq!(super::soft_breaks("a.b BOOT_COMPLETED_NOW"), "a.b BOOT_\u{200b}COMPLETED_\u{200b}NOW");

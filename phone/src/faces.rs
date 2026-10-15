@@ -11,7 +11,7 @@ use slint::ComponentHandle;
 
 pub const SMALL_K: f32 = 0.26; // standing by the text box
 pub const BIG_K: f32 = 0.7; // the empty chat's
-pub const HERO_K: f32 = 0.46; // at the top of the list (drawn into the big texture)
+pub const HERO_K: f32 = 0.36; // at the top of the list (drawn into the big texture)
 const TALK_FOR: f32 = 2.2; // seconds of talk when an answer arrives
 
 /// The textures' sizes (logical px): the widest and tallest picture (a Clawd's) with room above, at each size.

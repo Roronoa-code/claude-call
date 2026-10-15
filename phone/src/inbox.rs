@@ -427,7 +427,7 @@ fn show(ui: &HomeScreen) {
         })
         .collect();
     let (hero, line) = chat_view::hero(&rows);
-    let rows = chat_view::arrange(rows, &hero.id);
+    let rows = chat_view::arrange(rows);
     ROWS.with(|model| {
         // gone chats out; then row by row: the same chat changes in place, a chat that moved or came back goes in
         for i in (0..model.row_count()).rev() {

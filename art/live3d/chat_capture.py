@@ -93,7 +93,7 @@ fn on_receive(env: &mut JNIEnv, intent: &JObject) -> Result<()> {
 Want me to push it?"""
 
 
-def fixture(working=False):
+def fixture(working=False, only=None):
     """Fresh chats on the emulator, written to its store with its own clock; files in filesDir/media. working: the
     Sonnet chat's last message is being worked on (thinking, in the list and its thread)."""
     adb('root')
@@ -149,6 +149,12 @@ def fixture(working=False):
         chats[1]['lines'].append(L('a3', True, 'why is the release build slow on the laptop', 20_000, 'working'))
         chats[1]['updated'] = now - 20_000
         chats.insert(0, chats.pop(1))
+    if only == 'one':  # one chat, its answer long (as on Mani's phone)
+        chats = [dict(id='h1', agent='claude', model='haiku-5.5', title='skip ana mena', updated=now - MIN, unread=0, lines=[
+            L('h1', True, 'not ana mena tho', 2 * MIN, 'answered'),
+            L('h1', False, 'Skipped the Ana Mena track. Now playing "Andas En Mi Cabeza." I cannot block the whole artist from here, so if more of her songs come up, tell me and I will skip them.', MIN, 'done')])]
+    elif only == 'none':
+        chats = []
     tmp = os.path.join(HERE, 'chats.tmp.json')
     with open(tmp, 'w', encoding='utf-8') as f:
         # a stale test ask still on the throwaway topic's cache stays deleted
@@ -217,7 +223,7 @@ def video(look, d, row_xy, field_xy, settle=2.2):
 if __name__ == '__main__':
     cmd, args = sys.argv[1], sys.argv[2:]
     if cmd == 'fixture':
-        fixture(args == ['working'])
+        fixture(args == ['working'], args[0] if args and args[0] in ('one', 'none') else None)
     elif cmd == 'start':
         start(int(args[0]) if args else None)
     elif cmd == 'shot':

@@ -9,14 +9,15 @@ import { Figure } from "still.slint";
 
 export component Sheet inherits Rectangle {
     in property <bool> open;
-    // Three clocks of the same 460 ms, each on its own curve; closing runs each curve backwards (the reversed
-    // bezier: 1 - x2, 1 - y2, 1 - x1, 1 - y1), so the way out is the way in played back.
+    // Three clocks of the same 460 ms, each on its own curve. Closing takes the same path back but starts at once
+    // (a curve played backwards starts slowly and felt laggy): the sheet drops on the opening's own curve, and the
+    // character heads home at once and hops up a little before it drops into its card.
     property <float> k: open ? 1 : 0; // the sheet
     property <float> kx: open ? 1 : 0; // the character, across
     property <float> ky: open ? 1 : 0; // ...and up and down: a small hop away before it settles
-    animate k { duration: 460ms; easing: open ? cubic-bezier(0.22, 0.9, 0.24, 1) : cubic-bezier(0.76, 0, 0.78, 0.1); }
-    animate kx { duration: 460ms; easing: open ? cubic-bezier(0.3, 0.7, 0.3, 1) : cubic-bezier(0.7, 0, 0.7, 0.3); }
-    animate ky { duration: 460ms; easing: open ? cubic-bezier(0.5, -0.45, 0.4, 1) : cubic-bezier(0.6, 0, 0.5, 1.45); }
+    animate k { duration: 460ms; easing: cubic-bezier(0.22, 0.9, 0.24, 1); }
+    animate kx { duration: 460ms; easing: cubic-bezier(0.3, 0.7, 0.3, 1); }
+    animate ky { duration: 460ms; easing: open ? cubic-bezier(0.5, -0.45, 0.4, 1) : cubic-bezier(0.3, 0.6, 0.4, 1.3); }
     out property <bool> shown: open || k > 0.001;
     out property <bool> full: k > 0.999 && kx > 0.999 && ky > 0.999;
     // The character travels when it has a card to leave and a place to land (not a new chat, nor Updates).
