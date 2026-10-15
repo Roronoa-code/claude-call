@@ -119,6 +119,25 @@ pub fn publish_chat(topic: String, body: String, done: impl FnOnce(bool) + Send 
     });
 }
 
+/// A photo or video the PC sent: an https ntfy.sh link only, at most `max` bytes (stops reading past that).
+pub async fn fetch(url: &str, max: u64) -> Option<Vec<u8>> {
+    if !url.starts_with("https://ntfy.sh/") {
+        return None;
+    }
+    let mut r = HTTP.get(url).timeout(Duration::from_secs(120)).send().await.ok()?.error_for_status().ok()?;
+    if r.content_length().is_some_and(|n| n > max) {
+        return None;
+    }
+    let mut out = Vec::new();
+    while let Some(chunk) = r.chunk().await.ok()? {
+        out.extend_from_slice(&chunk);
+        if out.len() as u64 > max {
+            return None;
+        }
+    }
+    Some(out)
+}
+
 /// The contact mode chosen on the phone, so the PC agents follow it.
 pub fn publish_mode(topic: String, mode: String) {
     publish(topic, "Contact mode", mode);

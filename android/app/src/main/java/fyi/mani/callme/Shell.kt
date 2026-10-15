@@ -6,11 +6,20 @@ import android.app.Service
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.BroadcastReceiver
+import android.content.ContentProvider
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.database.Cursor
+import android.database.MatrixCursor
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.os.ParcelFileDescriptor
+import android.provider.OpenableColumns
+import java.io.File
+import java.io.FileNotFoundException
 import android.window.OnBackInvokedDispatcher
 
 /**
@@ -87,3 +96,32 @@ open class ModeWidget : AppWidgetProvider() {
 
 /** Same widget, offered at 4x2 in the picker. */
 class ModeWidgetWide : ModeWidget()
+
+/**
+ * Lets the video player read a video the PC sent in a chat (filesDir/media, phone/src/inbox.rs). Not exported: only
+ * the one-time read grant on the link the app opens reaches a file, and only a plain name inside that folder.
+ */
+class MediaProvider : ContentProvider() {
+    private fun file(uri: Uri): File? {
+        val dir = File(context!!.filesDir, "media")
+        val f = File(dir, uri.lastPathSegment ?: return null)
+        return f.takeIf { it.parentFile?.canonicalPath == dir.canonicalPath && it.isFile }
+    }
+    override fun onCreate() = true
+    override fun getType(uri: Uri): String? = when (uri.lastPathSegment?.substringAfterLast('.')) {
+        "mp4" -> "video/mp4"; "mov" -> "video/quicktime"; "webm" -> "video/webm"
+        "png" -> "image/png"; "jpg" -> "image/jpeg"; "webp" -> "image/webp"; "gif" -> "image/gif"
+        else -> null
+    }
+    override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor {
+        if (mode != "r") throw SecurityException("read only")
+        return ParcelFileDescriptor.open(file(uri) ?: throw FileNotFoundException(), ParcelFileDescriptor.MODE_READ_ONLY)
+    }
+    override fun query(uri: Uri, projection: Array<out String>?, selection: String?, args: Array<out String>?, order: String?): Cursor? {
+        val f = file(uri) ?: return null
+        return MatrixCursor(arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE)).apply { addRow(arrayOf<Any>(f.name, f.length())) }
+    }
+    override fun insert(uri: Uri, values: ContentValues?): Uri? = null
+    override fun update(uri: Uri, values: ContentValues?, selection: String?, args: Array<out String>?) = 0
+    override fun delete(uri: Uri, selection: String?, args: Array<out String>?) = 0
+}

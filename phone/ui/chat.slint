@@ -1,13 +1,18 @@
 // In-app chats with the agents on the PC: the Chats screen (a list, and one chat's thread) and the new-chat picker.
 // Everything here appears instantly for now; its motion is still to be picked.
-import { T, Icon, Icons, Msg } from "parts.slint";
+import { T, Icon, Icons } from "parts.slint";
 import { Home } from "home_parts.slint";
 
 export struct ChatRow { id: string, name: string, preview: string, time: string, unread: bool }
+// One bubble. kind: "" text, "note" a grey line about a file (downloading, couldn't load), "image" or "video" a
+// thumbnail (pic, with ratio = height / width) that opens the file at path when tapped.
+export struct ChatMsg { me: bool, text: string, kind: string, pic: image, ratio: float, path: string }
 
 export global Chats {
     in property <[ChatRow]> rows; // newest first
-    in property <[Msg]> msgs; // the open chat's bubbles
+    in property <[ChatMsg]> msgs; // the open chat's bubbles
+    in property <image> full; // the photo open full screen
+    in-out property <bool> viewing; // ...while this is true
     in property <string> name; // the open chat's agent
     in property <string> title; // ...and what it is about
     in property <string> status; // the small grey line under my last message
@@ -22,8 +27,10 @@ export global Chats {
     callback new-chat(string, string); // agent, model
     callback send(string);
     callback retry();
-    // Back steps out one level: picker, thread, Chats screen. False when there is nothing left to close.
+    callback open-media(string, string); // path, kind: a photo opens full screen here, a video in the video player
+    // Back steps out one level: photo, picker, thread, Chats screen. False when there is nothing left to close.
     public function back() -> bool {
+        if (viewing) { viewing = false; return true; }
         if (picker) { picker = false; return true; }
         if (current != "") { current = ""; Home.editing(false); return true; }
         if (open) { open = false; return true; }
@@ -116,7 +123,37 @@ export component ChatThread inherits Rectangle {
             spacing: 12px;
             for m in Chats.msgs: HorizontalLayout {
                 alignment: m.me ? end : start;
-                Rectangle {
+                // A photo or video: the bubble's shape filled by the picture, as wide as a long text bubble.
+                // Shown whole: as wide as allowed, narrower for a tall one so it stays under 360px high.
+                if m.kind == "image" || m.kind == "video": Rectangle {
+                    width: max(140px, min((root.width - 32px) * 0.72, 360px / max(m.ratio, 0.01)));
+                    height: max(100px, min(360px, self.width * m.ratio));
+                    background: #202227;
+                    border-top-left-radius: 20px;
+                    border-top-right-radius: 20px;
+                    border-bottom-left-radius: m.me ? 20px : 6px;
+                    border-bottom-right-radius: m.me ? 6px : 20px;
+                    clip: true;
+                    Image { width: parent.width; height: parent.height; source: m.pic; image-fit: cover; }
+                    if m.kind == "video": Rectangle {
+                        width: 56px;
+                        height: 56px;
+                        border-radius: 28px;
+                        background: #000000a6;
+                        Path {
+                            x: 21px;
+                            y: 17px;
+                            width: 20px;
+                            height: 22px;
+                            viewbox-width: 20;
+                            viewbox-height: 22;
+                            commands: "M2 2 L18 11 L2 20 Z";
+                            fill: white;
+                        }
+                    }
+                    TouchArea { clicked => { Chats.open-media(m.path, m.kind); } }
+                }
+                if m.kind != "image" && m.kind != "video": Rectangle {
                     max-width: (root.width - 32px) * 0.8;
                     background: m.me ? T.me : #202227;
                     border-top-left-radius: 20px;
@@ -128,7 +165,7 @@ export component ChatThread inherits Rectangle {
                         padding-right: 14px;
                         padding-top: 10px;
                         padding-bottom: 10px;
-                        Text { text: m.text; wrap: word-wrap; font-size: 16.5px; color: m.me ? white : T.fg; }
+                        Text { text: m.text; wrap: word-wrap; font-size: 16.5px; color: m.me ? white : m.kind == "note" ? T.muted : T.fg; }
                     }
                 }
             }
@@ -172,6 +209,10 @@ export component ChatThread inherits Rectangle {
             spacing: 4px;
             // Back (the system key) reaches the screen even while the cursor is in the field.
             FocusScope {
+                // Takes the room left by the send button and never grows with long text (it pushed the button off).
+                horizontal-stretch: 1;
+                min-width: 0px;
+                preferred-width: 0px;
                 // Focus once the field is on screen (Android won't raise the keyboard for a field still clipped away).
                 Timer { interval: 220ms; running: Chats.want-focus; triggered => { Chats.want-focus = false; input.focus(); } }
                 key-pressed(e) => {
@@ -210,6 +251,19 @@ export component ChatThread inherits Rectangle {
                 TouchArea { enabled: root.draft != ""; clicked => { root.send(); } }
             }
         }
+    }
+    // A photo full screen; a tap or Back closes it.
+    if Chats.viewing: Rectangle {
+        background: black;
+        TouchArea { clicked => { Chats.viewing = false; } }
+        Image {
+            y: Home.sat;
+            width: parent.width;
+            height: parent.height - Home.sat - Home.sab;
+            source: Chats.full;
+            image-fit: contain;
+        }
+        BackButton { y: Home.sat + 6px; }
     }
 }
 

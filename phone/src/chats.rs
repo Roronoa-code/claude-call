@@ -27,6 +27,92 @@ pub struct Line {
     pub since: i64, // when `state` last changed (ms)
     pub state: String,
     pub parts: Vec<Option<String>>,
+    pub media: Vec<Media>, // photos and videos sent with the PC's answer, in part order
+}
+
+/// The biggest photo or video the phone fetches (the PC sends up to this; ntfy.sh holds up to 15 MB).
+pub const MEDIA_MAX: u64 = 10 * 1024 * 1024;
+const MIMES: [(&str, &str); 7] = [
+    ("image/png", "png"),
+    ("image/jpeg", "jpg"),
+    ("image/webp", "webp"),
+    ("image/gif", "gif"),
+    ("video/mp4", "mp4"),
+    ("video/quicktime", "mov"),
+    ("video/webm", "webm"),
+];
+
+/// A photo or video from the PC: where to fetch it (an ntfy attachment, gone after 3 hours), what it must be, and
+/// `state` loading / ready (saved at `path`) / failed.
+#[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq)]
+#[serde(default)]
+pub struct Media {
+    pub part: usize,
+    pub url: String,
+    pub name: String,
+    pub mime: String,
+    pub size: u64,
+    pub sha256: String,
+    pub path: String,
+    pub state: String,
+}
+
+impl Media {
+    /// The file a signed reply part names, when it is safe to fetch: an https ntfy.sh file link, a known photo or
+    /// video type, at most MEDIA_MAX, with a sha256 to check it against.
+    fn from(v: &Value, part: usize) -> Option<Self> {
+        let (url, name, mime, sha) = (v["url"].as_str()?, v["name"].as_str()?, v["type"].as_str()?, v["sha256"].as_str()?);
+        let size = v["size"].as_u64()?;
+        let file = url.strip_prefix("https://ntfy.sh/file/")?;
+        let ok = !file.is_empty()
+            && file.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c))
+            && MIMES.iter().any(|(m, _)| *m == mime)
+            && (1..=MEDIA_MAX).contains(&size)
+            && sha.len() == 64
+            && sha.chars().all(|c| c.is_ascii_hexdigit());
+        ok.then(|| Media {
+            part,
+            url: url.into(),
+            name: name.into(),
+            mime: mime.into(),
+            size,
+            sha256: sha.to_ascii_lowercase(),
+            state: "loading".into(),
+            ..Media::default()
+        })
+    }
+
+    pub fn video(&self) -> bool {
+        self.mime.starts_with("video/")
+    }
+
+    /// Its file name on the phone: the hash and the type's extension (the PC's name never becomes a path).
+    pub fn file_name(&self) -> String {
+        let ext = MIMES.iter().find(|(m, _)| *m == self.mime).map_or("bin", |(_, e)| e);
+        format!("{}.{ext}", self.sha256)
+    }
+
+    /// Whether downloaded bytes are exactly the file the PC signed for.
+    pub fn matches(&self, bytes: &[u8]) -> bool {
+        use sha2::Digest;
+        bytes.len() as u64 == self.size && hex(&Sha256::digest(bytes)) == self.sha256
+    }
+}
+
+fn hex(b: &[u8]) -> String {
+    b.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// "Sent a photo", "Sent 2 videos", "Sent a photo and a video".
+fn sent(media: &[Media]) -> String {
+    let v = media.iter().filter(|m| m.video()).count();
+    let say = |n: usize, what: &str| match n {
+        0 => None,
+        1 => Some(format!("a {what}")),
+        n => Some(format!("{n} {what}s")),
+    };
+    let both: Vec<_> = [say(media.len() - v, "photo"), say(v, "video")].into_iter().flatten().collect();
+    format!("Sent {}", both.join(" and "))
 }
 
 #[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq)]
@@ -84,7 +170,18 @@ pub fn reply_signed(key: &str, v: &Value) -> bool {
     };
     let (n, s) = (|k: &str| v[k].as_i64().unwrap_or(-1), |k: &str| v[k].as_str().unwrap_or(""));
     let mut mac = Hmac::<Sha256>::new_from_slice(key.as_bytes()).expect("any key length");
-    mac.update(format!("v1-reply\n{}\n{}\n{}\n{}\n{}\n{}", s("chat"), s("re"), s("state"), s("text"), n("part"), n("parts")).as_bytes());
+    let base = format!("{}\n{}\n{}\n{}\n{}\n{}", s("chat"), s("re"), s("state"), s("text"), n("part"), n("parts"));
+    // A part with a file ("att") is signed as v2, over the file's fields too.
+    let data = match v["att"].as_object() {
+        Some(a) => {
+            let f = |k: &str| a.get(k).and_then(Value::as_str).unwrap_or("");
+            let size = a.get("size").and_then(Value::as_u64).map_or("-1".into(), |n| n.to_string());
+            format!("v2-reply\n{base}\n{}\n{}\n{}\n{size}\n{}", f("url"), f("name"), f("type"), f("sha256"))
+        }
+        None if v.get("att").is_some() => return false,
+        None => format!("v1-reply\n{base}"),
+    };
+    mac.update(data.as_bytes());
     sig.len() == 64 && mac.verify_slice(&want).is_ok()
 }
 
@@ -113,6 +210,7 @@ pub fn ago(ms: i64) -> String {
 /// What a bubble from the PC says.
 pub fn shown(l: &Line) -> String {
     match (l.text.as_str(), l.state.as_str()) {
+        ("", "done") if !l.media.is_empty() => sent(&l.media),
         ("", "failed") => "Something went wrong.".into(),
         ("", "stopped") => "Stopped.".into(),
         ("", "missed") => "No agent was free to take this.".into(),
@@ -218,6 +316,24 @@ impl Store {
         Some(l.id.clone())
     }
 
+    /// Photos and videos still to fetch (each link once).
+    pub fn downloads(&self) -> Vec<Media> {
+        let mut out: Vec<Media> = vec![];
+        for m in self.chats.iter().flat_map(|c| &c.lines).flat_map(|l| &l.media).filter(|m| m.state == "loading") {
+            if !out.iter().any(|o| o.url == m.url) {
+                out.push(m.clone());
+            }
+        }
+        out
+    }
+
+    /// A fetch finished: saved at `path`, or failed (None).
+    pub fn media_done(&mut self, url: &str, path: Option<&str>) {
+        for m in self.chats.iter_mut().flat_map(|c| &mut c.lines).flat_map(|l| &mut l.media).filter(|m| m.url == url) {
+            (m.state, m.path) = (if path.is_some() { "ready" } else { "failed" }.into(), path.unwrap_or("").into());
+        }
+    }
+
     pub fn mark_read(&mut self, chat: &str) {
         if let Some(c) = self.get_mut(chat) {
             c.unread = 0;
@@ -254,6 +370,11 @@ impl Store {
             l.state = "partial".into();
             l.parts.resize(n, None);
             l.parts[p] = Some(text.into());
+            // An unsafe or malformed file is left out; its part still counts.
+            if let Some(m) = Media::from(&v["att"], p + 1).filter(|m| !l.media.iter().any(|x| x.part == m.part)) {
+                l.media.push(m);
+                l.media.sort_by_key(|m| m.part);
+            }
             if l.parts.iter().any(Option::is_none) {
                 return None;
             }
@@ -341,6 +462,96 @@ mod tests {
         let mut unsigned = good.clone();
         unsigned.as_object_mut().unwrap().remove("sig");
         assert!(!reply_signed("test-key", &unsigned));
+    }
+
+    fn att() -> Value {
+        json!({"url": "https://ntfy.sh/file/abc123.jpg", "name": "pic é.jpg", "type": "image/jpeg", "size": 1234, "sha256": "ab".repeat(32)})
+    }
+
+    #[test]
+    fn file_reply_signature_matches_shared_vector() {
+        let good = json!({"v": 1, "chat": "c1", "re": "m1", "state": "done", "text": "", "part": 2, "parts": 2, "att": att(),
+            "sig": "54b592109f701bf43a7e16049916d3ef5d0974179f835a7081500f2baa4d3d86"});
+        assert!(reply_signed("test-key", &good));
+        for (k, bad) in [("url", json!("https://ntfy.sh/file/evil.jpg")), ("name", json!("x")), ("type", json!("video/mp4")), ("size", json!(1)), ("sha256", json!("cd".repeat(32)))] {
+            let mut forged = good.clone();
+            forged["att"][k] = bad;
+            assert!(!reply_signed("test-key", &forged), "{k}");
+        }
+        let mut stripped = good.clone();
+        stripped.as_object_mut().unwrap().remove("att");
+        assert!(!reply_signed("test-key", &stripped), "a v2 sig is not a v1 sig");
+        let mut odd = good.clone();
+        odd["att"] = json!("https://ntfy.sh/file/abc123.jpg");
+        assert!(!reply_signed("test-key", &odd));
+    }
+
+    #[test]
+    fn only_safe_files_are_fetched() {
+        assert!(Media::from(&att(), 1).is_some());
+        for (k, bad) in [
+            ("url", json!("http://ntfy.sh/file/abc.jpg")),
+            ("url", json!("https://ntfy.sh.evil.com/file/abc.jpg")),
+            ("url", json!("https://ntfy.sh/file/../x")),
+            ("url", json!("https://ntfy.sh/file/")),
+            ("type", json!("application/pdf")),
+            ("size", json!(MEDIA_MAX + 1)),
+            ("size", json!(0)),
+            ("sha256", json!("zz".repeat(32))),
+        ] {
+            let mut a = att();
+            a[k] = bad;
+            assert!(Media::from(&a, 1).is_none(), "{a}");
+        }
+        let m = Media::from(&json!({"url": "https://ntfy.sh/file/x.mp4", "name": "../../a.exe", "type": "video/mp4", "size": 3,
+            "sha256": "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD"}), 1).unwrap();
+        assert_eq!(m.file_name(), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad.mp4");
+        assert!(m.matches(b"abc") && !m.matches(b"abd") && !m.matches(b"abcd"));
+    }
+
+    #[test]
+    fn text_then_files_in_parts() {
+        let (mut s, c, m) = store();
+        let video = json!({"url": "https://ntfy.sh/file/v.mp4", "name": "clip.mp4", "type": "video/mp4", "size": 9, "sha256": "cd".repeat(32)});
+        let mut r3 = reply(&c, &m, "done", "", 3, 3);
+        r3["att"] = video;
+        assert!(s.apply_reply(&r3, None).is_none());
+        assert_eq!(s.downloads().len(), 1, "fetch starts before the answer is whole");
+        let mut r2 = reply(&c, &m, "done", "", 2, 3);
+        r2["att"] = att();
+        assert!(s.apply_reply(&r2, None).is_none());
+        assert!(s.apply_reply(&r2, None).is_none(), "a repeated part is not added twice");
+        let (_, _, note) = s.apply_reply(&reply(&c, &m, "done", "Here.", 1, 3), None).unwrap();
+        assert_eq!(note, "Here.");
+        let l = &s.get(&c).unwrap().lines[1];
+        assert_eq!((l.text.as_str(), l.media.iter().map(|m| m.name.as_str()).collect::<Vec<_>>()), ("Here.", vec!["pic é.jpg", "clip.mp4"]));
+        assert_eq!(s.downloads().len(), 2);
+        s.media_done("https://ntfy.sh/file/v.mp4", Some("/data/v.mp4"));
+        s.media_done("https://ntfy.sh/file/abc123.jpg", None);
+        let l = &s.get(&c).unwrap().lines[1];
+        assert_eq!((l.media[0].state.as_str(), l.media[1].state.as_str(), l.media[1].path.as_str()), ("failed", "ready", "/data/v.mp4"));
+        assert!(s.downloads().is_empty());
+    }
+
+    #[test]
+    fn files_only_reply_says_what_was_sent() {
+        let (mut s, c, m) = store();
+        let mut r = reply(&c, &m, "done", "", 1, 1);
+        r["att"] = att();
+        assert_eq!(s.apply_reply(&r, None).unwrap().2, "Sent a photo");
+        let line = |mimes: &[&str]| Line {
+            state: "done".into(),
+            media: mimes.iter().map(|m| Media { mime: m.to_string(), ..Media::default() }).collect(),
+            ..Line::default()
+        };
+        assert_eq!(shown(&line(&["video/mp4"])), "Sent a video");
+        assert_eq!(shown(&line(&["image/png", "image/gif"])), "Sent 2 photos");
+        assert_eq!(shown(&line(&["image/png", "video/webm", "video/mp4"])), "Sent a photo and 2 videos");
+        let mut bad = reply(&c, &m, "done", "", 1, 1);
+        bad["att"] = json!({"url": "https://example.com/x.png"});
+        let m2 = s.add_mine(&c, "again").unwrap();
+        bad["re"] = json!(m2);
+        assert_eq!(s.apply_reply(&bad, None).unwrap().2, "Done.", "an unsafe file is dropped");
     }
 
     #[test]

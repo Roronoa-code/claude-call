@@ -14,6 +14,8 @@ Timing:
 - Talking over Claude: loudness against the measured echo, confirmed by Whisper words; transcripts that only repeat Claude's own line are dropped.
 - Debug: `"debug": true` in `config.json` (or `CALLME_DEBUG=1`) logs the phone's mic levels, echo level and interrupts to `timing.log`.
 
+**Chats:** the Chats button opens text chats with Claude or Codex on the PC (signed messages on the same ntfy topic, run by the Discord Input MCP watcher; contract in its README). The PC can send photos and videos: the phone downloads each one at once (ntfy keeps them 3 hours) into its files folder, checks its size and sha256, and shows a photo as a thumbnail (tap: full screen in the app) and a video as its first frame with a play button (tap: the phone's video player, through the app's read-only `MediaProvider`). A reply of only files notifies "Sent a photo" / "Sent a video". Sending photos from the phone is not built yet.
+
 Call screen: Mute turns off your mic; Quiet silences Claude's voice while the call (and its captions) carries on; "Call back in 5 min" hangs up and Claude rings again five minutes later.
 
 Fallbacks: ElevenLabs for the voice (`ELEVENLABS_API_KEY` + `ELEVENLABS_VOICE_ID`), then captions only. Without the GPU server there is no hearing: type replies instead.

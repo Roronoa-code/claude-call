@@ -55,6 +55,13 @@
                 android:value="Keeps a connection open so Claude can ring the user like a phone call." />
         </service>
 
+        <!-- Chat videos for the video player: read-only, reached only through a one-time grant (Shell.kt). -->
+        <provider
+            android:name=".MediaProvider"
+            android:authorities="fyi.mani.callme.media"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+
         <receiver android:name=".DeclineReceiver" android:exported="false" />
         <receiver android:name=".ModeTap" android:exported="false" />
         <receiver android:name=".ModeWidget" android:exported="true" android:label="Claude contact mode">
