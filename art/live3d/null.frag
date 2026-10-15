@@ -341,6 +341,34 @@ vec3 shade(vec3 p, vec3 rd, float foot) {
     return softClip(col);
 }
 
+// The floor right under him sees less of the lit floor round it and of the room: a soft pool about his footprint
+// (centre c, half-size r on the floor), spreading and fading as he hops. The key light's shadow lies on top of it.
+float pool(vec3 f, vec2 c, vec2 r) {
+    vec2 q = (f.xz - c) / (r * (1.0 + uBody.y));
+    return 0.6 * uShadow.x * exp(-0.7 * dot(q, q)) / (1.0 + 5.0 * uBody.y);
+}
+
+// The stage's key light's shadow on the floor at f: marched toward the light, its penumbra widening with the height
+// of what casts it (uShadow.y: the larger, the crisper), so it is darkest and tightest where a foot meets the floor
+// and softens and fades as he hops. Only rays through the bounding sphere (centre c, radius r) march, faded out
+// before its edge so that edge never shows as a rim on the floor.
+float castShadow(vec3 f, vec3 c, float r) {
+    vec3 o = f - c;
+    float b = dot(o, KEY), m2 = dot(o, o) - b * b; // the ray's closest approach to c, squared
+    if (uShadow.x <= 0.0 || m2 > r * r || (b > 0.0 && dot(o, o) > r * r)) return 0.0;
+    float res = 1.0, t = 0.02, ph = 1e10;
+    for (int i = 0; i < 40; i++) {
+        float d = map(f + KEY * t);
+        float y = d * d / (2.0 * ph), e = sqrt(max(d * d - y * y, 0.0)); // the improved estimate: no banding
+        res = min(res, uShadow.y * e / max(t - y, 1e-3));
+        ph = d;
+        t += clamp(d, 0.02, 0.3);
+        if (res < 0.004 || t > 6.0) break;
+    }
+    res = clamp(res, 0.0, 1.0);
+    return uShadow.x * (1.0 - res * res * (3.0 - 2.0 * res)) * smoothstep(r * r, 0.5 * r * r, m2);
+}
+
 void main() {
     KEY = normalize(dot(uKey.xyz, uKey.xyz) > 0.0 ? uKey.xyz : vec3(-0.55, 0.80, 0.55));
     KEYC = 1.0 + uKeyCol.rgb; RIM = 1.0 + uKey.w; AMB = 1.0 + uKeyCol.w;
@@ -393,18 +421,7 @@ void main() {
             shadow = clamp(o * 1.4, 0.0, 0.75);
         }
         // the stage's key light casts his shadow on the floor
-        vec3 os = f - bc;
-        float sb = dot(os, KEY), sc = dot(os, os) - 1.85 * 1.85;
-        if (uShadow.x > 0.0 && (tf < tHit || cover < 1.0) && sb * sb - sc > 0.0 && (sb < 0.0 || sc < 0.0)) {
-            float res = 1.0, t = 0.04;
-            for (int i = 0; i < 40; i++) {
-                float d = map(f + KEY * t);
-                res = min(res, uShadow.y * d / t);
-                t += clamp(d, 0.03, 0.4);
-                if (res < 0.01 || t > 6.0) break;
-            }
-            shadow = max(shadow, uShadow.x * edge * (1.0 - smoothstep(0.0, 1.0, res)));
-        }
+        if (tf < tHit || cover < 1.0) shadow = max(shadow, max(castShadow(f, bc, 1.85), pool(f, vec2(0.0, 0.05), vec2(0.6, 0.5))) * edge);
     }
     // The stage's glossy floor: the ray mirrored at the floor, marched the same way; softer and fainter the higher the
     // point it sees, and faded out before the bottom of the picture.

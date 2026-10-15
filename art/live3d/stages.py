@@ -18,7 +18,7 @@ ASSET_SCALE = 1.5                 # backdrop px per logical px: smooth light, so
 STAGES = {
     # k: the pair's scale; floor: logical px under the feet line their reflections and shadows may reach (the desk's
     # front edge cuts them there); the rest are the shaders' uniforms (uStage.y and uShadow.z are filled in per picture)
-    'spot': dict(k=1.08, floor=110, uStage=(0.32, 0, 0.08, 3.0), uKey=(0.0, 1.0, 0.15, 0.2), uKeyCol=(-0.05, -0.12, -0.2, -0.45), uShadow=(0.3, 1.0, 30, 0.35)),
+    'spot': dict(k=1.08, floor=110, uStage=(0.32, 0, 0.08, 3.0), uKey=(0.0, 1.0, 0.15, 0.2), uKeyCol=(-0.05, -0.12, -0.2, -0.45), uShadow=(0.65, 3.0, 30, 0.35)),
     'desk': dict(k=1.0, floor=60, uStage=(0.32, 0, 0.08, 2.2), uKey=(-0.4, 0.7, 0.42, 0.3), uKeyCol=(0.1, -0.05, -0.2, -0.3), uShadow=(0.5, 4.0, 3, 0.2)),
     'moon': dict(k=0.9, floor=110, uStage=(0.30, 0, 0.08, 2.6), uKey=(0.22, 0.72, 0.66, -0.2), uKeyCol=(-0.3, -0.12, 0.1, -0.35), uShadow=(0.6, 6.0, 30, 0.15)),
     'record': dict(k=0.84, floor=70, uStage=(0, 0, 0, 0), uKey=(-0.3, 1.0, 0.45, 0.6), uKeyCol=(0.04, -0.02, -0.08, -0.3), uShadow=(0.45, 4.0, 20, 0.1)),
