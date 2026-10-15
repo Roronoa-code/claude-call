@@ -11,9 +11,13 @@ pub fn choices(c: &chats::Chat, now: i64) -> Vec<slint::SharedString> {
     c.lines.iter().find(|l| !l.me).map_or(vec![], |l| l.choices.iter().map(|s| s.into()).collect())
 }
 
-/// My last message in the chat (a card's title), or its title.
+/// My last message in the chat (a card's title), or its title, or "New chat" (the list's preview of an empty one).
 pub fn topic(c: &chats::Chat) -> String {
-    c.lines.iter().rev().find(|l| l.me && !l.text.is_empty()).map_or_else(|| c.title.clone(), |l| l.text.clone())
+    match c.lines.iter().rev().find(|l| l.me && !l.text.is_empty()) {
+        Some(l) => l.text.clone(),
+        None if c.title.trim().is_empty() => "New chat".into(),
+        None => c.title.clone(),
+    }
 }
 
 /// Who matters now: the chat being worked on, then a question waiting, then the newest; and one line on where it

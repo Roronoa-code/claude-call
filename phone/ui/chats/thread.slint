@@ -104,8 +104,6 @@ export component ChatThread inherits Rectangle {
                 width: parent.width - 120px;
                 height: alone ? 60px : 22px;
                 text: Chats.name;
-                // PREVIEW (chats-5): opening 3 carries the row's name up here, standing in for it until it lands
-                opacity: Chats.open-style == 3 && Chats.open-k < 0.999 && Chats.from-id != "" ? 0 : 1;
                 font-size: 17px;
                 font-weight: 650;
                 color: Ink.text;
@@ -147,7 +145,6 @@ export component ChatThread inherits Rectangle {
             y: 0;
             width: parent.width;
             height: 74px;
-            visible: !Chats.flying; // on its way from the list (chats/open.slint)
             face: Chats.face;
             pose: Chats.waiting ? "think" : "idle";
             k: 0.26; // faces.rs SMALL_K
