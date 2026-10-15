@@ -9,6 +9,7 @@ import { Chats, ChatThread, NewChat, Ink } from "chat.slint";
 import { ChatList } from "chat_list.slint";
 import { ListA, ThreadA } from "chats4/a.slint";
 import { ListB, ThreadB } from "chats4/b.slint";
+import { ListC, ThreadC } from "chats4/c.slint";
 import { StageBack, Look } from "stage.slint";
 
 // A choice in a sheet: icon, title and a line under it.
@@ -371,6 +372,7 @@ export component HomeScreen inherits Window {
         if Chats.look == 0: ChatList { width: root.width; height: root.height; visible: thread.g < 1; }
         if Chats.look == 1: ListA { width: root.width; height: root.height; visible: thread.g < 1; }
         if Chats.look == 2: ListB { width: root.width; height: root.height; visible: thread.g < 1; }
+        if Chats.look == 3: ListC { width: root.width; height: root.height; visible: thread.g < 1; }
         // A chat opens out of its row over the list, and closes back into it.
         thread := Morph {
             open: Chats.current != "";
@@ -389,6 +391,7 @@ export component HomeScreen inherits Window {
             if thread.shown && Chats.look == 0: ChatThread { width: root.width; height: root.height; }
             if thread.shown && Chats.look == 1: ThreadA { width: root.width; height: root.height; }
             if thread.shown && Chats.look == 2: ThreadB { width: root.width; height: root.height; }
+            if thread.shown && Chats.look == 3: ThreadC { width: root.width; height: root.height; }
         }
     }
 

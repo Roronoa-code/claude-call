@@ -11,7 +11,7 @@ import "fonts/JetBrainsMonoNL-Regular.ttf";
 // asks: an agent's question waiting for my answer.
 export struct ChatRow { id: string, name: string, face: string, preview: string, time: string, unread: bool, busy: bool, asks: bool,
     // PREVIEW (chats-4): a waiting question's answers (to answer from the list), my last message, unread count
-    choices: [string], topic: string, count: int }
+    choices: [string], topic: string, count: int, head: string }
 // One piece of the thread (inbox.rs thread). kind: "" my text bubble; "note" a quiet line (downloading, couldn't load,
 // stopped); "image" or "video" a card (pic, ratio = height / width) that opens the file at path when tapped; the
 // PC's text as blocks: "p", "h", "li" (mark "1." or "•", level 0 or 1), "quote" (all with their inline markdown in

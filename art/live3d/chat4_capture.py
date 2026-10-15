@@ -169,6 +169,10 @@ def start(look=None):
     time.sleep(1)
     adb('shell', 'am', 'start', '-n', f'{PKG}/.MainActivity')
     time.sleep(8)
+    # the keyboard sometimes comes up on the home screen at launch on this emulator (reported): Back puts it away
+    if 'mInputShown=true' in sh('dumpsys input_method'):
+        key(4)
+        time.sleep(1)
 
 
 CHATS_BTN = (49, 841)  # home.slint: the Chats button in the bottom row
@@ -195,6 +199,8 @@ def video(look, d, row_xy, field_xy, settle=2.2):
     time.sleep(1.6)
     key(4)  # to the list
     time.sleep(2.4)
+    swipe(200, 600, 588, 300)  # a nudge of the list: screenrecord writes a frame only when the screen changes
+    time.sleep(1.2)
     adb('shell', 'pkill', '-INT', 'screenrecord')
     rec.wait()
     time.sleep(1.5)

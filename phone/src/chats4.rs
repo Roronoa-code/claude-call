@@ -62,3 +62,27 @@ pub fn hero(rows: &[ChatRow]) -> (ChatRow, String) {
     };
     (r.clone(), line)
 }
+
+/// Pages: the list in three groups, each headed by its first row: what needs Mani (a question, a new reply), what
+/// the PC is working on, and the rest; newest first within each. Other directions: as it was.
+pub fn arrange(mut rows: Vec<ChatRow>) -> Vec<ChatRow> {
+    if look() != 3 {
+        return rows;
+    }
+    let group = |r: &ChatRow| if r.asks || r.unread { 0 } else if r.busy { 1 } else { 2 };
+    rows.sort_by_key(group); // stable: newest first stays within each group
+    let mut last = None;
+    for r in rows.iter_mut() {
+        let g = group(r);
+        if last != Some(g) {
+            r.head = ["Needs you", "Working on it", "Earlier"][g].into();
+        }
+        last = Some(g);
+    }
+    rows
+}
+
+/// Room above a turn: 26 px, or in Pages 44 above my question (a new exchange, with a hairline in the middle).
+pub fn turn_gap(me: bool) -> f32 {
+    if me && look() == 3 { 44.0 } else { 26.0 }
+}

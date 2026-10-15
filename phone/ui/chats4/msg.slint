@@ -73,6 +73,8 @@ export component Piece inherits Rectangle {
         self.k = 1;
     }
     height: top + pad-top + h + pad-bottom;
+    // Pages: a hairline between one exchange and the next, over the question that starts it.
+    if look.me-heading && m.me && m.n == 0 && m.gap > 30: Rectangle { y: root.top / 2; height: 1px; background: #ffffff12; }
     // The card behind the agent's turn, joined across its pieces.
     if carded: Rectangle {
         y: m.n == 0 ? root.top : 0px;
@@ -265,7 +267,7 @@ export component Piece inherits Rectangle {
         if m.kind == "tag": Text { x: 2px; text: m.text; font-size: 12.5px; color: Ink.muted; vertical-alignment: center; }
         // A photo or video in a soft frame, so even a dark screenshot reads as a picture.
         if media: Rectangle {
-            x: m.me || heading ? parent.width - self.width : 0px;
+            x: m.me && !look.me-heading ? parent.width - self.width : 0px;
             width: media-w;
             background: #232327;
             border-radius: 20px;

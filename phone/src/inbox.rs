@@ -351,7 +351,7 @@ fn thread(chat: &chats::Chat, ask: &str) -> Vec<ChatMsg> {
             m.gap = match (mine_before, n) {
                 (None, 0) => 0.0,
                 (Some(true), 0) if l.me => 8.0, // my messages in a row
-                (Some(_), 0) => 26.0, // the other side speaks, or the PC's next answer
+                (Some(_), 0) => crate::chats4::turn_gap(l.me), // the other side speaks, or the PC's next answer (26)
                 _ => match (prev.as_str(), m.kind.as_str()) {
                     ("who", _) => 10.0,
                     (_, "h") => 22.0,
@@ -426,8 +426,10 @@ fn show(ui: &HomeScreen) {
             },
             topic: crate::chats4::topic(c).into(),
             count: c.unread as i32,
+            head: Default::default(),
         })
         .collect();
+    let rows = crate::chats4::arrange(rows); // PREVIEW (chats-4): Pages groups the list
     ROWS.with(|model| {
         // gone chats out; then row by row: the same chat changes in place, a chat that moved or came back goes in
         for i in (0..model.row_count()).rev() {
