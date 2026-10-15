@@ -3,7 +3,7 @@
 // with the agents) and Call, which asks the agent picked by tapping Clawd or Null to phone you.
 import { T, Icon, Icons, Morph, Round } from "parts.slint";
 import { Home, Mode, SetupCard } from "home_parts.slint";
-import { Toys, Toy, Clawd } from "toys.slint";
+import { Toys, Clawd, Null } from "toys.slint";
 import { Chats, ChatList, ChatThread, PickRow } from "chat.slint";
 
 // A choice in a sheet: icon, title and a line under it.
@@ -149,18 +149,9 @@ export component HomeScreen inherits Window {
                 animate opacity { duration: 250ms; easing: T.out; }
                 tapped => { Home.caller = "claude"; Toys.tapped("claude"); }
             }
-            Toy {
+            Null {
                 width: 96px;
                 height: 172px;
-                frames: Toys.null-frames;
-                pose: Toys.null-pose;
-                squash: Toys.null-squash;
-                lift: Toys.null-lift;
-                lean: Toys.null-lean;
-                feet: 0.975;
-                breath: Toys.asleep ? 5600ms : 3600ms;
-                breath-amount: 0.012;
-                hover: Toys.asleep ? 0px : 1.5px;
                 opacity: Home.caller == "codex" ? 1 : 0.55;
                 animate opacity { duration: 250ms; easing: T.out; }
                 tapped => { Home.caller = "codex"; Toys.tapped("codex"); }

@@ -1,8 +1,9 @@
 //! The home screen: whether calls can reach this phone, how agents may reach you, a test ring, the widget and the
 //! private channel (settings.rs, widget.rs, ring.rs).
 use crate::{
-    Chats, Home, HomeScreen, Toys, alive, android, jx, ring, service, settings,
-    toys::{Body, Toy},
+    Chats, Home, HomeScreen, Toys, alive, android,
+    cast::{Cast, Mat, State, Who},
+    jx, live_gl, ring, service, settings,
 };
 use slint::ComponentHandle;
 use std::{
@@ -81,28 +82,29 @@ pub fn run(_app: android_activity::AndroidApp) {
     refresh(&ui);
     let mut chats = crate::inbox::wire(&ui);
 
-    // The vinyl Clawd and Null live on the home screen (toys.rs): blinks, glances, Null thinking at its laptop, asleep
-    // in the quiet modes, and a hop when tapped. Clawd is drawn live in 3D by the GPU (alive.rs) and watches a finger.
+    // The vinyl Clawd and Null live on the home screen in 3D, drawn by the GPU (alive.rs, live_gl.rs): blinks,
+    // glances, Null thinking at its laptop, asleep in the quiet modes, a hop when tapped, and eyes on your finger.
     let start = Instant::now();
-    let toys = Rc::new(std::cell::RefCell::new((alive::Live::new(0x9e37_79b9), Toy::new(true, 0x85eb_ca6b))));
+    let pair = Rc::new(std::cell::RefCell::new(alive::Pair::new(0x9e37_79b9)));
     ui.global::<Toys>().on_tapped({
-        let toys = toys.clone();
-        move |who| {
-            let now = start.elapsed().as_secs_f32();
-            let mut t = toys.borrow_mut();
-            if who == "codex" { t.1.hop(now) } else { t.0.hop(now) }
-        }
+        let pair = pair.clone();
+        move |who| pair.borrow_mut().hop(who == "codex", start.elapsed().as_secs_f32())
     });
     ui.global::<Toys>().on_point({
-        let toys = toys.clone();
-        move |x, y, down| toys.borrow_mut().0.point(x, y, down, start.elapsed().as_secs_f32())
+        let (pair, ui) = (pair.clone(), ui.as_weak());
+        move |x, y, down| {
+            let Some(ui) = ui.upgrade() else { return };
+            let dx = ui.global::<Toys>().get_null_dx();
+            pair.borrow_mut().point(x, y, dx, down, start.elapsed().as_secs_f32())
+        }
     });
-    let scene = Rc::new(std::cell::RefCell::new(alive::Scene::default()));
-    alive::attach(&ui, scene.clone());
-    let mut drawn = 0.0f32;
+    let scene = Rc::new(std::cell::RefCell::new(live_gl::Scene::default()));
+    let names = [Who::Clawd(Mat::Vinyl), Who::Null].map(|w| Cast::new(w, 1).uniforms().into_iter().map(|u| u.0).collect());
+    live_gl::attach(&ui, scene.clone(), names);
+    let mut drawn = [0.0f32; 2];
     let mut last_refresh = Instant::now();
     let timer = slint::Timer::default();
-    // Every frame: Clawd's springs need it; the rest is cheap.
+    // Every frame: the toys' springs need it; the rest is cheap.
     timer.start(slint::TimerMode::Repeated, Duration::from_millis(16), {
         let ui = ui.as_weak();
         move || {
@@ -128,27 +130,23 @@ pub fn run(_app: android_activity::AndroidApp) {
             }
             let asleep = matches!(home.get_mode().as_str(), "none" | "wake" | "sleep");
             let now = start.elapsed().as_secs_f32();
-            let g = ui.global::<Toys>();
-            g.set_asleep(asleep);
-            let mut t = toys.borrow_mut();
-            if t.0.tick(now, asleep) {
-                let Body { pose, squash, lift, lean } = t.0.toy.body;
-                (g.set_clawd_pose(pose), g.set_clawd_squash(squash), g.set_clawd_lift(lift), g.set_clawd_lean(lean));
-            }
-            // Live Clawd: a new frame at 60 fps while he moves, 30 while he only breathes, 15 asleep, none when hidden.
-            let show = g.get_live() && !ui.global::<Chats>().get_open() && kb == 0.0;
-            let fps = if t.0.moving() { 60.0 } else if asleep { 15.0 } else { 30.0 };
+            let mut p = pair.borrow_mut();
+            p.tick(now, asleep);
+            // Each toy: a new frame at 60 fps while it moves, 30 while it only breathes, 15 asleep, none when hidden.
+            let show = ui.global::<Toys>().get_live() && !ui.global::<Chats>().get_open() && kb == 0.0;
             let mut s = scene.borrow_mut();
-            if show && (!s.show || now - drawn >= 1.0 / fps - 0.004) {
-                s.pose = t.0.pose();
-                s.fresh = true;
-                drawn = now;
-                ui.window().request_redraw();
+            let mut any = false;
+            for (i, c) in [&p.clawd, &p.null].into_iter().enumerate() {
+                let fps = if c.moving() { 60.0 } else if c.state() == State::Sleep { 15.0 } else { 30.0 };
+                if show && (!s.show || now - drawn[i] >= 1.0 / fps - 0.004) {
+                    s.frames[i] = (c.uniforms(), true);
+                    drawn[i] = now;
+                    any = true;
+                }
             }
             s.show = show;
-            if t.1.tick(now, asleep) {
-                let Body { pose, squash, lift, lean } = t.1.body;
-                (g.set_null_pose(pose), g.set_null_squash(squash), g.set_null_lift(lift), g.set_null_lean(lean));
+            if any {
+                ui.window().request_redraw();
             }
         }
     });

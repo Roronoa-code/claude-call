@@ -14,6 +14,8 @@ mod inbox;
 #[cfg(target_os = "android")]
 mod jx;
 #[cfg(target_os = "android")]
+mod live_gl;
+#[cfg(target_os = "android")]
 mod net;
 #[cfg(target_os = "android")]
 mod ring;
@@ -27,10 +29,11 @@ mod shell;
 mod widget;
 mod alive;
 mod antics;
+#[allow(dead_code)] // the other materials and talking are for the offline renders (art/live3d) and later screens
+mod cast;
 mod chats;
 mod mascot;
 mod null;
-mod toys;
 mod view;
 
 slint::include_modules!();
