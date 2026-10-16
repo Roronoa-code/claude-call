@@ -35,14 +35,10 @@ static PATH: OnceLock<PathBuf> = OnceLock::new();
 static STORE: Mutex<Option<Store>> = Mutex::new(None);
 /// The home screen, to ask whether it is in front.
 static HOME: Mutex<Option<GlobalRef>> = Mutex::new(None);
-/// Photo and video links being fetched right now, so each is fetched once.
-static FETCHING: Mutex<Vec<String>> = Mutex::new(Vec::new());
-/// My messages being sent right now (never tried again by themselves meanwhile).
-static SENDING: Mutex<Vec<String>> = Mutex::new(Vec::new());
-/// My messages whose answer is missing a part, and when the PC was last asked for it again.
-static ASKED: Mutex<Vec<(String, i64)>> = Mutex::new(Vec::new());
-/// How many of my messages are waiting to be tried again (when it changes, the thread redraws their lines).
-static WAITING: AtomicU64 = AtomicU64::new(0);
+#[path = "inbox_send.rs"]
+mod send;
+pub(crate) use send::{auto, post};
+use send::fetch_media;
 /// How long Undo stays.
 const UNDO_FOR: Duration = Duration::from_secs(5);
 thread_local! {
@@ -115,6 +111,15 @@ fn read<R>(f: impl FnOnce(&Store) -> R) -> Option<R> {
     store(&mut cache).map(|s| f(s))
 }
 
+/// How many chats need me, leaving out `read_now` (being read right now), and the one with the newest news (the
+/// notifications' summary says both).
+pub(crate) fn needing(read_now: &str) -> Option<(usize, Option<chats::Chat>)> {
+    read(|s| {
+        let need: Vec<_> = s.chats.iter().filter(|c| c.unread > 0 && c.deleted == 0 && c.id != read_now).collect();
+        (need.len(), need.iter().max_by_key(|c| c.updated).map(|c| (*c).clone()))
+    })
+}
+
 /// PREVIEW (fake_chat.rs): the chat on screen right now, if any.
 pub(crate) fn viewing() -> Option<String> {
     VIEWING.lock().unwrap().clone()
@@ -165,84 +170,6 @@ fn arrived(env: &mut JNIEnv, ctx: &JObject, body: &str, what: &str, signed: fn(&
     chat_alert::notify(env, ctx, &chat, &name, &text)
 }
 
-/// Adds or retries a message of mine (`f` says which) and sends it in the background. True once it is kept (saved)
-/// to send.
-pub(crate) fn post(env: &mut JNIEnv, ctx: &JObject, chat: &str, f: impl FnOnce(&mut Store) -> Option<String>) -> Result<bool> {
-    if crate::fake_chat::on() {
-        path(env, ctx)?;
-        return Ok(crate::fake_chat::post(chat, f));
-    }
-    let Some(key) = settings::chat_key(env, ctx)? else { return Ok(false) };
-    let topic = settings::topic(env, ctx)?;
-    path(env, ctx)?;
-    let msg = update(f).flatten();
-    changed();
-    let Some(msg) = msg else { return Ok(false) };
-    SENDING.lock().unwrap().push(msg.clone());
-    let chat = chat.to_string();
-    net::RT.spawn(async move {
-        let ok = deliver(&topic, &key, &chat, &msg).await;
-        update(|s| s.sent(&chat, &msg, ok));
-        SENDING.lock().unwrap().retain(|m| *m != msg);
-        changed();
-    });
-    Ok(true)
-}
-
-/// Uploads my message's photo or video first (a retry uploads it again), then posts the signed message.
-async fn deliver(topic: &str, key: &str, chat: &str, msg: &str) -> bool {
-    if let Some(m) = read(|s| s.to_upload(chat, msg)).flatten() {
-        let Some(bytes) = std::fs::read(&m.path).ok() else { return false };
-        let Some(url) = net::upload(topic, &m.name, bytes).await else {
-            android::log("chats: a photo or video couldn't be uploaded");
-            return false;
-        };
-        update(|s| s.uploaded(chat, msg, &url));
-    }
-    let Some(body) = read(|s| s.body(chat, msg, key)).flatten() else { return false };
-    net::publish_chat(topic, body).await
-}
-
-/// Fetches every photo and video still loading, in the background, right away (ntfy keeps them only 3 hours). Each
-/// is kept only if its size and sha256 are what the PC signed for, as filesDir/media/<sha256>.<ext>.
-fn fetch_media() {
-    let Some(path) = PATH.get() else { return };
-    let dir = path.with_file_name("media");
-    let todo = read(Store::downloads).unwrap_or_default();
-    for m in todo {
-        {
-            let mut busy = FETCHING.lock().unwrap();
-            if busy.contains(&m.url) {
-                continue;
-            }
-            busy.push(m.url.clone());
-        }
-        let dir = dir.clone();
-        net::RT.spawn(async move {
-            let saved = net::fetch(&m.url, m.size).await.filter(|b| m.matches(b)).and_then(|b| {
-                std::fs::create_dir_all(&dir).ok()?;
-                let file = dir.join(m.file_name());
-                let tmp = file.with_extension("part");
-                std::fs::write(&tmp, b).and_then(|_| std::fs::rename(&tmp, &file)).ok()?;
-                Some(file.to_string_lossy().into_owned())
-            });
-            if saved.is_none() {
-                android::log("chats: a photo or video couldn't be fetched");
-            }
-            // its chat was deleted while it came: the file goes too (Undo fetches it again)
-            let unused = update(|s| {
-                s.media_done(&m.url, saved.as_deref());
-                saved.as_ref().is_some_and(|p| !s.uses(p))
-            });
-            if let (Some(true), Some(p)) = (unused, &saved) {
-                let _ = std::fs::remove_file(p);
-            }
-            FETCHING.lock().unwrap().retain(|u| *u != m.url);
-            changed();
-        });
-    }
-}
-
 /// Saves what was typed in a text box (kept a moment after the last key: keep_draft).
 fn save_draft() {
     let Some((chat, text)) = PENDING.with(|p| p.borrow_mut().take()) else { return };
@@ -290,11 +217,6 @@ fn show(ui: &HomeScreen) {
         let last = c.lines.iter().rev().find(|l| l.me || l.state != "partial");
         chats::brief(&last.map_or("New chat".to_string(), chats::shown)).replace('\n', " ")
     };
-    // What waits in its text box, in one line ("Photo" when only a photo is picked).
-    let draft = |c: &chats::Chat| match (c.draft.trim(), &c.pick) {
-        ("", Some(m)) => if m.video() { "Video" } else { "Photo" }.to_string(),
-        (t, _) => t.split_whitespace().collect::<Vec<_>>().join(" "),
-    };
     let rows: Vec<ChatRow> = all
         .iter()
         // a thread the PC started shows once its first message is whole
@@ -315,7 +237,7 @@ fn show(ui: &HomeScreen) {
             topic: chat_view::topic(c).into(),
             count: c.unread as i32,
             head: Default::default(),
-            draft: draft(c).into(),
+            draft: chats::draft_line(c, now).into(),
             think: chats::think(c, now).into(),
             mine_last: c.lines.iter().rev().find(|l| l.me || l.state != "partial").is_some_and(|l| l.me),
         })
@@ -370,7 +292,7 @@ fn show(ui: &HomeScreen) {
             c.set_title(match (chat.kind.as_str(), ask) {
                 ("", _) => chat.title.clone().into(),
                 (_, "waiting") => "Waiting for your answer".into(),
-                (_, "sending") => "Sending answer…".into(),
+                (_, "sending") => "Waiting for the PC".into(),
                 (_, "answered") => "Answered".into(),
                 (_, "expired") => "Expired".into(),
                 _ => "From your PC".into(),
@@ -449,55 +371,6 @@ fn leave(chat: &str) {
     }
 }
 
-/// Every second: my messages that didn't go are tried again by themselves (with a growing wait), and an answer missing
-/// a part is asked for again (the PC sends a recorded answer again for the same message, never runs it twice).
-fn auto() {
-    if crate::fake_chat::on() {
-        return;
-    }
-    let now = chats::now();
-    let Some((due, stalled, waiting)) = read(|s| {
-        let waiting = s.chats.iter().flat_map(|c| &c.lines).filter(|l| chats::unsent(l, now) == "waiting").count() as u64;
-        (s.due(now), s.stalled(now), waiting)
-    }) else {
-        return;
-    };
-    if WAITING.swap(waiting, Relaxed) != waiting {
-        changed(); // one started or stopped waiting: its line under it changes
-    }
-    let busy = SENDING.lock().unwrap().clone();
-    let due: Vec<_> = due.into_iter().filter(|(_, m)| !busy.contains(m)).collect();
-    let stalled: Vec<_> = {
-        let mut asked = ASKED.lock().unwrap();
-        asked.retain(|(_, t)| now - t < 30 * 60_000);
-        let s: Vec<_> = stalled.into_iter().filter(|(_, m)| !asked.iter().any(|(a, t)| a == m && now - t < 60_000)).collect();
-        asked.retain(|(a, _)| !s.iter().any(|(_, m)| m == a));
-        asked.extend(s.iter().map(|(_, m)| (m.clone(), now)));
-        s
-    };
-    if due.is_empty() && stalled.is_empty() {
-        return;
-    }
-    android::with(|env, act| {
-        for (chat, msg) in &due {
-            post(env, act, chat, |s| s.retry(chat, msg, false))?;
-        }
-        if stalled.is_empty() {
-            return Ok(());
-        }
-        let Some(key) = settings::chat_key(env, act)? else { return Ok(()) };
-        let topic = settings::topic(env, act)?;
-        for (chat, msg) in stalled {
-            // the very message it answered, unchanged: the PC knows it and only replays its answer
-            if let Some(Some(body)) = read(|s| s.body(&chat, &msg, &key)) {
-                let topic = topic.clone();
-                net::RT.spawn(async move { net::publish_chat(&topic, body).await });
-            }
-        }
-        Ok(())
-    });
-}
-
 /// Keeps the home screen's models in step with the store; called from the home timer.
 #[derive(Default)]
 pub struct Tracker {
@@ -540,7 +413,7 @@ impl Tracker {
         }
         if second {
             (self.last, self.focus) = (Some(Instant::now()), focus);
-            auto();
+            android::with(auto);
         }
     }
 }

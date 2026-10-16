@@ -5,12 +5,14 @@
 //! never goes with a message in another chat and stays when the app is closed. The chat the picker is open for is kept
 //! in the store too (Store::picking): Samsung may close the app while the Gallery is open, and the pick still lands.
 //! The Gallery is tried first; if what it gives back can't be read (no grant, no type), the system picker opens at once
-//! instead, and is used from then on until the app is closed.
+//! instead, and is used from then on. Both are kept in the settings, so they hold after Samsung closes the app while
+//! the Gallery is open, and after the app is started again.
 use crate::{
     Chats, HomeScreen, android,
     chats::{MEDIA_MAX, Media},
     inbox,
     jx::{self, s},
+    settings,
 };
 use jni::{
     JNIEnv,
@@ -21,10 +23,7 @@ use slint::ComponentHandle;
 use std::{
     cell::RefCell,
     collections::HashMap,
-    sync::{
-        Mutex,
-        atomic::{AtomicBool, Ordering::Relaxed},
-    },
+    sync::Mutex,
 };
 
 /// A pick on its way, or one that can't be sent (why), and the chat it was picked in. Ready ones are in the store.
@@ -40,18 +39,18 @@ const REQUEST: i32 = 7; // MainActivity.onActivityResult in Shell.kt
 
 /// Samsung's own Gallery app: the pick opens there when the phone has it.
 const GALLERY: &str = "com.sec.android.gallery3d";
-/// The picker open now is the Gallery.
-static IN_GALLERY: AtomicBool = AtomicBool::new(false);
-/// What the Gallery gave back couldn't be read: the system picker from now on, until the app is closed.
-static GALLERY_FAILED: AtomicBool = AtomicBool::new(false);
+/// Settings: the picker open now is the Gallery.
+const IN_GALLERY: &str = "inGallery";
+/// Settings: what the Gallery gave back couldn't be read, so the system picker from now on.
+const GALLERY_FAILED: &str = "galleryFailed";
 
 /// Opens Samsung's Gallery for `chat` (photos and videos), or, without it (or once it failed), the system picker.
 pub fn open(env: &mut JNIEnv, act: &JObject, chat: &str) -> Result<()> {
     *FOR.lock().unwrap() = chat.to_string();
     inbox::path(env, act)?;
     inbox::update(|s| s.picking_for(chat));
-    let gallery = if GALLERY_FAILED.load(Relaxed) { None } else { gallery(env, act)? };
-    IN_GALLERY.store(gallery.is_some(), Relaxed);
+    let gallery = if settings::flag(env, act, GALLERY_FAILED)? { None } else { gallery(env, act)? };
+    settings::set_flag(env, act, IN_GALLERY, gallery.is_some())?;
     let i = match gallery {
         Some(i) => i,
         None => system(env)?,
@@ -76,7 +75,7 @@ fn system<'a>(env: &mut JNIEnv<'a>) -> Result<JObject<'a>> {
 /// and is used from now on. Whatever was showing "Getting it ready…" goes.
 fn instead(env: &mut JNIEnv, act: &JObject, chat: &str) -> Result<()> {
     android::log("attach: the Gallery's pick couldn't be read; the system picker instead");
-    GALLERY_FAILED.store(true, Relaxed);
+    settings::set_flag(env, act, GALLERY_FAILED, true)?;
     {
         let mut p = PICK.lock().unwrap();
         if p.as_ref().is_some_and(|(c, _)| c == chat) {
@@ -126,7 +125,10 @@ fn media_types(env: &mut JNIEnv, i: &JObject) -> Result<()> {
 /// the app while the picker was open, the chat it was for comes from the store, and opens again.
 pub fn picked(env: &mut JNIEnv, act: &JObject, data: &JObject) -> Result<()> {
     inbox::path(env, act)?;
-    let gallery = IN_GALLERY.swap(false, Relaxed);
+    let gallery = settings::flag(env, act, IN_GALLERY)?;
+    if gallery {
+        settings::set_flag(env, act, IN_GALLERY, false)?;
+    }
     let mut chat = FOR.lock().unwrap().clone();
     if chat.is_empty() {
         chat = inbox::update(|s| s.picking.clone()).unwrap_or_default();
@@ -248,13 +250,27 @@ pub fn set_result(chat: &str, r: std::result::Result<Media, String>) {
     *p = match r {
         Ok(m) if inbox::update(|s| s.set_pick(chat, Some(m.clone()))) == Some(true) => None,
         Ok(_) => Some((chat.to_string(), Pick::Failed("Couldn't save that file".into()))),
+        // what was picked before goes too: the box shows the error, and nothing hidden may go with the message
         Err(why) => {
-            inbox::update(|s| s.picked(chat));
+            unpick(chat);
             Some((chat.to_string(), Pick::Failed(why)))
         }
     };
     drop(p);
     inbox::changed();
+}
+
+/// Takes what is picked in `chat` out of the store (the picker opened for it is done), and its file once nothing
+/// else uses it.
+fn unpick(chat: &str) {
+    let unused = inbox::update(|s| {
+        let path = s.get(chat).and_then(|c| c.pick.as_ref()).map(|m| m.path.clone());
+        s.set_pick(chat, None);
+        path.filter(|p| !p.is_empty() && !s.uses(p))
+    });
+    if let Some(Some(path)) = unused {
+        let _ = std::fs::remove_file(path);
+    }
 }
 
 /// Removes what was picked in `chat` (the × on the chip), and its file once nothing else uses it.
@@ -264,14 +280,7 @@ pub fn clear(chat: &str) {
         *p = None;
     }
     drop(p);
-    let unused = inbox::update(|s| {
-        let path = s.get(chat).and_then(|c| c.pick.as_ref()).map(|m| m.path.clone());
-        s.set_pick(chat, None);
-        path.filter(|p| !p.is_empty() && !s.uses(p))
-    });
-    if let Some(Some(path)) = unused {
-        let _ = std::fs::remove_file(path);
-    }
+    unpick(chat);
     inbox::changed();
 }
 

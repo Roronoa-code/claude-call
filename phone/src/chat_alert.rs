@@ -28,7 +28,8 @@ const TYPED: &str = "reply";
 const CHOICE: &str = "fyi.mani.callme.CHOICE";
 const BUILDER: &str = "Landroid/app/Notification$Builder;";
 
-/// A chat was read: its notification goes, and the summary too once no chat notification is left.
+/// A chat was read: its notification goes, and the summary too once no chat notification is left (while some are,
+/// its count is brought up to date).
 pub fn cancel(env: &mut JNIEnv, ctx: &JObject, chat: &str) -> Result<()> {
     let nm = service(env, ctx, "notification")?;
     env.call_method(&nm, "cancel", "(I)V", &[JValue::Int(notification_id(chat))])?;
@@ -36,11 +37,32 @@ pub fn cancel(env: &mut JNIEnv, ctx: &JObject, chat: &str) -> Result<()> {
     for i in 0..env.get_array_length(&all)? {
         let n = env.get_object_array_element(&all, i)?;
         if env.call_method(&n, "getId", "()I", &[])?.i()? > SUMMARY_ID {
-            return Ok(());
+            return recount(env, ctx, chat);
         }
     }
     env.call_method(&nm, "cancel", "(I)V", &[JValue::Int(SUMMARY_ID)])?;
     Ok(())
+}
+
+/// The summary posted again, quietly, with how many chats need me now (it stays as it is when none do: cancelling it
+/// would take the other chats' notifications with it).
+fn recount(env: &mut JNIEnv, ctx: &JObject, read: &str) -> Result<()> {
+    let Some((need, Some(c))) = inbox::needing(read) else { return Ok(()) };
+    let last = c.lines.iter().rev().find(|l| !l.me && l.state != "partial");
+    let name = chats::label(&c);
+    let a = Alert {
+        chat: &c.id,
+        name: &name,
+        face: chats::face(&c.agent, c.model.as_deref()),
+        text: chats::brief(&last.map(chats::shown).unwrap_or_default()),
+        at: last.map_or(c.updated, |l| l.at),
+        mine: None,
+        note: None,
+        answers: (vec![], false, false),
+        updates: c.kind == "note",
+        alert: false,
+    };
+    summary(env, ctx, &a, need)
 }
 
 /// One chat's notification.
@@ -122,14 +144,14 @@ fn answer(env: &mut JNIEnv, ctx: &JObject, intent: &JObject, chat: &str, kept: &
     let text = text.trim().to_string();
     let now = chats::now();
     // None: nothing could be read (the store, or chat isn't set up); Some(None): the chat is gone or deleted
-    let mut seen: Option<Option<(Chat, bool)>> = None;
+    let mut seen: Option<Option<(Chat, bool, bool)>> = None;
     *kept = inbox::post(env, ctx, chat, |s| {
         let r = s.answer(chat, &text, now);
-        let msg = r.as_ref().and_then(|(_, m)| m.clone());
-        seen = Some(r.map(|(c, m)| (c, m.is_some())));
+        let msg = r.as_ref().and_then(|(_, m, _)| m.clone());
+        seen = Some(r.map(|(c, m, long)| (c, m.is_some(), long)));
         msg
     })?;
-    let (c, tried) = match seen {
+    let (c, tried, long) = match seen {
         Some(Some(v)) => v,
         Some(None) => {
             let nm = service(env, ctx, "notification")?;
@@ -139,6 +161,7 @@ fn answer(env: &mut JNIEnv, ctx: &JObject, intent: &JObject, chat: &str, kept: &
     };
     let last = c.lines.iter().rev().find(|l| !l.me && l.state != "partial");
     let (sent, note, answers) = chats::after_answer(&c, tried, *kept, now);
+    let note = if long { Some("Too long to send from here. It's in the chat") } else { note };
     let a = Alert {
         chat,
         name: &chats::label(&c),
@@ -151,7 +174,11 @@ fn answer(env: &mut JNIEnv, ctx: &JObject, intent: &JObject, chat: &str, kept: &
         updates: c.kind == "note",
         alert: false,
     };
-    show(env, ctx, &a)
+    show(env, ctx, &a)?;
+    if sent {
+        recount(env, ctx, chat)?; // answered from here: this chat no longer counts
+    }
+    Ok(())
 }
 
 /// Reply's typed words, from the intent the notification filled in.

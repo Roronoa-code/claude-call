@@ -145,8 +145,10 @@ pub fn thread(chat: &chats::Chat, ask: &str, now: i64) -> Vec<ChatMsg> {
                     _ => styled(&b.text),
                 };
                 let links = b.kind != "code" && chats::has_link(&b.text);
+                let link = if links { chats::only_link(&b.text) } else { String::new() };
                 let text = if b.kind == "code" { soft_breaks(&b.text) } else { b.text.clone() };
-                items.push(ChatMsg { text: text.into(), kind: b.kind.into(), body, mark: b.mark.into(), level: b.level as i32, links, ..ChatMsg::default() });
+                let (kind, mark, level) = (b.kind.into(), b.mark.into(), b.level as i32);
+                items.push(ChatMsg { text: text.into(), kind, body, mark, level, links, link: link.into(), ..ChatMsg::default() });
             }
             items.extend(l.media.iter().map(|m| media_msg(false, m, l.at, now)));
             if question == Some(i) {
@@ -154,7 +156,7 @@ pub fn thread(chat: &chats::Chat, ask: &str, now: i64) -> Vec<ChatMsg> {
                 items.extend(l.choices.iter().map(choice));
                 match ask {
                     "expired" => items.push(ChatMsg { text: "Expired".into(), kind: "tag".into(), ..ChatMsg::default() }),
-                    "sending" => items.push(ChatMsg { text: "Sending answer…".into(), kind: "tag".into(), ..ChatMsg::default() }),
+                    "sending" => items.push(ChatMsg { text: "Waiting for the PC".into(), kind: "tag".into(), ..ChatMsg::default() }),
                     _ => {}
                 }
             }

@@ -370,7 +370,7 @@ fn a_failed_or_unsent_answer_leaves_the_question_waiting() {
     s.retry("ask-r1", "", true);
     s.sent("ask-r1", &m, true);
     s.apply_receipt(&receipt("ask-r1", &m, "delivered"));
-    assert_eq!(ask_state(s.get("ask-r1").unwrap(), now()), "answered");
+    assert_eq!(ask_state(s.get("ask-r1").unwrap(), now()), "sending", "delivered is not taken: the PC still checks it");
     s.apply_reply(&reply("ask-r1", &m, "failed", "I couldn't get the photo you sent. Send it again.", 1, 1), None);
     assert_eq!(ask_state(s.get("ask-r1").unwrap(), now()), "waiting", "the PC couldn't take it");
     assert_eq!(ask_state(&Chat::default(), now()), "", "not a question");
@@ -683,15 +683,23 @@ fn an_answer_shows_as_sending_until_the_pc_takes_it() {
     s.sent("ask-r", &m, true);
     assert_eq!(st(&s), "sending", "sent, not yet taken");
     s.apply_receipt(&receipt("ask-r", &m, "delivered"));
+    assert_eq!(st(&s), "sending", "delivered: the PC has it, but hasn't taken it yet");
+    s.chats[0].lines[1].since -= 10 * 60_000;
+    assert_eq!(st(&s), "sending", "no time limit stands in for the PC's word");
+    s.apply_reply(&reply("ask-r", &m, "done", "Got it.", 1, 1), None);
     assert_eq!(st(&s), "answered");
-    // never acknowledged (a PC without receipts): answered after a minute, not stuck
+    // the PC turned it away (answered elsewhere, or the question closed): closed, not answered by me
+    let mut s3 = Store::default();
+    s3.apply_note(&note("ask-r", "r", "ask", &["Yes"], "Ship it?", 1, 1), None);
+    let m3 = s3.add_mine("ask-r", "Yes", None).unwrap();
+    s3.apply_reply(&reply("ask-r", &m3, "missed", "This question expired (over a day old), so nothing is waiting for the answer now.", 1, 1), None);
+    assert_eq!(st(&s3), "expired");
+    assert_eq!(quick_answers(s3.get("ask-r").unwrap(), now()), (vec![], false, false), "nothing left to tap");
+    // failed for good: the choices come back
     let mut s2 = Store::default();
     s2.apply_note(&note("ask-r", "r", "ask", &["Yes"], "Ship it?", 1, 1), None);
     let m2 = s2.add_mine("ask-r", "Yes", None).unwrap();
     s2.sent("ask-r", &m2, true);
-    s2.chats[0].lines[1].since -= 61_000;
-    assert_eq!(st(&s2), "answered");
-    // failed for good: the choices come back
     s2.chats[0].lines[1].state = "not_sent".into();
     assert_eq!(st(&s2), "sending", "still retrying by itself");
     s2.chats[0].lines[1].first -= AUTO_FOR;
@@ -710,6 +718,11 @@ fn copy_plain_text_and_code_exactly() {
     assert!(!copy_text(chat, &m, false, 0).unwrap().contains('\u{200b}'));
     assert!(copy_text(chat, "nope", false, 0).is_none());
     assert!(has_link("see https://a.dev") && has_link("[a](b)") && !has_link("`https://in.code`") && !has_link("plain"));
+    // one link: a tap on the words opens it; none or several: nothing to pick
+    assert_eq!(only_link("here's the PR: https://github.com/a/b/pull/7."), "https://github.com/a/b/pull/7");
+    assert_eq!(only_link("see [the docs](https://x.y/a) now"), "https://x.y/a");
+    assert_eq!(only_link("plain, and `https://in.code`"), "");
+    assert_eq!(only_link("https://a.dev and [b](https://b.dev)"), "");
 }
 
 #[test]
@@ -764,7 +777,7 @@ fn a_notification_answer_skips_deleted_chats_and_closed_questions() {
     assert_eq!(s, before, "nothing added to a deleted chat");
     s.undelete("ask-r1");
     // the question waits: the choice goes and the chat is read; the home line's question (asks) is over
-    let (c, msg) = s.answer("ask-r1", "Yes", now()).unwrap();
+    let (c, msg, _) = s.answer("ask-r1", "Yes", now()).unwrap();
     assert!(msg.is_some());
     assert_eq!(ask_state(&c, now()), "waiting", "the chat as it was");
     assert_eq!(ask_state(s.get("ask-r1").unwrap(), now()), "sending");
@@ -828,9 +841,11 @@ fn an_answer_on_its_way_takes_the_text_box_away() {
     let state = |s: &Store| ask_state(s.get("ask-q").unwrap(), now);
     assert_eq!(ended(state(&s)), "", "waiting: the box");
     let m = s.add_mine("ask-q", "Yes", None).unwrap();
-    assert_eq!(ended(state(&s)), "Sending your answer…", "no second answer can be typed");
+    assert_eq!(ended(state(&s)), "Waiting for the PC to take your answer…", "no second answer can be typed");
     s.sent("ask-q", &m, true);
     s.apply_receipt(&receipt("ask-q", &m, "delivered"));
+    assert_eq!(ended(state(&s)), "Waiting for the PC to take your answer…");
+    s.apply_reply(&reply("ask-q", &m, "done", "Got it.", 1, 1), None);
     assert_eq!(ended(state(&s)), "You've answered this. Start a new chat to say more.");
     // an answer that fails for good: the question waits again and the box comes back
     let mut t = Store::default();
@@ -892,4 +907,43 @@ fn a_deleted_chat_is_not_asked_again_for_a_missing_part() {
     assert_eq!(s.stalled(t).len(), 1);
     s.delete(&c, now());
     assert!(s.stalled(t).is_empty(), "its Undo is still showing");
+}
+
+#[test]
+fn a_notification_reply_too_long_to_send_waits_whole_in_the_chat() {
+    let (mut s, mine, _) = store();
+    let long = format!("{} 👋 \"quoted\"", "word ".repeat(700));
+    assert!(room(&long) < 0);
+    let n = s.get(&mine).unwrap().lines.len();
+    let (_, msg, too_long) = s.answer(&mine, &long, now()).unwrap();
+    assert_eq!((msg, too_long), (None, true), "nothing goes, nothing is cut");
+    assert_eq!(s.get(&mine).unwrap().lines.len(), n);
+    assert_eq!(s.get(&mine).unwrap().draft, long.trim(), "the whole text waits in its box");
+    // what was already typed there stays, first
+    s.set_draft(&mine, "already typed");
+    s.answer(&mine, &long, now());
+    assert_eq!(s.get(&mine).unwrap().draft, format!("already typed\n\n{}", long.trim()));
+    // a question that no longer waits takes nothing, long or not
+    s.apply_note(&note("ask-l", "l1", "ask", &[], "?", 1, 1), None);
+    let m = s.add_mine("ask-l", "Yes", None).unwrap();
+    s.apply_reply(&reply("ask-l", &m, "done", "Got it.", 1, 1), None);
+    assert!(!s.answer("ask-l", &long, now()).unwrap().2);
+    assert_eq!(s.get("ask-l").unwrap().draft, "");
+}
+
+#[test]
+fn a_question_that_no_longer_waits_shows_no_draft_on_its_row() {
+    let mut s = Store::default();
+    s.apply_note(&note("ask-d", "n1", "ask", &["Yes"], "Ship it?", 1, 1), None).unwrap();
+    s.set_draft("ask-d", "half an\n answer");
+    let line = |s: &Store, t: i64| draft_line(s.get("ask-d").unwrap(), t);
+    assert_eq!(line(&s, now()), "half an answer");
+    let m = s.add_mine("ask-d", "Yes", None).unwrap();
+    assert_eq!(line(&s, now()), "", "answered from the notification: no box, no draft");
+    s.apply_reply(&reply("ask-d", &m, "failed", "I couldn't get the photo you sent. Send it again.", 1, 1), None);
+    assert_eq!(line(&s, now()), "half an answer", "the question waits again: so does the draft");
+    assert_eq!(line(&s, now() + ASK_FOR + 1), "", "expired");
+    let (mut t, c, _) = store();
+    t.set_draft(&c, "  my  own ");
+    assert_eq!(draft_line(t.get(&c).unwrap(), now()), "my own", "a chat of mine always shows it");
 }

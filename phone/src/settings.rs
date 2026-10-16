@@ -98,6 +98,15 @@ pub fn received(env: &mut JNIEnv, ctx: &JObject, m: &str, at: i64) -> Result<()>
     crate::widget::update_all(env, ctx)
 }
 
+/// A yes/no kept in the settings ("1" or unset).
+pub fn flag(env: &mut JNIEnv, ctx: &JObject, key: &str) -> Result<bool> {
+    Ok(get(env, ctx, key)?.as_deref() == Some("1"))
+}
+
+pub fn set_flag(env: &mut JNIEnv, ctx: &JObject, key: &str, on: bool) -> Result<()> {
+    put(env, ctx, &[(key, if on { "1" } else { "" })], &[])
+}
+
 /// Whether the home screen's one-time hint (drag Null to change the mode) has played.
 pub fn hinted(env: &mut JNIEnv, ctx: &JObject) -> Result<bool> {
     Ok(get(env, ctx, "faceHint")?.is_some())

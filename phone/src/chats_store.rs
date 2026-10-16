@@ -275,15 +275,22 @@ impl Store {
 
     /// Answers a chat from its notification (Reply's words or a question's choice): my message, and the chat read.
     /// Nothing for a chat that is gone or deleted (its Undo still showing); nothing added to a question answered or
-    /// closed meanwhile. Returns the chat as it was, and my message's id when it was added.
-    pub fn answer(&mut self, chat: &str, text: &str, now: i64) -> Option<(Chat, Option<String>)> {
+    /// closed meanwhile. Too long to send (room): nothing goes, nothing is cut; the words wait in the chat's text box
+    /// (after anything already typed there) to be shortened. Returns the chat as it was, my message's id when it was
+    /// added, and whether it was too long.
+    pub fn answer(&mut self, chat: &str, text: &str, now: i64) -> Option<(Chat, Option<String>, bool)> {
         let c = self.get(chat).filter(|c| c.deleted == 0)?.clone();
         let open = c.kind.is_empty() || (c.kind == "ask" && ask_state(&c, now) == "waiting");
+        if open && room(text) < 0 {
+            let d = &mut self.get_mut(chat)?.draft;
+            *d = if d.trim().is_empty() { text.trim().into() } else { format!("{}\n\n{}", d.trim_end(), text.trim()) };
+            return Some((c, None, true));
+        }
         let msg = if open { self.add_mine(chat, text, None) } else { None };
         if msg.is_some() {
             self.mark_read(chat); // answered from the notification: nothing new left in it
         }
-        Some((c, msg))
+        Some((c, msg, false))
     }
 
     /// The PC's reply. Safe to apply twice (the phone replays what it missed). Returns (chat, name, text) when it is

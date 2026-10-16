@@ -14,7 +14,7 @@ use std::{
 mod store;
 #[path = "chats_text.rs"]
 mod text;
-pub use text::{blocks, brief, composed, copy_text, has_link, inline};
+pub use text::{blocks, brief, composed, copy_text, has_link, inline, only_link};
 #[cfg(test)]
 use text::Block;
 
@@ -340,16 +340,17 @@ pub fn label(c: &Chat) -> String {
     }
 }
 
-/// An agent's question: "waiting" for my answer, "sending" (my answer is on its way: not yet taken by the PC),
-/// "answered" or "expired" (unanswered after ASK_FOR); "" for any other chat. A message of mine answers it unless it
-/// failed for good or the PC turned it away as failed (a photo it couldn't get: the question still waits).
+/// An agent's question: "waiting" for my answer, "sending" (my answer is on its way: the PC hasn't taken it yet),
+/// "answered" (the PC took it: its reply to my answer is done) or "expired" (unanswered after ASK_FOR, or the PC
+/// turned my answer away as "missed": nothing waits for it any more); "" for any other chat. A message of mine answers
+/// it unless it failed for good or the PC failed it (a photo it couldn't get: the question still waits). Only the PC's
+/// reply counts: a "delivered" receipt comes before the PC has checked the answer.
 pub fn ask_state(c: &Chat, now: i64) -> &'static str {
-    let failed = |id: &str| c.lines.iter().any(|l| !l.me && l.id == id && l.state == "failed");
-    let answers = || c.lines.iter().filter(|l| l.me && unsent(l, now) != "failed" && !failed(&l.id));
-    // taken: the PC said so (a receipt, working, its reply), or "sent" a minute ago (a PC without receipts)
-    let taken = |l: &Line| !l.seen.is_empty() || !matches!(l.state.as_str(), "sending" | "not_sent" | "sent") || now - l.since > 60_000;
+    let reply = |id: &str| c.lines.iter().find(|l| !l.me && l.id == id).map_or("", |l| l.state.as_str());
+    let answers = || c.lines.iter().filter(|l| l.me && unsent(l, now) != "failed" && reply(&l.id) != "failed");
     match c.kind.as_str() {
-        "ask" if answers().any(|l| unsent(l, now) == "" && taken(l)) => "answered",
+        "ask" if answers().any(|l| reply(&l.id) == "done") => "answered",
+        "ask" if answers().any(|l| reply(&l.id) == "missed") => "expired",
         "ask" if answers().next().is_some() => "sending",
         "ask" if now - c.asked > ASK_FOR => "expired",
         "ask" => "waiting",
@@ -361,10 +362,20 @@ pub fn ask_state(c: &Chat, now: i64) -> &'static str {
 /// its way nothing more can be typed; if it fails for good the question waits again and the box comes back.
 pub fn ended(ask: &str) -> &'static str {
     match ask {
-        "sending" => "Sending your answer…",
+        "sending" => "Waiting for the PC to take your answer…",
         "answered" => "You've answered this. Start a new chat to say more.",
         "expired" => "This question has expired.",
         _ => "",
+    }
+}
+
+/// What waits in a chat's text box, in one line for its row ("Photo" when only a photo is picked). A question that no
+/// longer waits has no box, so its draft isn't shown (it is kept: if the answer fails, the box and the draft come back).
+pub fn draft_line(c: &Chat, now: i64) -> String {
+    match (c.draft.trim(), &c.pick) {
+        _ if !c.kind.is_empty() && ask_state(c, now) != "waiting" => String::new(),
+        ("", Some(m)) => if m.video() { "Video" } else { "Photo" }.to_string(),
+        (t, _) => t.split_whitespace().collect::<Vec<_>>().join(" "),
     }
 }
 

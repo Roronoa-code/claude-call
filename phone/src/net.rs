@@ -76,7 +76,10 @@ pub fn listen(env: &mut JNIEnv, ctx: &JObject, topic: String, generation: u64) {
         }
     });
     while alive() {
-        let Ok(msg) = rx.recv_timeout(Duration::from_secs(1)) else { continue };
+        let got = rx.recv_timeout(Duration::from_secs(1));
+        // my chat messages that didn't go are tried again from here too (the home screen may never open)
+        crate::jx::ok(env, |env| crate::inbox::auto(env, ctx));
+        let Ok(msg) = got else { continue };
         let at = msg["time"].as_i64().unwrap_or(0) * 1000;
         let text = msg["message"].as_str().unwrap_or("").trim().to_string();
         let link = msg["click"].as_str().unwrap_or("").to_string();
