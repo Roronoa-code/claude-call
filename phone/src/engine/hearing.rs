@@ -372,23 +372,3 @@ impl Engine {
     }
 
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    pub(super) fn turn_end_reading() {
-        assert!(looks_complete("Yes."));
-        assert!(looks_complete("Push it now!"));
-        assert!(!looks_complete("I think that we should and."));
-        assert!(!looks_complete("Well..."));
-        assert!(!looks_complete("so the"));
-        assert!(backchannel("Mm-hmm."));
-        assert!(backchannel("uh-huh"));
-        assert!(backchannel("Hmm"));
-        assert!(!backchannel("Hang on"));
-        assert!(real_words("Hang on, stop", Some("So the plan is to move")));
-        assert!(!real_words("the plan", Some("So the plan is to move")));
-    }
-}

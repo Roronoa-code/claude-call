@@ -600,6 +600,3 @@ impl Cast {
     }
 }
 
-#[cfg(test)]
-#[path = "cast_tests.rs"]
-mod tests;

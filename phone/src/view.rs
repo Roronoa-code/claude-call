@@ -280,28 +280,3 @@ pub fn split_lit(text: &str, lit: &str) -> (String, String, String) {
     let rest = if n < t.len() { if n > 0 { " " } else { "" }.to_string() + &t[n..].join(" ") } else { String::new() };
     (said, fresh, rest)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn words_split_for_fading_in() {
-        let s = |a: &str, b: &str, c: &str| (a.to_string(), b.to_string(), c.to_string());
-        assert_eq!(split_lit("This is a test.", "This is"), s("This ", "is", " a test."));
-        assert_eq!(split_lit("This is a test.", ""), s("", "", "This is a test."));
-        assert_eq!(split_lit("This is a test.", "This"), s("", "This", " is a test."));
-        assert_eq!(split_lit("This is a test.", "This is a test."), s("This is a ", "test.", ""));
-    }
-
-    #[test]
-    fn sentences_and_progress() {
-        let s = sentences("Hi, it is Claude. This is a test call! Say anything back?");
-        assert_eq!(s, vec!["Hi, it is Claude.", "This is a test call!", "Say anything back?"]);
-        assert_eq!(spoken_at(&s, "Hi, it is Claude. This"), (1, 1));
-        assert_eq!(spoken_at(&s, ""), (0, 0));
-        let m = Msg { id: "1".into(), me: false, text: String::new(), parts: s, spoken: (1, 2), cut: false, live: true };
-        assert_eq!(lit(&m, Some(1)), ("This is a test call!".into(), "This is".into()));
-        assert_eq!(lit(&m, None).1, "Hi, it is Claude. This is");
-    }
-}

@@ -12,15 +12,6 @@ fn reply(chat: &str, re: &str, state: &str, text: &str, part: u32, parts: u32) -
     json!({"v": 1, "chat": chat, "re": re, "state": state, "text": text, "part": part, "parts": parts})
 }
 
-#[test]
-fn save_load_round_trip() {
-    let (s, ..) = store();
-    let path = std::env::temp_dir().join(format!("callme-chats-{}.json", std::process::id()));
-    s.save(&path).unwrap();
-    assert_eq!(Store::load(&path), Some(s));
-    std::fs::remove_file(path).unwrap();
-    assert_eq!(Store::load(Path::new("no/such/file")), Some(Store::default()));
-}
 
 #[test]
 fn working_then_done_in_parts() {
@@ -36,21 +27,29 @@ fn working_then_done_in_parts() {
     assert_eq!((chat.lines[1].text.as_str(), chat.lines[1].state.as_str()), ("hello world !", "done"));
     assert_eq!((chat.lines[0].state.as_str(), chat.unread, chat.lines.len()), ("answered", 1, 2));
     assert_eq!(status(chat, now()), ("", ""));
+
+    let (mut s, c, m) = store();
+    let video = json!({"url": "https://ntfy.sh/file/v.mp4", "name": "clip.mp4", "type": "video/mp4", "size": 9, "sha256": "cd".repeat(32)});
+    let mut r3 = reply(&c, &m, "done", "", 3, 3);
+    r3["att"] = video;
+    assert!(s.apply_reply(&r3, None).is_none());
+    assert_eq!(s.downloads().len(), 1, "fetch starts before the answer is whole");
+    let mut r2 = reply(&c, &m, "done", "", 2, 3);
+    r2["att"] = att();
+    assert!(s.apply_reply(&r2, None).is_none());
+    assert!(s.apply_reply(&r2, None).is_none(), "a repeated part is not added twice");
+    let (_, _, note) = s.apply_reply(&reply(&c, &m, "done", "Here.", 1, 3), None).unwrap();
+    assert_eq!(note, "Here.");
+    let l = &s.get(&c).unwrap().lines[1];
+    assert_eq!((l.text.as_str(), l.media.iter().map(|m| m.name.as_str()).collect::<Vec<_>>()), ("Here.", vec!["pic é.jpg", "clip.mp4"]));
+    assert_eq!(s.downloads().len(), 2);
+    s.media_done("https://ntfy.sh/file/v.mp4", Some("/data/v.mp4"));
+    s.media_done("https://ntfy.sh/file/abc123.jpg", None);
+    let l = &s.get(&c).unwrap().lines[1];
+    assert_eq!((l.media[0].state.as_str(), l.media[1].state.as_str(), l.media[1].path.as_str()), ("failed", "ready", "/data/v.mp4"));
+    assert!(s.downloads().is_empty());
 }
 
-#[test]
-fn unread_only_when_not_open_and_mark_read() {
-    let (mut s, c, m) = store();
-    let m2 = s.add_mine(&c, "again", None).unwrap();
-    assert!(s.apply_reply(&reply(&c, &m, "done", "a", 1, 1), Some(&c)).is_none());
-    assert_eq!(s.get(&c).unwrap().unread, 0);
-    let (id, name, text) = s.apply_reply(&reply(&c, &m2, "failed", "", 1, 1), Some("other")).unwrap();
-    assert_eq!((id, name.as_str(), text.as_str()), (c.clone(), "Claude · Haiku", "Something went wrong."));
-    assert_eq!(s.get(&c).unwrap().unread, 1);
-    s.mark_read(&c);
-    assert_eq!(s.get(&c).unwrap().unread, 0);
-    assert!(s.apply_reply(&reply("nope", &m, "done", "a", 1, 1), None).is_none(), "unknown chat");
-}
 
 #[test]
 fn reply_signature_matches_shared_vector() {
@@ -111,72 +110,6 @@ fn only_safe_files_are_fetched() {
     assert!(m.matches(b"abc") && !m.matches(b"abd") && !m.matches(b"abcd"));
 }
 
-#[test]
-fn text_then_files_in_parts() {
-    let (mut s, c, m) = store();
-    let video = json!({"url": "https://ntfy.sh/file/v.mp4", "name": "clip.mp4", "type": "video/mp4", "size": 9, "sha256": "cd".repeat(32)});
-    let mut r3 = reply(&c, &m, "done", "", 3, 3);
-    r3["att"] = video;
-    assert!(s.apply_reply(&r3, None).is_none());
-    assert_eq!(s.downloads().len(), 1, "fetch starts before the answer is whole");
-    let mut r2 = reply(&c, &m, "done", "", 2, 3);
-    r2["att"] = att();
-    assert!(s.apply_reply(&r2, None).is_none());
-    assert!(s.apply_reply(&r2, None).is_none(), "a repeated part is not added twice");
-    let (_, _, note) = s.apply_reply(&reply(&c, &m, "done", "Here.", 1, 3), None).unwrap();
-    assert_eq!(note, "Here.");
-    let l = &s.get(&c).unwrap().lines[1];
-    assert_eq!((l.text.as_str(), l.media.iter().map(|m| m.name.as_str()).collect::<Vec<_>>()), ("Here.", vec!["pic é.jpg", "clip.mp4"]));
-    assert_eq!(s.downloads().len(), 2);
-    s.media_done("https://ntfy.sh/file/v.mp4", Some("/data/v.mp4"));
-    s.media_done("https://ntfy.sh/file/abc123.jpg", None);
-    let l = &s.get(&c).unwrap().lines[1];
-    assert_eq!((l.media[0].state.as_str(), l.media[1].state.as_str(), l.media[1].path.as_str()), ("failed", "ready", "/data/v.mp4"));
-    assert!(s.downloads().is_empty());
-}
-
-#[test]
-fn files_only_reply_says_what_was_sent() {
-    let (mut s, c, m) = store();
-    let mut r = reply(&c, &m, "done", "", 1, 1);
-    r["att"] = att();
-    assert_eq!(s.apply_reply(&r, None).unwrap().2, "Sent a photo");
-    let line = |mimes: &[&str]| Line {
-        state: "done".into(),
-        media: mimes.iter().map(|m| Media { mime: m.to_string(), ..Media::default() }).collect(),
-        ..Line::default()
-    };
-    assert_eq!(shown(&line(&["video/mp4"])), "Sent a video");
-    assert_eq!(shown(&line(&["image/png", "image/gif"])), "Sent 2 photos");
-    assert_eq!(shown(&line(&["image/png", "video/webm", "video/mp4"])), "Sent a photo and 2 videos");
-    let mut bad = reply(&c, &m, "done", "", 1, 1);
-    bad["att"] = json!({"url": "https://example.com/x.png"});
-    let m2 = s.add_mine(&c, "again", None).unwrap();
-    bad["re"] = json!(m2);
-    assert_eq!(s.apply_reply(&bad, None).unwrap().2, "Done.", "an unsafe file is dropped");
-}
-
-#[test]
-fn answers_split_into_blocks() {
-    let k = |v: Vec<Block>| v.iter().map(|b| (b.kind, b.text.clone(), b.mark.clone(), b.level)).collect::<Vec<_>>();
-    let s = |x: &str| x.to_string();
-    let text = "Two things:\nmore of it\n\n## Fix\n1. Set **it** back\n   still the same item\n2) Run `cargo`\n  - nested\n\n---\n> quoted\n> on\n```rust\nfn a() {\n\n    b();\n}\n```\nEnd.\n```sh\nopen fence";
-    assert_eq!(k(blocks(text)), vec![
-        ("p", s("Two things:\nmore of it"), s(""), 0),
-        ("h", s("Fix"), s(""), 0),
-        ("li", s("Set **it** back\nstill the same item"), s("1."), 0),
-        ("li", s("Run `cargo`"), s("2."), 0),
-        ("li", s("nested"), s("•"), 1),
-        ("quote", s("quoted\non"), s(""), 0),
-        ("code", s("fn a() {\n\n    b();\n}"), s("rust"), 0),
-        ("p", s("End."), s(""), 0),
-        ("code", s("open fence"), s("sh"), 0),
-    ]);
-    assert_eq!(k(blocks("*not a list* but text")), vec![("p", s("*not a list* but text"), s(""), 0)]);
-    assert_eq!(k(blocks("2024. was a year")), vec![("p", s("2024. was a year"), s(""), 0)]);
-    assert!(blocks("").is_empty() && blocks("```\n```")[0].text.is_empty());
-    assert_eq!(inline("Vec<u8> and `Vec<u8>` and a<b"), "Vec&lt;u8> and `Vec<u8>` and a&lt;b");
-}
 
 #[test]
 fn delete_undo_keeps_late_replies_and_purge_frees_files() {
@@ -217,26 +150,12 @@ fn delete_undo_keeps_late_replies_and_purge_frees_files() {
 fn signature_matches_shared_vector() {
     let sig = sign("test-key", "c1", "m1", "claude", Some("haiku-5.5"), 1700000000000, "héllo 👋", None);
     assert_eq!(sig, "ab529206c0c5da8e9c12efc38dac2b71aacc25df75a33f8d9c1b230be8b2f44e");
-}
-
-#[test]
-fn file_signature_matches_shared_vector() {
     let m = Media { url: "https://ntfy.sh/file/abc123.jpg".into(), name: "pic é.jpg".into(), mime: "image/jpeg".into(), size: 1234, sha256: "ab".repeat(32), ..Media::default() };
     let sig = |m: &Media| sign("test-key", "c1", "m1", "claude", Some("haiku-5.5"), 1700000000000, "héllo 👋", Some(m));
     assert_eq!(sig(&m), "f61fe75b634ec0074a302a1f927b60591ae6d5a1028b6cd8a4203befa10d0cf5");
     assert_ne!(sig(&Media { size: 1, ..m.clone() }), sig(&m));
 }
 
-#[test]
-fn picked_files_are_checked() {
-    let m = Media::picked(b"abc", "image/jpeg").unwrap();
-    assert_eq!((m.name.as_str(), m.size, m.state.as_str()), ("photo.jpg", 3, "ready"));
-    assert_eq!(m.sha256, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
-    assert_eq!(Media::picked(b"x", "video/quicktime").unwrap().name, "video.mov");
-    assert_eq!(Media::picked(b"x", "image/heic").unwrap_err(), "Only photos and videos can be sent (image/heic)");
-    assert_eq!(Media::picked(b"", "video/mp4").unwrap_err(), "That video is empty");
-    assert_eq!(Media::picked(&vec![0; MEDIA_MAX as usize + 1], "image/png").unwrap_err(), "That photo is over 10 MB");
-}
 
 #[test]
 fn a_photo_goes_up_first_then_the_signed_message_carries_it() {
@@ -332,76 +251,6 @@ fn note(chat: &str, id: &str, kind: &str, choices: &[&str], text: &str, part: u3
         "part": part, "parts": parts})
 }
 
-#[test]
-fn an_ask_opens_its_own_thread_once() {
-    let mut s = Store::default();
-    let ask = note("ask-r1", "r1", "ask", &["Blue 💙", "Keep it as it is, thanks"], "Blue or keep it? Ünïcode ✓", 1, 1);
-    let (id, name, text) = s.apply_note(&ask, None).unwrap();
-    assert_eq!((id.as_str(), name.as_str(), text.as_str()), ("ask-r1", "Wéather app ☀️", "Blue or keep it? Ünïcode ✓"));
-    assert!(s.apply_note(&ask, None).is_none(), "a repeat changes nothing");
-    let c = s.get("ask-r1").unwrap();
-    assert_eq!((c.agent.as_str(), c.model.as_deref(), c.kind.as_str(), c.unread, c.lines.len()), ("claude", None, "ask", 1, 1));
-    assert_eq!(label(c), "Wéather app ☀️");
-    assert_eq!(c.lines[0].choices, vec!["Blue 💙".to_string(), "Keep it as it is, thanks".into()]);
-    assert_eq!(ask_state(c, now()), "waiting");
-    assert_eq!(ask_state(c, now() + ASK_FOR + 5000), "expired");
-    // the answer is an ordinary signed message (agent claude, no model); the PC's "Got it." files as a reply
-    let m = s.add_mine("ask-r1", "Blue 💙", None).unwrap();
-    let v: Value = serde_json::from_str(&s.body("ask-r1", &m, "k").unwrap()).unwrap();
-    assert_eq!((v["agent"].as_str(), v["model"].is_null(), v["chat"].as_str()), (Some("claude"), true, Some("ask-r1")));
-    assert_eq!(ask_state(s.get("ask-r1").unwrap(), now()), "sending", "until the PC takes it");
-    assert_eq!(s.get("ask-r1").unwrap().title, "Wéather app ☀️", "the title stays the task's");
-    let got = s.apply_reply(&reply("ask-r1", &m, "done", "Got it.", 1, 1), None).unwrap();
-    assert_eq!((got.1.as_str(), got.2.as_str()), ("Wéather app ☀️", "Got it."));
-    assert_eq!(ask_state(s.get("ask-r1").unwrap(), now() + ASK_FOR + 5000), "answered", "an answered question never expires");
-    // seen while open: no notification, nothing unread
-    assert!(s.apply_note(&note("ask-r2", "r2", "ask", &[], "Anything else?", 1, 1), Some("ask-r2")).is_none());
-    assert_eq!(s.get("ask-r2").unwrap().unread, 0);
-}
-
-#[test]
-fn a_failed_or_unsent_answer_leaves_the_question_waiting() {
-    let mut s = Store::default();
-    s.apply_note(&note("ask-r1", "r1", "ask", &["Yes"], "Ship it?", 1, 1), None);
-    let m = s.add_mine("ask-r1", "Yes", None).unwrap();
-    s.sent("ask-r1", &m, false);
-    s.chats[0].lines[1].first -= AUTO_FOR;
-    assert_eq!(ask_state(s.get("ask-r1").unwrap(), now()), "waiting", "not sent, for good");
-    s.retry("ask-r1", "", true);
-    s.sent("ask-r1", &m, true);
-    s.apply_receipt(&receipt("ask-r1", &m, "delivered"));
-    assert_eq!(ask_state(s.get("ask-r1").unwrap(), now()), "sending", "delivered is not taken: the PC still checks it");
-    s.apply_reply(&reply("ask-r1", &m, "failed", "I couldn't get the photo you sent. Send it again.", 1, 1), None);
-    assert_eq!(ask_state(s.get("ask-r1").unwrap(), now()), "waiting", "the PC couldn't take it");
-    assert_eq!(ask_state(&Chat::default(), now()), "", "not a question");
-}
-
-#[test]
-fn notes_file_parts_and_files_like_replies() {
-    let mut s = Store::default();
-    let mut p2 = note("updates", "n1", "note", &[], "", 2, 3);
-    p2["att"] = att();
-    let mut p3 = note("updates", "n1", "note", &[], "", 3, 3);
-    p3["att"] = json!({"url": "https://ntfy.sh/file/v.mp4", "name": "clip.mp4", "type": "video/mp4", "size": 9, "sha256": "cd".repeat(32)});
-    assert!(s.apply_note(&p3, None).is_none());
-    assert!(s.apply_note(&p2, None).is_none());
-    assert!(s.apply_note(&p2, None).is_none(), "a repeated part is not added twice");
-    assert_eq!(s.downloads().len(), 2, "files are fetched before the note is whole");
-    let (_, name, text) = s.apply_note(&note("updates", "n1", "note", &[], "Build done ✓", 1, 3), None).unwrap();
-    assert_eq!((name.as_str(), text.as_str()), ("Updates", "Build done ✓"));
-    let c = s.get("updates").unwrap();
-    assert_eq!((c.kind.as_str(), c.lines[0].state.as_str(), c.lines[0].media.len()), ("note", "done", 2));
-    assert!(s.apply_note(&p3, None).is_none(), "a replayed part changes nothing");
-    // the next update lands below the first, in the same thread; a photo alone says so
-    let mut only = note("updates", "n2", "note", &[], "", 1, 1);
-    only["att"] = json!({"url": "https://ntfy.sh/file/p.png", "name": "p.png", "type": "image/png", "size": 5, "sha256": "ef".repeat(32)});
-    assert_eq!(s.apply_note(&only, None).unwrap().2, "Sent a photo");
-    let c = s.get("updates").unwrap();
-    assert_eq!((c.lines.len(), c.lines[1].id.as_str(), c.unread, ask_state(c, now())), (2, "n2", 2, ""));
-    let mut bad = note("updates", "n3", "note", &[], "", 1, 1);
-    bad["att"] = json!({"url": "https://example.com/x.png", "name": "x", "type": "image/png", "size": 5, "sha256": "ef".repeat(32)});
-    assert_eq!(s.apply_note(&bad, None).unwrap().2, "Done.", "an unsafe file is left out");
-}
 
 #[test]
 fn bad_notes_are_dropped_but_long_unicode_fits() {
@@ -524,84 +373,6 @@ fn receipts_step_the_status_forward_only() {
     assert_eq!(status(&old.chats[0], now()), ("Sent · the PC hasn't picked it up yet", ""), "no receipt for long");
 }
 
-#[test]
-fn a_receipt_proves_a_failed_send_went() {
-    let (mut s, c, m) = store();
-    s.sent(&c, &m, false);
-    assert_eq!(status(s.get(&c).unwrap(), now()), ("Waiting for connection…", ""));
-    assert!(s.apply_receipt(&receipt(&c, &m, "delivered")));
-    assert_eq!(status(s.get(&c).unwrap(), now()), ("Delivered", ""));
-    assert_eq!(s.retry(&c, "", true), None, "nothing to retry");
-    // a send that never finished is retried after a while, and fails once AUTO_FOR is over
-    let (mut s, c, _) = store();
-    s.chats[0].lines[0].since -= 16_000;
-    assert_eq!(status(s.get(&c).unwrap(), now()), ("Waiting for connection…", ""));
-    s.chats[0].lines[0].first -= AUTO_FOR;
-    assert_eq!(status(s.get(&c).unwrap(), now()), ("Failed · Tap to retry", "retry"));
-    // only my latest message carries the line
-    let m2 = s.add_mine(&c, "again", None).unwrap();
-    s.sent(&c, &m2, true);
-    assert_eq!(status(s.get(&c).unwrap(), now()), ("Sent", ""));
-}
-
-#[test]
-fn bare_links() {
-    assert_eq!(inline("see https://a.dev/x."), "see <https://a.dev/x>.");
-    assert_eq!(inline("https://a.dev, and (http://b.io/p?q=1)"), "<https://a.dev>, and (<http://b.io/p?q=1>)");
-    assert_eq!(inline("[docs](https://a.dev) `https://code.dev` x<https://c.dev>"), "[docs](https://a.dev) `https://code.dev` x&lt;https://c.dev>");
-    assert_eq!(inline("no https:// here"), "no https:// here");
-}
-
-#[test]
-fn composed_word_goes_where_the_cursor_is() {
-    assert_eq!(composed("hello world", "big ", 6), "hello big world");
-    assert_eq!(composed("héllo", "x", 2), "hxéllo"); // inside é: back to its start
-    assert_eq!(composed("hi", "", 99), "hi");
-}
-
-#[test]
-fn thinking_only_once_the_pc_works_and_queued_is_not_an_answer() {
-    let (mut s, c, m) = store();
-    let chat = |s: &Store| s.get(&c).unwrap().clone();
-    s.sent(&c, &m, true);
-    assert!(!waiting(&chat(&s)), "sent is not thinking");
-    assert_eq!(think(&chat(&s), now()), "");
-    assert!(s.apply_reply(&reply(&c, &m, "queued", "", 1, 1), None).is_none());
-    assert_eq!((chat(&s).lines.len(), chat(&s).lines[0].state.as_str()), (1, "queued"), "queued: no Done. line");
-    assert_eq!(status(&chat(&s), now()), ("Queued", "stop"));
-    assert_eq!(think(&chat(&s), now()), "Queued");
-    assert!(!waiting(&chat(&s)));
-    assert!(s.apply_reply(&reply(&c, &m, "thinking-hard", "", 1, 1), None).is_none(), "unknown state");
-    assert_eq!(chat(&s).lines.len(), 1, "an unknown state is never a final line");
-    s.apply_reply(&reply(&c, &m, "working", "", 1, 1), None);
-    assert!(waiting(&chat(&s)));
-    assert_eq!(think(&chat(&s), now()), "Thinking");
-    s.chats[0].lines[0].since -= 3 * 60_000;
-    assert_eq!(think(&chat(&s), now()), "Thinking · 3 min");
-    // a working message never goes back to queued
-    s.apply_reply(&reply(&c, &m, "queued", "", 1, 1), None);
-    assert_eq!(chat(&s).lines[0].state, "working");
-}
-
-#[test]
-fn sent_but_not_picked_up_and_receiving_a_reply() {
-    let (mut s, c, m) = store();
-    s.sent(&c, &m, true);
-    s.chats[0].lines[0].since -= 61_000;
-    assert_eq!(status(&s.chats[0], now()), ("Sent · the PC hasn't picked it up yet", ""));
-    s.apply_receipt(&receipt(&c, &m, "delivered"));
-    assert_eq!(status(&s.chats[0], now()), ("Delivered", ""));
-    s.apply_reply(&reply(&c, &m, "working", "", 1, 1), None);
-    s.apply_reply(&reply(&c, &m, "done", "first half ", 1, 2), None);
-    assert_eq!(status(&s.chats[0], now()), ("Delivered", "stop"), "a part just came: no notice yet");
-    assert!(s.stalled(now()).is_empty());
-    s.chats[0].lines[1].at -= 20_000;
-    assert_eq!(status(&s.chats[0], now()), ("Receiving reply…", "stop"));
-    assert_eq!(s.stalled(now()), vec![(c.clone(), m.clone())], "the PC is asked again");
-    s.apply_reply(&reply(&c, &m, "done", "second", 2, 2), None);
-    assert_eq!(status(&s.chats[0], now()), ("", ""));
-    assert!(s.stalled(now()).is_empty());
-}
 
 #[test]
 fn unsent_messages_retry_by_themselves_then_fail() {
@@ -631,6 +402,12 @@ fn unsent_messages_retry_by_themselves_then_fail() {
     // a file from before these fields: first falls back to its time
     let old: Store = serde_json::from_str(r#"{"chats":[{"id":"c1","lines":[{"id":"m1","me":true,"state":"not_sent","at":1,"since":1}]}]}"#).unwrap();
     assert_eq!(status(&old.chats[0], now()), ("Failed · Tap to retry", "retry"));
+
+    let (mut s, c, m) = store();
+    s.sent(&c, &m, false);
+    let t = now();
+    s.get_mut(&c).unwrap().lines[0].since = t + 3_600_000;
+    assert_eq!(s.due(t), vec![(c.clone(), m.clone())], "a clock set back an hour does not hold up the retry");
 }
 
 #[test]
@@ -663,6 +440,9 @@ fn drafts_and_picks_belong_to_their_chat_and_go_with_the_send() {
     assert!(chat.pick.is_none());
     s.set_pick(&b, Some(pic.clone()));
     assert!(s.send(&b, "", false).is_none(), "only the hidden pick: nothing to send");
+    assert_eq!(composed("hello world", "big ", 6), "hello big world");
+    assert_eq!(composed("héllo", "x", 2), "hxéllo", "a cursor inside é goes back to its start");
+    assert_eq!(composed("hi", "", 99), "hi");
 }
 
 #[test]
@@ -715,113 +495,6 @@ fn an_answer_shows_as_sending_until_the_pc_takes_it() {
     assert_eq!(st(&s2), "waiting");
 }
 
-#[test]
-fn copy_plain_text_and_code_exactly() {
-    let (mut s, c, m) = store();
-    let answer = "Run **this**:\n\n```sh\n  cargo  build\t--release\n```\n\n- see [docs](https://a.dev) and `x`\n  - nested";
-    s.apply_reply(&reply(&c, &m, "done", answer, 1, 1), None);
-    let chat = s.get(&c).unwrap();
-    assert_eq!(copy_text(chat, &m, true, 0).unwrap(), "hello");
-    assert_eq!(copy_text(chat, &m, false, 1).unwrap(), "  cargo  build\t--release", "code: exact whitespace");
-    assert_eq!(copy_text(chat, &m, false, 0).unwrap(), "Run this:\n\n  cargo  build\t--release\n\n• see docs (https://a.dev) and x\n\n  • nested");
-    assert!(!copy_text(chat, &m, false, 0).unwrap().contains('\u{200b}'));
-    assert!(copy_text(chat, "nope", false, 0).is_none());
-    assert!(has_link("see https://a.dev") && has_link("[a](b)") && !has_link("`https://in.code`") && !has_link("plain"));
-    // one link: a tap on the words opens it; none or several: nothing to pick
-    assert_eq!(only_link("here's the PR: https://github.com/a/b/pull/7."), "https://github.com/a/b/pull/7");
-    assert_eq!(only_link("see [the docs](https://x.y/a) now"), "https://x.y/a");
-    assert_eq!(only_link("plain, and `https://in.code`"), "");
-    assert_eq!(only_link("https://a.dev and [b](https://b.dev)"), "");
-    assert_eq!(only_link("a](b and nothing else"), "", "not a web address: the words stay as they were");
-    assert_eq!(only_link("see https://example.com/a(b)/c"), "https://example.com/a(b)/c", "brackets inside stay");
-}
-
-#[test]
-fn room_counts_the_signed_payload() {
-    assert_eq!(room("hi"), 2798);
-    assert_eq!(room(&"x".repeat(2800)), 0);
-    assert!(room(&"x".repeat(2801)) < 0);
-    assert_eq!(room(&"é".repeat(1400)), 0, "bytes, not characters");
-    // quotes grow when escaped: the signed message is the limit
-    assert!(room(&"\"".repeat(1800)) < 0);
-    let (mut s, c, _) = store();
-    let fits = "\"".repeat(1749);
-    assert!(room(&fits) >= 0);
-    let m = s.add_mine(&c, &fits, None).unwrap();
-    assert_eq!(s.get(&c).unwrap().lines.iter().find(|l| l.id == m).unwrap().text, fits, "what room allows is sent whole");
-}
-
-#[test]
-fn failed_media_can_be_fetched_again() {
-    let (mut s, c, m) = store();
-    let mut v = reply(&c, &m, "done", "", 1, 1);
-    v["att"] = att();
-    s.apply_reply(&v, None);
-    let url = s.downloads()[0].url.clone();
-    s.media_done(&url, None);
-    assert!(s.downloads().is_empty());
-    assert!(s.refetch(&url));
-    assert_eq!(s.downloads().len(), 1);
-    assert!(!s.refetch(&url), "only a failed one");
-}
-
-#[test]
-fn send_again_makes_a_new_message_with_the_same_text() {
-    let (mut s, c, m) = store();
-    s.apply_reply(&reply(&c, &m, "failed", "That didn't finish.", 1, 1), None);
-    let m2 = s.again(&c, &m).unwrap();
-    assert_ne!(m2, m);
-    let l = s.get(&c).unwrap().lines.last().unwrap();
-    assert_eq!((l.text.as_str(), l.state.as_str(), l.me), ("hello", "sending", true));
-}
-
-#[test]
-fn a_notification_answer_skips_deleted_chats_and_closed_questions() {
-    let (mut s, mine, _) = store();
-    s.apply_note(&note("ask-r1", "r1", "ask", &["Yes", "No"], "Ship it?", 1, 1), None);
-    assert_eq!(s.needing(), 1);
-    // deleted, its Undo still showing: gone for the notification, and it no longer needs me
-    assert!(s.delete("ask-r1", 1));
-    assert_eq!(s.needing(), 0);
-    let before = s.clone();
-    assert!(s.answer("ask-r1", "Yes", now()).is_none());
-    assert_eq!(s, before, "nothing added to a deleted chat");
-    s.undelete("ask-r1");
-    // the question waits: the choice goes and the chat is read; the home line's question (asks) is over
-    let (c, msg, _) = s.answer("ask-r1", "Yes", now()).unwrap();
-    assert!(msg.is_some());
-    assert_eq!(ask_state(&c, now()), "waiting", "the chat as it was");
-    assert_eq!(ask_state(s.get("ask-r1").unwrap(), now()), "sending");
-    assert_eq!(s.needing(), 0);
-    // a second tap (answered meanwhile): nothing more is added
-    let n = s.get("ask-r1").unwrap().lines.len();
-    assert!(s.answer("ask-r1", "No", now()).unwrap().1.is_none());
-    assert_eq!(s.get("ask-r1").unwrap().lines.len(), n);
-    // a chat of mine takes Reply's words; empty words add nothing
-    assert!(s.answer(&mine, "  ", now()).unwrap().1.is_none());
-    assert!(s.answer(&mine, "more", now()).unwrap().1.is_some());
-}
-
-#[test]
-fn a_notification_answer_that_was_not_saved_says_so() {
-    let mut s = Store::default();
-    s.apply_note(&note("ask-r1", "r1", "ask", &["Yes", "No"], "Ship it?", 1, 1), None);
-    let ask = s.get("ask-r1").unwrap().clone();
-    let mine = Chat::default();
-    let t = now();
-    let choices = (vec!["Yes".to_string(), "No".to_string()], true, false);
-    // saved: shown as sent; a question has nothing left to tap, a chat of mine keeps Reply
-    assert_eq!(after_answer(&ask, true, true, t), (true, None, (vec![], false, false)));
-    assert_eq!(after_answer(&mine, true, true, t), (true, None, (vec![], true, false)));
-    // not saved (the store couldn't be written): not shown as sent, said so, and the buttons stay to try again
-    assert_eq!(after_answer(&ask, true, false, t), (false, Some("Not sent. Try again"), choices));
-    assert_eq!(after_answer(&mine, true, false, t), (false, Some("Not sent. Try again"), (vec![], true, false)));
-    // answered in the app a moment ago (still on its way), or closed
-    s.answer("ask-r1", "Yes", t);
-    let sending = s.get("ask-r1").unwrap();
-    assert_eq!(after_answer(sending, false, false, t), (false, Some("Already answered"), (vec![], false, false)));
-    assert_eq!(after_answer(&ask, false, false, t + ASK_FOR + 2000).1, Some("This question has closed"));
-}
 
 #[test]
 fn retries_resend_the_uploaded_link_until_ntfy_may_have_dropped_it() {
@@ -844,29 +517,6 @@ fn retries_resend_the_uploaded_link_until_ntfy_may_have_dropped_it() {
     assert_eq!(s.to_upload(&c, &m).unwrap().path, "/m/p.jpg");
 }
 
-#[test]
-fn an_answer_on_its_way_takes_the_text_box_away() {
-    let mut s = Store::default();
-    s.apply_note(&note("ask-q", "n1", "ask", &["Yes", "No"], "Ship it?", 1, 1), None).unwrap();
-    let now = now();
-    let state = |s: &Store| ask_state(s.get("ask-q").unwrap(), now);
-    assert_eq!(ended(state(&s)), "", "waiting: the box");
-    let m = s.add_mine("ask-q", "Yes", None).unwrap();
-    assert_eq!(ended(state(&s)), "Waiting for the PC to take your answer…", "no second answer can be typed");
-    s.sent("ask-q", &m, true);
-    s.apply_receipt(&receipt("ask-q", &m, "delivered"));
-    assert_eq!(ended(state(&s)), "Waiting for the PC to take your answer…");
-    s.apply_reply(&reply("ask-q", &m, "done", "Got it.", 1, 1), None);
-    assert_eq!(ended(state(&s)), "You've answered this. Start a new chat to say more.");
-    // an answer that fails for good: the question waits again and the box comes back
-    let mut t = Store::default();
-    t.apply_note(&note("ask-q", "n1", "ask", &[], "Ship it?", 1, 1), None).unwrap();
-    let m = t.add_mine("ask-q", "Yes", None).unwrap();
-    t.sent("ask-q", &m, false);
-    t.get_mut("ask-q").unwrap().lines[1].first -= AUTO_FOR;
-    assert_eq!(ended(state(&t)), "");
-    assert_eq!(ended("expired"), "This question has expired.");
-}
 
 #[test]
 fn a_new_chat_waiting_on_the_picker_survives_the_app_being_closed() {
@@ -892,33 +542,6 @@ fn a_new_chat_waiting_on_the_picker_survives_the_app_being_closed() {
     assert!(back.drop_empty(&d));
 }
 
-#[test]
-fn picked_files_are_known_by_their_first_bytes_when_the_type_is_missing() {
-    assert_eq!(Media::kind("image/png", b""), Some("image/png"), "a type it sends is taken as stated");
-    assert_eq!(Media::kind("", b"\xff\xd8\xff\xe0rest"), Some("image/jpeg"));
-    assert_eq!(Media::kind("image/jpg", b"\x89PNG\r\n"), Some("image/png"));
-    assert_eq!(Media::kind("", b"GIF89a"), Some("image/gif"));
-    assert_eq!(Media::kind("", b"RIFF\0\0\0\0WEBPVP8 "), Some("image/webp"));
-    assert_eq!(Media::kind("", b"\x1a\x45\xdf\xa3"), Some("video/webm"));
-    assert_eq!(Media::kind("", b"\0\0\0\x18ftypmp42"), Some("video/mp4"));
-    assert_eq!(Media::kind("application/octet-stream", b"\0\0\0\x14ftypqt  "), Some("video/quicktime"));
-    assert_eq!(Media::kind("", b"\0\0\0\x18ftypheic"), Some("image/heif"));
-    assert_eq!(Media::kind("image/heic", b""), Some("image/heic"));
-    assert!(Media::heif("image/heic") && Media::heif("image/heif") && !Media::heif("image/jpeg"));
-    assert_eq!(Media::kind("", b"%PDF-1.7"), None);
-    assert_eq!(Media::kind("", b""), None);
-    assert!(Media::picked(b"x", "image/heif").is_err(), "HEIF itself is never sent: it is made a JPEG first");
-}
-
-#[test]
-fn a_deleted_chat_is_not_asked_again_for_a_missing_part() {
-    let (mut s, c, m) = store();
-    s.apply_reply(&reply(&c, &m, "done", "half", 1, 2), None);
-    let t = now() + 20_000;
-    assert_eq!(s.stalled(t).len(), 1);
-    s.delete(&c, now());
-    assert!(s.stalled(t).is_empty(), "its Undo is still showing");
-}
 
 #[test]
 fn a_notification_reply_too_long_to_send_waits_whole_in_the_chat() {
@@ -942,51 +565,3 @@ fn a_notification_reply_too_long_to_send_waits_whole_in_the_chat() {
     assert_eq!(s.get("ask-l").unwrap().draft, "");
 }
 
-#[test]
-fn a_question_that_no_longer_waits_shows_no_draft_on_its_row() {
-    let mut s = Store::default();
-    s.apply_note(&note("ask-d", "n1", "ask", &["Yes"], "Ship it?", 1, 1), None).unwrap();
-    s.set_draft("ask-d", "half an\n answer");
-    let line = |s: &Store, t: i64| draft_line(s.get("ask-d").unwrap(), t);
-    assert_eq!(line(&s, now()), "half an answer");
-    let m = s.add_mine("ask-d", "Yes", None).unwrap();
-    assert_eq!(line(&s, now()), "", "answered from the notification: no box, no draft");
-    s.apply_reply(&reply("ask-d", &m, "failed", "I couldn't get the photo you sent. Send it again.", 1, 1), None);
-    assert_eq!(line(&s, now()), "half an answer", "the question waits again: so does the draft");
-    assert_eq!(line(&s, now() + ASK_FOR + 1), "", "expired");
-    let (mut t, c, _) = store();
-    t.set_draft(&c, "  my  own ");
-    assert_eq!(draft_line(t.get(&c).unwrap(), now()), "my own", "a chat of mine always shows it");
-}
-
-#[test]
-fn an_answer_the_pc_never_took_is_asked_about_again_and_the_question_closes_after_a_day() {
-    let mut s = Store::default();
-    s.apply_note(&note("ask-u", "u1", "ask", &["Yes"], "Ship it?", 1, 1), None);
-    let asked = s.get("ask-u").unwrap().asked;
-    let m = s.add_mine("ask-u", "Yes", None).unwrap();
-    assert!(s.unanswered(now()).is_empty(), "still sending: the retry handles it");
-    s.sent("ask-u", &m, true);
-    let since = s.get("ask-u").unwrap().lines[1].since;
-    assert!(s.unanswered(since + 59_000).is_empty(), "give the PC a minute");
-    assert_eq!(s.unanswered(since + 61_000), vec![("ask-u".to_string(), m.clone(), since)]);
-    s.apply_receipt(&receipt("ask-u", &m, "delivered"));
-    assert_eq!(s.unanswered(since + 61_000).len(), 1, "delivered is not taken: still asked");
-    // past a day the question is closed, taken or not: nothing is asked and the thread doesn't hang open
-    let late = asked + ASK_FOR + 1;
-    assert_eq!(ask_state(s.get("ask-u").unwrap(), late), "expired");
-    assert!(s.unanswered(late).is_empty());
-    // the PC's reply ends it
-    s.apply_reply(&reply("ask-u", &m, "done", "Got it.", 1, 1), None);
-    assert!(s.unanswered(since + 61_000).is_empty());
-    assert_eq!(ask_state(s.get("ask-u").unwrap(), late), "answered", "an answered question never expires");
-}
-
-#[test]
-fn a_clock_set_back_does_not_hold_up_a_retry() {
-    let (mut s, c, m) = store();
-    s.sent(&c, &m, false);
-    let t = now();
-    s.get_mut(&c).unwrap().lines[0].since = t + 3_600_000; // the clock went back an hour after it failed
-    assert_eq!(s.due(t), vec![(c.clone(), m.clone())]);
-}

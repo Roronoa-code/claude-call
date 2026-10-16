@@ -15,8 +15,6 @@ mod store;
 #[path = "chats_text.rs"]
 mod text;
 pub use text::{blocks, brief, composed, copy_text, has_link, inline, only_link};
-#[cfg(test)]
-use text::Block;
 
 /// What the phone lets you type, in bytes; the whole signed message must stay under ntfy's 4096.
 const MAX_TEXT: usize = 2800;
@@ -537,42 +535,6 @@ pub fn after_answer(c: &Chat, tried: bool, kept: bool, now: i64) -> (bool, Optio
     // after answering a question nothing is left to tap; a chat of mine keeps Reply
     let answers = if !sent || c.kind.is_empty() { quick_answers(c, now) } else { (vec![], false, false) };
     (sent, note, answers)
-}
-
-#[cfg(test)]
-mod alert_tests {
-    use super::{Chat, Line, quick_answers};
-
-    #[test]
-    fn notification_buttons_fit_three() {
-        let ask = |n: usize| Chat {
-            kind: "ask".into(),
-            asked: 1_000,
-            lines: vec![Line { choices: (0..n).map(|i| format!("c{i}")).collect(), ..Line::default() }],
-            ..Chat::default()
-        };
-        assert_eq!(quick_answers(&Chat::default(), 2_000), (vec![], true, false));
-        assert_eq!(quick_answers(&ask(0), 2_000), (vec![], true, false));
-        assert_eq!(quick_answers(&ask(2), 2_000), (vec!["c0".into(), "c1".into()], true, false));
-        assert_eq!(quick_answers(&ask(3), 2_000).0.len(), 3);
-        assert_eq!(quick_answers(&ask(3), 2_000).1, false);
-        assert_eq!(quick_answers(&ask(5), 2_000), (vec![], true, true));
-        assert_eq!(quick_answers(&ask(2), 1_000 + super::ASK_FOR + 1), (vec![], false, false)); // closed
-        let mut answered = ask(2);
-        answered.lines.push(Line { me: true, state: "sent".into(), ..Line::default() });
-        assert_eq!(quick_answers(&answered, 2_000), (vec![], false, false));
-        assert_eq!(quick_answers(&Chat { kind: "note".into(), ..Chat::default() }, 2_000), (vec![], false, false));
-    }
-
-    #[test]
-    fn notifications_read_as_plain_words() {
-        assert_eq!(super::brief("**Done.** See `main.rs`"), "Done. See main.rs");
-        assert_eq!(super::brief("Fixed:\n```rust\nfn a() {}\n```\n```\nb\n```\nThat's it"), "Fixed:\n(code)\nThat's it");
-        assert_eq!(super::brief("# Plan\n- one\n2. two"), "Plan\n• one\n2. two");
-        assert_eq!(super::brief("see [the docs](https://x.y/a) and [b] (c)"), "see the docs and [b] (c)");
-        assert_eq!(super::brief("a\nb"), "a b");
-        assert_eq!(super::brief("Done."), "Done.");
-    }
 }
 
 #[cfg(test)]

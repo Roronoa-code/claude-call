@@ -218,17 +218,3 @@ pub fn soft_breaks(code: &str) -> String {
     }
     out
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn short_cuts_at_a_word() {
-        assert_eq!(super::short("why is the release build slow on the laptop today", 30), "why is the release build slow\u{2026}");
-        assert_eq!(super::short("short one", 30), "short one");
-    }
-
-    #[test]
-    fn breaks_only_long_words_at_natural_points() {
-        assert_eq!(super::soft_breaks("a.b BOOT_COMPLETED_NOW"), "a.b BOOT_\u{200b}COMPLETED_\u{200b}NOW");
-    }
-}

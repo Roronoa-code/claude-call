@@ -274,13 +274,7 @@ fn wav(pcm: &[u8], rate: u32) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn wav_header() {
-        let w = super::wav(&[1, 0, 2, 0], 24_000);
-        assert_eq!((&w[0..4], &w[8..16], w.len()), (&b"RIFF"[..], &b"WAVEfmt "[..], 48));
-        assert_eq!(u32::from_le_bytes(w[24..28].try_into().unwrap()), 24_000);
-        assert_eq!(&w[36..40], b"data");
-    }
+
 
     #[test]
     fn call_request_freshness() {

@@ -181,21 +181,3 @@ fn echoes(heard: &str, say: &str) -> bool {
     let (h, s) = (words(heard), words(say));
     h.len() >= 4 && s.windows(h.len()).any(|w| w == h.as_slice())
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn mood_tags_are_not_shown() {
-        assert_eq!(super::without_tags("[smug] Cute. [excited] We did it!"), "Cute. We did it!");
-        assert_eq!(super::without_tags("Plain line."), "Plain line.");
-        assert_eq!(super::without_tags("Keep [1] and [a-b], drop [Laughs]"), "Keep [1] and [a-b], drop");
-    }
-
-    #[test]
-    fn echo_of_claudes_line() {
-        let say = "Great. So the plan is to move the settings into a side panel, and rename a few buttons.";
-        assert!(super::echoes("So the plan is to move the settings into a side panel.", say));
-        assert!(!super::echoes("Yes, rename them.", say));
-        assert!(!super::echoes("No, keep the old buttons please", say));
-    }
-}

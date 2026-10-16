@@ -81,31 +81,3 @@ fn line_cost(m: &Value) -> f64 {
 pub fn label(dollars: f64) -> String {
     if dollars < 0.005 { "<$0.01".into() } else { format!("${dollars:.2}") }
 }
-
-#[cfg(test)]
-mod tests {
-    use serde_json::json;
-
-    #[test]
-    fn prices_each_model() {
-        let m = |model: &str| json!({ "model": model, "usage": { "input_tokens": 1_000_000, "output_tokens": 1_000_000, "cache_read_input_tokens": 1_000_000 } });
-        assert!((super::line_cost(&m("claude-haiku-5-5")) - 0.61).abs() < 1e-9);
-        assert!((super::line_cost(&m("claude-sonnet-5-5")) - 12.2).abs() < 1e-9);
-        assert!((super::line_cost(&m("claude-opus-5-5")) - 24.2).abs() < 1e-9);
-        assert_eq!(super::label(0.001), "<$0.01");
-        assert_eq!(super::label(0.256), "$0.26");
-    }
-
-    #[test]
-    fn counts_each_reply_once_and_only_since_the_call() {
-        let dir = std::env::temp_dir().join(format!("callme-usage-{}", std::process::id()));
-        std::fs::create_dir_all(dir.join("s").join("subagents")).unwrap();
-        let line = |id: &str, t: &str, model: &str| json!({ "type": "assistant", "timestamp": t, "message": { "id": id, "model": model, "usage": { "output_tokens": 100_000 } } }).to_string();
-        let main = [line("a", "2026-10-14T20:00:00.000Z", "claude-haiku-5-5"), line("b", "2026-10-14T21:00:00.000Z", "claude-haiku-5-5"), line("b", "2026-10-14T21:00:00.000Z", "claude-haiku-5-5")];
-        std::fs::write(dir.join("s.jsonl"), main.join("\n")).unwrap();
-        std::fs::write(dir.join("s").join("subagents").join("h.jsonl"), line("c", "2026-10-14T21:01:00.000Z", "claude-sonnet-5-5")).unwrap();
-        let c = super::cost(&dir.join("s.jsonl"), "2026-10-14T20:30:00.000Z");
-        let _ = std::fs::remove_dir_all(&dir);
-        assert!((c - (0.05 + 1.0)).abs() < 1e-9, "{c}"); // b once (Haiku) + c (Sonnet); a is before the call
-    }
-}

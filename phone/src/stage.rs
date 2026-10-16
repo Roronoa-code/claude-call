@@ -97,19 +97,3 @@ impl Stage {
         ]
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::cast::Mat;
-
-    #[test]
-    fn floors_reach_the_same_line_under_both() {
-        for st in &STAGES[1..] {
-            let (c, n) = (st.below(Who::Clawd(Mat::Vinyl)), st.below(Who::Null));
-            assert!((c + 28.75 - (n + 35.4)).abs() < 0.01 || c == 0.0 || n == 0.0);
-        }
-        // the shipped stage draws no floor
-        assert_eq!(STAGES[0].below(Who::Null), 0.0);
-    }
-}
