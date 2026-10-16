@@ -18,7 +18,28 @@ export component CallScreen inherits Window {
     // ---- From Rust (call_data.slint) ----
     property <length> sat: Call.sat;
     property <length> sab: Call.sab;
-    property <length> kb: Call.kb;
+    // The keyboard over the window, frame by frame as it slides (from Slint's own virtual-keyboard properties).
+    // Put away (Back, or swiped down) while typing: the reply field closes with it.
+    property <length> kb: self.virtual-keyboard-size.height > 0 ? max(0px, self.height - self.virtual-keyboard-position.y) : 0px;
+    property <bool> had-kb;
+    changed kb => {
+        Call.kb = self.kb;
+        if (self.kb > 0) {
+            self.had-kb = true;
+        } else if (self.had-kb) {
+            self.had-kb = false;
+            self.typing = false;
+        }
+    }
+    // Back closes what is open over the call first (screen.rs back): the Transcript, the reply field, More.
+    callback overlays(bool);
+    property <bool> overlaid: Call.caps-open || Call.typing || Call.more;
+    changed overlaid => { root.overlays(self.overlaid); }
+    public function close-overlays() {
+        Call.caps-open = false;
+        Call.typing = false;
+        Call.more = false;
+    }
     property <string> phase: Call.phase;
     property <string> agent: Call.agent;
     property <string> time-text: Call.time-text;

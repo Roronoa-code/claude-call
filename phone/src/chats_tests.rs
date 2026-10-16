@@ -530,3 +530,18 @@ fn a_receipt_proves_a_failed_send_went() {
     s.sent(&c, &m2, true);
     assert_eq!(status(s.get(&c).unwrap(), now()), ("Sent", ""));
 }
+
+#[test]
+fn bare_links() {
+    assert_eq!(inline("see https://a.dev/x."), "see <https://a.dev/x>.");
+    assert_eq!(inline("https://a.dev, and (http://b.io/p?q=1)"), "<https://a.dev>, and (<http://b.io/p?q=1>)");
+    assert_eq!(inline("[docs](https://a.dev) `https://code.dev` x<https://c.dev>"), "[docs](https://a.dev) `https://code.dev` x&lt;https://c.dev>");
+    assert_eq!(inline("no https:// here"), "no https:// here");
+}
+
+#[test]
+fn composed_word_goes_where_the_cursor_is() {
+    assert_eq!(composed("hello world", "big ", 6), "hello big world");
+    assert_eq!(composed("héllo", "x", 2), "hxéllo"); // inside é: back to its start
+    assert_eq!(composed("hi", "", 99), "hi");
+}

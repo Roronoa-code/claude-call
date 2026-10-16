@@ -9,15 +9,58 @@ import { Figure } from "still.slint";
 
 export component Sheet inherits Rectangle {
     in property <bool> open;
+    in property <length> kb; // the keyboard over the window (home.slint)
     // Three clocks of the same 460 ms, each on its own curve. Closing takes the same path back but starts at once
     // (a curve played backwards starts slowly and felt laggy): the sheet drops on the opening's own curve, and the
     // character heads home at once and hops up a little before it drops into its card.
-    property <float> k: open ? 1 : 0; // the sheet
-    property <float> kx: open ? 1 : 0; // the character, across
-    property <float> ky: open ? 1 : 0; // ...and up and down: a small hop away before it settles
-    animate k { duration: 460ms; easing: cubic-bezier(0.22, 0.9, 0.24, 1); }
-    animate kx { duration: 460ms; easing: cubic-bezier(0.3, 0.7, 0.3, 1); }
-    animate ky { duration: 460ms; easing: open ? cubic-bezier(0.5, -0.45, 0.4, 1) : cubic-bezier(0.3, 0.6, 0.4, 1.3); }
+    // A pull down (or the system back swipe) holds all three at the finger: the sheet follows it exactly and the
+    // character goes that far along its way home. Let go: the clocks run on from there, closing on their own curves,
+    // or springing back on the sheet's.
+    property <float> k; // the sheet
+    property <float> kx; // the character, across
+    property <float> ky; // ...and up and down: a small hop away before it settles
+    property <bool> held; // a finger holds it (no clock runs)
+    property <bool> back; // springing back after a pull that didn't close
+    animate k { duration: held ? 0ms : 460ms; easing: cubic-bezier(0.22, 0.9, 0.24, 1); }
+    animate kx { duration: held ? 0ms : 460ms; easing: back ? cubic-bezier(0.22, 0.9, 0.24, 1) : cubic-bezier(0.3, 0.7, 0.3, 1); }
+    animate ky {
+        duration: held ? 0ms : 460ms;
+        easing: back ? cubic-bezier(0.22, 0.9, 0.24, 1) : open ? cubic-bezier(0.5, -0.45, 0.4, 1) : cubic-bezier(0.3, 0.6, 0.4, 1.3);
+    }
+    function to(v: float) {
+        self.k = v;
+        self.kx = v;
+        self.ky = v;
+    }
+    init => {
+        self.held = true; // already open: there at once
+        self.to(open ? 1 : 0);
+        self.held = false;
+    }
+    changed open => {
+        self.held = false;
+        self.back = false;
+        self.to(open ? 1 : 0);
+    }
+    // The sheet pulled down by p (from where the pull began).
+    public function pull(p: length) {
+        if (!open) { return; }
+        self.held = true;
+        Chats.held = true;
+        self.to(max(0, 1 - p / self.height));
+    }
+    // Let go: closed (Chats.back runs the close on from here), or back up.
+    public function let-go(close: bool) {
+        Chats.held = false;
+        if (!self.held) { return; }
+        self.held = false;
+        if (close && open) {
+            Chats.back();
+        } else {
+            self.back = true;
+            self.to(1);
+        }
+    }
     out property <bool> shown: open || k > 0.001;
     out property <bool> full: k > 0.999 && kx > 0.999 && ky > 0.999;
     // The character travels when it has a card to leave and a place to land (not a new chat, nor Updates).
@@ -30,7 +73,7 @@ export component Sheet inherits Rectangle {
     property <length> tx: 4px;
     property <length> tw: 76px;
     property <length> th: 74px;
-    property <length> ty: self.height - max(Home.kb, Home.sab) - 10px - 84px + 2px;
+    property <length> ty: self.height - max(root.kb, Home.sab) - 10px - 84px + 2px;
     // The list behind dims to about 55% (home.slint also sinks it back to 0.94).
     Rectangle { background: #000000; opacity: 0.45 * k; }
     // The chat: an opaque sheet from the bottom, a soft shadow above it.

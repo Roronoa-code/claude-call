@@ -223,8 +223,12 @@ pub fn call_began(env: &mut JNIEnv, act: &JObject) -> Result<()> {
     }
 }
 
-/// Back: a live call keeps going (the notification brings it back); before answering, Back closes it.
+/// Back: closes the Transcript, the reply field or More first; then a live call keeps going (the notification brings
+/// it back); before answering, Back closes it.
 pub fn call_back(env: &mut JNIEnv, act: &JObject) -> Result<()> {
+    if crate::screen::back() {
+        return Ok(());
+    }
     let answered = SCREEN.lock().unwrap().as_ref().is_some_and(|s| s.2);
     if answered {
         env.call_method(act, "moveTaskToBack", "(Z)Z", &[JValue::Bool(1)])?;

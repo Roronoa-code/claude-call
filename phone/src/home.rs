@@ -34,6 +34,20 @@ fn refresh(ui: &HomeScreen, fake: usize, first: bool) {
     }
 }
 
+thread_local! {
+    static HOME: std::cell::RefCell<slint::Weak<HomeScreen>> = Default::default();
+}
+
+/// The system back swipe, from Android's main thread (Shell.kt, shell.rs): phase 0 starts, 1 moves (progress 0..1),
+/// 2 is Back, 3 cancels. Handled by the home screen (home.slint back-gesture).
+pub fn back_gesture(phase: i32, progress: f32) {
+    let _ = slint::invoke_from_event_loop(move || {
+        if let Some(ui) = HOME.with(|h| h.borrow().upgrade()) {
+            ui.invoke_back_gesture(phase, progress);
+        }
+    });
+}
+
 /// The most device px per logical px the pair is drawn at: past it (a very dense screen) the GPU's work grows with
 /// the square for detail the eye can't see; the picture is scaled up to its place instead.
 const PAIR_SF: f32 = 2.75;
@@ -94,11 +108,15 @@ pub fn run(app: android_activity::AndroidApp) {
             service::restart(env, act)
         });
     });
-    let editing = Rc::new(Cell::new(false));
-    home.on_editing({
-        let editing = editing.clone();
-        move |on| editing.set(on)
+    // Back with nothing open: to the background, warm, as the launcher leaves it (finish() made the next open cold).
+    home.on_leave(|| {
+        android::with(|env, act| env.call_method(act, "moveTaskToBack", "(Z)Z", &[jni::objects::JValue::Bool(1)]).map(drop));
     });
+    // Something Back can close is open: the system back swipe comes here as it moves (Shell.kt backable).
+    home.on_backable(|on| {
+        android::with(|env, act| env.call_method(act, "backable", "(Z)V", &[jni::objects::JValue::Bool(on as u8)]).map(drop));
+    });
+    HOME.with(|h| *h.borrow_mut() = ui.as_weak());
     refresh(&ui, fake, true);
     let mut chats = crate::inbox::wire(&ui);
 
@@ -225,14 +243,7 @@ pub fn run(app: android_activity::AndroidApp) {
                 requested_at.set(None);
                 home.set_requested(false);
             }
-            // The channel sheet (and a chat's field) rides above the keyboard. An open chat always follows it: back from
-            // another app, Android raises the keyboard again for the field without it taking focus anew.
-            let chats = ui.global::<Chats>();
-            let in_chat = chats.get_open() && !chats.get_current().is_empty();
-            let kb = if editing.get() || in_chat { android::keyboard() } else { 0.0 };
-            if home.get_kb() != kb {
-                home.set_kb(kb);
-            }
+            let kb = home.get_kb(); // the keyboard, followed by home.slint itself
             let now = start.elapsed().as_secs_f32();
             let mut p = pair.borrow_mut();
             // The one-time hint: a chevron by Null's feet and two small nudges of his face, then never again.

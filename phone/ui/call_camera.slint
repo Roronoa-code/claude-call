@@ -98,7 +98,7 @@ export component CameraLook inherits Rectangle {
     }
 
     // ---- The bottom row: Mute, Quiet, Hang up, Transcript, More; More raises Speaker, Type and In 5 min above it ----
-    property <bool> more;
+    property <bool> more <=> Call.more;
     property <length> step: Math.min(84px, (W - 32px) / 4.6);
     property <length> mid: root.by + 32px; // the row's icons and Hang up share this middle line
     for i in 4: Glyph {

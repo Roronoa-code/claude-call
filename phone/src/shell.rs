@@ -40,3 +40,10 @@ pub extern "system" fn Java_fyi_mani_callme_Native_homeShown(_env: JNIEnv, _clas
 pub extern "system" fn Java_fyi_mani_callme_Native_stop(_env: JNIEnv, _class: JClass) {
     net::stop();
 }
+
+/// The system back swipe on the home screen (Shell.kt MainActivity, while something is open): phase 0 started, 1
+/// moved (progress 0..1), 2 Back, 3 cancelled.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_fyi_mani_callme_Native_back(_env: JNIEnv, _class: JClass, phase: jni::sys::jint, progress: jni::sys::jfloat) {
+    crate::home::back_gesture(phase, progress);
+}

@@ -11,7 +11,10 @@ export global Home {
     in property <bool> can-pin: true;
     in property <length> sat: 36px;
     in property <length> sab: 24px;
-    in property <length> kb; // the keyboard's height while the channel is being edited
+    // How far the keyboard reaches over the window, frame by frame as it slides (home.slint, from Slint's own
+    // virtual-keyboard properties); 0 unless a field is in use or a chat is open.
+    in-out property <length> kb;
+    in-out property <bool> typing; // a field (the channel's, a chat's) has the cursor
     in-out property <string> caller: "claude"; // who the Call button asks for: claude or codex (tap Clawd or Null)
     in property <bool> requested; // a call was just asked for; it rings within a minute or so
     in-out property <bool> widgets; // the Widget sheet is open
@@ -22,7 +25,8 @@ export global Home {
     callback call(string);
     callback pin(bool);
     callback save-topic(string);
-    callback editing(bool);
+    callback leave(); // Back with nothing open: the app goes to the background, warm (not closed)
+    callback backable(bool); // something is open that Back closes: the system back swipe previews it (Shell.kt)
     in-out property <bool> more; // the ••• sheet is open
     in property <int> shown: -1; // while Null is dragged: the mode his face shows (an index into modes), else -1
     in property <bool> hint; // the one-time hint that Null can be dragged

@@ -550,6 +550,7 @@ impl Tracker {
         if let Some(id) = OPEN_CHAT.lock().unwrap().take() {
             c.set_picker(false);
             c.set_open(true);
+            c.set_from_id("".into()); // opened from a notification: no card to carry a character from or back to
             c.set_current(id.into());
         }
         let (version, open, current) = (VERSION.load(Relaxed), c.get_open(), c.get_current().to_string());
@@ -660,15 +661,31 @@ pub fn wire(ui: &HomeScreen) -> Tracker {
             }
         }
     });
-    c.on_send({
+    c.on_send_composed({
         let ui = ui.as_weak();
-        move |text| {
+        move |draft, word, at| {
             let Some(ui) = ui.upgrade() else { return };
-            let chat = ui.global::<Chats>().get_current().to_string();
+            let text = chats::composed(&draft, &word, at.max(0) as usize);
+            let text = text.trim();
             let media = attach::take();
-            android::with(|env, act| post(env, act, &chat, |s| s.add_mine(&chat, &text, media)));
+            if text.is_empty() && media.is_none() {
+                return;
+            }
+            let chat = ui.global::<Chats>().get_current().to_string();
+            android::with(|env, act| post(env, act, &chat, |s| s.add_mine(&chat, text, media)));
             show(&ui);
         }
+    });
+    c.on_open_link(|link| {
+        if link.starts_with("https://") || link.starts_with("http://") {
+            android::with(|env, act| {
+                let i = jx::view_intent(env, "android.intent.action.VIEW", &link)?;
+                jx::start_activity(env, act, &i)
+            });
+        }
+    });
+    c.on_tick(|| {
+        android::with(crate::ring::tick);
     });
     // A tapped answer to an agent's question: its text, as an ordinary message (what is picked stays picked).
     c.on_choose({

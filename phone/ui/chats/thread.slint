@@ -10,119 +10,184 @@ import { Log } from "log.slint";
 import { Composer } from "field.slint";
 
 export component ChatThread inherits Rectangle {
+    in property <length> kb; // the keyboard over the window, frame by frame as it slides (home.slint)
+    callback pulled(length); // pulled down this far: the sheet follows the finger (chats/open.slint)
+    callback let-go(bool); // ...and let go: true closes the chat
     background: Ink.bg;
-    property <length> bottom: self.height - max(Home.kb, Home.sab) - 10px;
+    property <length> bottom: self.height - max(root.kb, Home.sab) - 10px;
     // the character's room beside the field (a new chat's stands big in the middle until the first message)
     property <length> pal: Chats.readonly || Chats.empty ? 0px : 76px;
     animate pal { duration: 320ms; easing: T.out; }
-    log := Log {
-        y: Home.sat + 60px;
-        width: parent.width;
-        height: parent.height - self.y;
-        side: 14px;
-        pad-bottom: Chats.readonly ? Home.sab + 28px : root.height - field.y + 18px;
-        // my last message's receipt (Sending…, Sent, Delivered, Read), staying put while the PC thinks below it
-        if Chats.status != "": HorizontalLayout {
-            alignment: end;
-            padding-top: 6px;
-            Rectangle {
-                width: note.preferred-width;
-                height: 22px;
-                note := Text {
-                    text: Chats.status;
-                    font-size: 13px;
-                    color: Chats.action == "retry" ? #ec8a6f : Ink.muted;
-                    font-weight: Chats.action == "retry" ? 600 : 400;
-                    vertical-alignment: center;
+    // Pull down to close: on the header, or anywhere on the thread while it is at its top. With the keyboard up, a
+    // pull only puts it away (the field and the sheet never slide at once); the next one closes. Past 30% of the
+    // height, or a quick flick down, closes; less springs back. One light tick as it passes the point of closing.
+    property <bool> pulling;
+    property <bool> keys-only;
+    property <length> from-y;
+    property <length> last-y;
+    property <duration> last-t;
+    property <float> speed; // px per ms, downwards
+    property <bool> past;
+    function drag(dy: length) {
+        if (!root.pulling) {
+            root.pulling = true;
+            root.keys-only = root.kb > 0 || field.focused;
+            root.from-y = dy; // where Slint saw the swipe begin: the sheet moves from there, no jump
+            root.last-y = dy;
+            root.last-t = animation-tick();
+            root.speed = 0;
+            root.past = false;
+            if (root.keys-only) { field.blur(); }
+            return;
+        }
+        if (root.keys-only) { return; }
+        let t = animation-tick();
+        if (t - root.last-t >= 8ms) {
+            root.speed = (dy - root.last-y) / 1px / ((t - root.last-t) / 1ms);
+            root.last-y = dy;
+            root.last-t = t;
+        }
+        let p = max(0px, dy - root.from-y);
+        if (p > root.height * 0.3 && !root.past) { Chats.tick(); }
+        root.past = p > root.height * 0.3;
+        root.pulled(p);
+    }
+    function drop(dy: length) {
+        if (!root.pulling) { return; }
+        root.pulling = false;
+        if (root.keys-only) { return; }
+        let p = max(0px, dy - root.from-y);
+        let fresh = animation-tick() - root.last-t < 100ms; // a finger held still has no speed left
+        let v = fresh ? root.speed : 0;
+        root.let-go(p > 0px && (v > 0.9 || (p > root.height * 0.3 && v > -0.5)));
+    }
+    pull := SwipeGestureHandler {
+        handle-swipe-down: true;
+        enabled: log.content-y >= -0.5px && !Chats.viewing;
+        moved => { if (self.swiping) { root.drag(self.current-position.y - self.pressed-position.y); } }
+        swiped => { root.drop(self.current-position.y - self.pressed-position.y); }
+        cancelled => { root.drop(0px); }
+        log := Log {
+            y: Home.sat + 60px;
+            width: parent.width;
+            // The thread ends at the field's foot, so the keyboard is never inside it: Slint's own scroll limits
+            // (which leave out what the keyboard covers) then match ours; it runs on under the field and its fade.
+            height: Chats.readonly ? parent.height - self.y : field.y + field.height - self.y;
+            side: 14px;
+            pad-bottom: Chats.readonly ? Home.sab + 28px : field.height + 18px;
+            tapped => { field.blur(); } // a tap on the thread puts the keyboard away (what is typed stays)
+            // my last message's receipt (Sending…, Sent, Delivered, Read), staying put while the PC thinks below it
+            if Chats.status != "": HorizontalLayout {
+                alignment: end;
+                padding-top: 6px;
+                Rectangle {
+                    width: note.preferred-width;
+                    height: 22px;
+                    note := Text {
+                        text: Chats.status;
+                        font-size: 13px;
+                        color: Chats.action == "retry" ? #ec8a6f : Ink.muted;
+                        font-weight: Chats.action == "retry" ? 600 : 400;
+                        vertical-alignment: center;
+                    }
+                    TouchArea { enabled: Chats.action == "retry"; clicked => { Chats.retry(); } }
                 }
-                TouchArea { enabled: Chats.action == "retry"; clicked => { Chats.retry(); } }
+            }
+            if Chats.action == "stop": Rectangle {
+                property <float> k: 0;
+                init => { self.k = 1; }
+                animate k { duration: 420ms; easing: T.out; }
+                height: 46px;
+                opacity: k;
+                Shimmer { x: 6px; y: 22px + (1 - parent.k) * 6px; text: Chats.short + " is thinking"; font-size: 14.5px; base: #8a8c93; }
             }
         }
-        if Chats.action == "stop": Rectangle {
-            property <float> k: 0;
-            init => { self.k = 1; }
-            animate k { duration: 420ms; easing: T.out; }
-            height: 46px;
-            opacity: k;
-            Shimmer { x: 6px; y: 22px + (1 - parent.k) * 6px; text: Chats.short + " is thinking"; font-size: 14.5px; base: #8a8c93; }
-        }
-    }
-    // A new chat: its character big in the middle, inviting the first message.
-    VerticalLayout {
-        property <length> top: Home.sat + 60px;
-        property <length> room: field.y - 8px - self.top;
-        x: 24px;
-        width: parent.width - 48px;
-        y: self.top + max(0px, (self.room - self.preferred-height) / 2) - (Chats.empty ? 0px : 16px);
-        height: self.preferred-height;
-        alignment: start;
-        spacing: 4px;
-        opacity: Chats.empty ? 1 : 0;
-        visible: self.opacity > 0.01;
-        animate opacity, y { duration: 320ms; easing: T.out; }
-        Rectangle {
-            height: 170px;
-            Floor { x: (parent.width - 220px) / 2; y: 130px; width: 220px; height: 52px; }
-            Figure {
-                x: 0;
-                y: 0;
-                width: parent.width;
-                height: 158px;
-                face: Chats.face;
-                k: 0.7;
-                live: Chats.live;
-                source: Chats.big-live;
-                lw: Chats.big-w;
-                lh: Chats.big-h;
-                th: Chats.big-th;
-                TouchArea { enabled: Chats.empty; clicked => { Chats.poke(); } }
+        // A new chat: its character big in the middle, inviting the first message.
+        VerticalLayout {
+            property <length> top: Home.sat + 60px;
+            property <length> room: field.y - 8px - self.top;
+            x: 24px;
+            width: parent.width - 48px;
+            y: self.top + max(0px, (self.room - self.preferred-height) / 2) - (Chats.empty ? 0px : 16px);
+            height: self.preferred-height;
+            alignment: start;
+            spacing: 4px;
+            opacity: Chats.empty ? 1 : 0;
+            visible: self.opacity > 0.01;
+            animate opacity, y { duration: 320ms; easing: T.out; }
+            Rectangle {
+                height: 170px;
+                Floor { x: (parent.width - 220px) / 2; y: 130px; width: 220px; height: 52px; }
+                Figure {
+                    x: 0;
+                    y: 0;
+                    width: parent.width;
+                    height: 158px;
+                    face: Chats.face;
+                    k: 0.7;
+                    live: Chats.live;
+                    source: Chats.big-live;
+                    lw: Chats.big-w;
+                    lh: Chats.big-h;
+                    th: Chats.big-th;
+                    TouchArea { enabled: Chats.empty; clicked => { Chats.poke(); } }
+                }
             }
+            Rectangle { height: 14px; }
+            Text { text: "Say hi to " + Chats.short; font-size: 24px; font-weight: 700; color: Ink.text; horizontal-alignment: center; overflow: elide; }
+            Text { text: "Your message goes to the PC."; font-size: 15px; color: Ink.muted; horizontal-alignment: center; }
         }
-        Rectangle { height: 14px; }
-        Text { text: "Say hi to " + Chats.short; font-size: 24px; font-weight: 700; color: Ink.text; horizontal-alignment: center; overflow: elide; }
-        Text { text: "Your message goes to the PC."; font-size: 15px; color: Ink.muted; horizontal-alignment: center; }
     }
-    // The header: back, the name (centred) and where things stand.
-    Rectangle {
+    // The header: back, the name (centred) and where things stand. A pull down here closes the chat from anywhere
+    // in the thread.
+    SwipeGestureHandler {
         y: 0;
         height: Home.sat + 60px;
-        background: Ink.bg;
+        handle-swipe-down: !Chats.viewing;
+        moved => { if (self.swiping) { root.drag(self.current-position.y - self.pressed-position.y); } }
+        swiped => { root.drop(self.current-position.y - self.pressed-position.y); }
+        cancelled => { root.drop(0px); }
         Rectangle {
-            y: parent.height - 1px;
-            height: 1px;
-            background: Ink.hair;
-            opacity: log.scrolled && !Chats.empty ? 1 : 0;
-            animate opacity { duration: 200ms; }
-        }
-        Rectangle {
-            y: Home.sat;
-            height: 60px;
-            BackButton { }
-            Text {
-                property <bool> alone: Chats.title == "" && !Chats.waiting;
-                x: 60px;
-                y: alone ? 0px : 9px;
-                width: parent.width - 120px;
-                height: alone ? 60px : 22px;
-                text: Chats.name;
-                font-size: 17px;
-                font-weight: 650;
-                color: Ink.text;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-                overflow: elide;
+            y: 0;
+            height: Home.sat + 60px;
+            background: Ink.bg;
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                background: Ink.hair;
+                opacity: log.scrolled && !Chats.empty ? 1 : 0;
+                animate opacity { duration: 200ms; }
             }
-            Text {
-                x: 60px;
-                y: 31px;
-                width: parent.width - 120px;
-                height: 18px;
-                text: Chats.waiting ? "Thinking…" : Chats.title;
-                font-size: 13px;
-                color: Chats.waiting || Chats.ask == "waiting" ? Ink.warm : Ink.muted;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-                overflow: elide;
+            Rectangle {
+                y: Home.sat;
+                height: 60px;
+                BackButton { }
+                Text {
+                    property <bool> alone: Chats.title == "" && !Chats.waiting;
+                    x: 60px;
+                    y: alone ? 0px : 9px;
+                    width: parent.width - 120px;
+                    height: alone ? 60px : 22px;
+                    text: Chats.name;
+                    font-size: 17px;
+                    font-weight: 650;
+                    color: Ink.text;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+                Text {
+                    x: 60px;
+                    y: 31px;
+                    width: parent.width - 120px;
+                    height: 18px;
+                    text: Chats.waiting ? "Thinking…" : Chats.title;
+                    font-size: 13px;
+                    color: Chats.waiting || Chats.ask == "waiting" ? Ink.warm : Ink.muted;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
             }
         }
     }
@@ -167,6 +232,32 @@ export component ChatThread inherits Rectangle {
         x: 8px + root.pal;
         width: parent.width - 20px - root.pal;
         y: root.bottom - self.height;
+    }
+    // Scrolled up from the end: a round ↓ over the field's right end takes you back down (to the start of an answer
+    // that came in meanwhile, which also lights a warm dot on it).
+    if !Chats.readonly: Rectangle {
+        property <bool> show: log.far && !Chats.viewing;
+        x: parent.width - 12px - 48px;
+        y: field.y - 8px - 48px;
+        width: 48px;
+        height: 48px;
+        opacity: show ? 1 : 0;
+        visible: self.opacity > 0.01;
+        animate opacity { duration: 200ms; easing: T.out; }
+        Rectangle {
+            x: 6px;
+            y: 6px;
+            width: 36px;
+            height: 36px;
+            border-radius: 18px;
+            background: down.pressed ? #2e2e33 : Ink.raised;
+            border-width: 1px;
+            border-color: Ink.hair;
+            animate background { duration: 160ms; easing: T.out; }
+            Icon { d: "M12 5.5V18 M6 12.5l6 6l6 -6"; x: 8px; y: 8px; width: 20px; height: 20px; stroke: Ink.text2; stroke-width: 2px; }
+        }
+        if log.fresh: Rectangle { x: 33px; y: 7px; width: 9px; height: 9px; border-radius: 4.5px; background: Ink.warm; }
+        down := TouchArea { enabled: parent.show; clicked => { log.to-latest(); } }
     }
     Rectangle {
         property <float> k: Chats.viewing ? 1 : 0;

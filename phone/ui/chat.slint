@@ -94,11 +94,16 @@ export global Chats {
     in-out property <float> fk;
     in-out property <float> open-k; // the sheet, 0 (list) to 1 (chat)
     in-out property <bool> flying; // the character is on its way (its places on both screens stand empty)
+    in-out property <bool> held; // a finger (or the back swipe) holds the open chat partway down (chats/open.slint)
+    callback tick(); // a light tick under the finger
+    callback open-link(string); // a link tapped in the thread: the browser (http and https only)
     in-out property <bool> picker; // the new-chat picker
     in-out property <bool> want-focus; // put the cursor in the field once it is on screen
     callback open-chat(string);
     callback new-chat(string, string); // agent, model
-    callback send(string); // with what is picked, if anything
+    // What is in the field, the keyboard's word still in progress and where it stands (a byte offset into the
+    // field's text): sent as one message, with what is picked, if anything (inbox.rs).
+    callback send-composed(string, string, int);
     callback clear-field(); // empties the keyboard's side of the field (Shell.kt clearField)
     callback stop(); // a bare "stop", never with what is picked
     callback retry();
@@ -122,7 +127,7 @@ export global Chats {
         if (viewing) { viewing = false; return true; }
         if (picker) { picker = false; return true; }
         if (revealed != "") { revealed = ""; return true; }
-        if (current != "") { current = ""; Home.editing(false); return true; }
+        if (current != "") { current = ""; Home.typing = false; return true; }
         if (open) { open = false; return true; }
         return false;
     }

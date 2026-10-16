@@ -295,6 +295,25 @@ fn set_if(cur: SharedString, new: String, set: impl FnOnce(SharedString)) {
     }
 }
 
+/// The call screen has something open over it that Back closes first (call.slint overlays).
+pub static OVERLAYS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+thread_local! {
+    static CALL: std::cell::RefCell<slint::Weak<CallScreen>> = Default::default();
+}
+
+/// Back on the call screen (from Android's main thread): closes what is open over the call; false when nothing was.
+pub fn back() -> bool {
+    if !OVERLAYS.swap(false, std::sync::atomic::Ordering::Relaxed) {
+        return false;
+    }
+    let _ = slint::invoke_from_event_loop(|| {
+        if let Some(ui) = CALL.with(|c| c.borrow().upgrade()) {
+            ui.invoke_close_overlays();
+        }
+    });
+    true
+}
+
 pub fn run(app: android_activity::AndroidApp) {
     app.set_window_flags(android_activity::WindowManagerFlags::KEEP_SCREEN_ON, android_activity::WindowManagerFlags::empty());
     let (link, answer) = android::intent();
@@ -338,6 +357,9 @@ pub fn run(app: android_activity::AndroidApp) {
         let e = e.clone();
         move |t| e.send_typed(&t)
     });
+    // Back closes the Transcript, the reply field or More before it leaves the call (service.rs call_back).
+    ui.on_overlays(|on| OVERLAYS.store(on, std::sync::atomic::Ordering::Relaxed));
+    CALL.with(|c| *c.borrow_mut() = ui.as_weak());
     let now = e.now();
     // Which call screen shows: debug.callme.call 4 (or unset): Camera, Mani's pick (look 8); 0: Comic, as shipped before
     // (look 3); 1-3: round 2's Subtitles, Script and Your light (looks 5-7).
@@ -442,30 +464,6 @@ pub fn run(app: android_activity::AndroidApp) {
         move || {
             if let Some(ui) = ui.upgrade() {
                 present(&ui, &e, &mut f.borrow_mut(), &app);
-            }
-        }
-    });
-    // The keyboard, every frame while typing: the reply field rides up with it as it slides in.
-    let keys = slint::Timer::default();
-    keys.start(slint::TimerMode::Repeated, Duration::from_millis(16), {
-        let ui = ui.as_weak();
-        let mut had = false;
-        move || {
-            let Some(ui) = ui.upgrade() else { return };
-            if !ui.global::<Call>().get_typing() && ui.global::<Call>().get_kb() == 0.0 {
-                had = false;
-                return;
-            }
-            let kb = android::keyboard();
-            if ui.global::<Call>().get_kb() != kb {
-                ui.global::<Call>().set_kb(kb);
-            }
-            // The keyboard was put away (Back, or swiped down): the reply field closes with it.
-            if kb > 0.0 {
-                had = true;
-            } else if had && ui.global::<Call>().get_typing() {
-                had = false;
-                ui.global::<Call>().set_typing(false);
             }
         }
     });

@@ -17,6 +17,23 @@ export component ChatList inherits Rectangle {
     function away(id: string) -> bool {
         return Chats.flying && Chats.from-id == id;
     }
+    // A chat starting to close (or pulled): its character flies back to where its card is now (a message sent moves
+    // the card), measured as it will stand once the list has grown back from 0.94 (home.slint). A card scrolled out
+    // of view: only the sheet drops, with the character in it.
+    function aim(p: Point, w: length, h: length, k: float) {
+        let s = 1 - 0.06 * Chats.open-k;
+        let x = root.width * 0.5 + (p.x - root.width * 0.5) / s;
+        let y = root.height * 0.7 + (p.y - root.height * 0.7) / s;
+        if (y < Home.sat + 48px || y + h > root.height) {
+            Chats.fk = 0;
+            return;
+        }
+        Chats.fx = x;
+        Chats.fy = y;
+        Chats.fw = w;
+        Chats.fh = h;
+        Chats.fk = k;
+    }
     // Back, and New chat (a warm round button the picker grows out of), on one 48px row.
     Rectangle {
         y: Home.sat;
@@ -48,6 +65,10 @@ export component ChatList inherits Rectangle {
             // Who matters now, standing on the floor, and where things stand in a word or two.
             if h.id != "": hero := Rectangle {
                 height: 104px;
+                property <bool> going: Chats.current == "" || Chats.held;
+                changed going => {
+                    if (self.going && Chats.from-id == h.id && Chats.fw == 104px) { root.aim(self.absolute-position, 104px, 104px, 0.36); }
+                }
                 TouchArea {
                     clicked => {
                         Chats.from-y = hero.absolute-position.y;
@@ -123,6 +144,13 @@ export component ChatList inherits Rectangle {
                 Text { text: "Start one with +"; font-size: 15px; color: Ink.muted; horizontal-alignment: center; }
             }
             for r in Chats.rows: VerticalLayout {
+                // (opened from this card, or from the hero that has since moved on to another chat)
+                property <bool> going: Chats.current == "" || Chats.held;
+                changed going => {
+                    if (self.going && Chats.from-id == r.id && (Chats.fw != 104px || Chats.hero.id != r.id)) {
+                        root.aim(fig.absolute-position, 64px, 56px, 0.2);
+                    }
+                }
                 // the group's name over its first card
                 if r.head != "": Text {
                     height: 38px;
@@ -152,7 +180,7 @@ export component ChatList inherits Rectangle {
                     }
                     // the character standing in its card, on a little floor
                     Floor { x: 10px; y: 56px; width: 60px; height: 16px; }
-                    Figure { x: 8px; y: 14px; width: 64px; height: 56px; visible: !root.away(r.id); face: r.face; pose: r.busy ? "think" : "idle"; k: 0.2; }
+                    fig := Figure { x: 8px; y: 14px; width: 64px; height: 56px; visible: !root.away(r.id); face: r.face; pose: r.busy ? "think" : "idle"; k: 0.2; }
                     // who and when
                     Text { x: 84px; y: 13px; width: parent.width - 84px - 70px; height: 16px; text: r.name; font-size: 12px; color: #9a9aa3; vertical-alignment: center; overflow: elide; }
                     Text {

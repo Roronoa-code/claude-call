@@ -25,6 +25,8 @@ import android.view.SurfaceHolder
 import android.view.WindowManager
 import java.io.File
 import java.io.FileNotFoundException
+import android.window.BackEvent
+import android.window.OnBackAnimationCallback
 import android.window.OnBackInvokedDispatcher
 
 /**
@@ -48,6 +50,7 @@ object Native {
     @JvmStatic external fun declined(context: Context, intent: Intent)
     @JvmStatic external fun modeTapped(context: Context, intent: Intent)
     @JvmStatic external fun widgets(context: Context)
+    @JvmStatic external fun back(phase: Int, progress: Float)
 }
 
 /**
@@ -104,6 +107,29 @@ open class Shown : NativeActivity() {
 
 /** The home screen (phone/src/home.rs). */
 class MainActivity : Shown() {
+    /**
+     * While something is open that Back closes (home.slint backable), the system back swipe is followed as it moves
+     * (Android 14+): the open chat slides with the thumb and a cancelled swipe puts it back. With nothing open this
+     * is unregistered, so Back reaches Slint as a key and the app goes to the background (home.slint).
+     * Registered after Slint's own callback and before the keyboard's, so the keyboard still goes first.
+     */
+    private var back: Any? = null
+    fun backable(on: Boolean) = runOnUiThread {
+        if (Build.VERSION.SDK_INT < 34) return@runOnUiThread
+        if (on && back == null) {
+            val cb = object : OnBackAnimationCallback {
+                override fun onBackStarted(e: BackEvent) = Native.back(0, e.progress)
+                override fun onBackProgressed(e: BackEvent) = Native.back(1, e.progress)
+                override fun onBackInvoked() = Native.back(2, 1f)
+                override fun onBackCancelled() = Native.back(3, 0f)
+            }
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT, cb)
+            back = cb
+        } else if (!on && back != null) {
+            onBackInvokedDispatcher.unregisterOnBackInvokedCallback(back as OnBackAnimationCallback)
+            back = null
+        }
+    }
     override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); Native.homeOpened(this) }
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); Native.homeOpened(this) }
     override fun onResume() { super.onResume(); if (!isFinishing) Native.homeResumed(this) }

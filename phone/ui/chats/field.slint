@@ -1,5 +1,6 @@
-// The text box of a chat: + (attach), the field, and Send / Stop (44px, a 48px touch area). A word the keyboard is
-// still composing is sent with the message, and looks like normal text.
+// The text box of a chat: + (attach), the field, and Send / Stop (44px, a 48px touch area). The field grows a line at
+// a time up to six, then scrolls inside; Enter starts a new line, Send sends. A word the keyboard is still composing
+// is sent with the message, where it stands, and looks like normal text.
 import { T, Icon, Icons } from "../parts.slint";
 import { Home } from "../home_parts.slint";
 import { Chats, Ink, IconButton } from "../chat.slint";
@@ -15,12 +16,15 @@ export component Composer inherits Rectangle {
     property <bool> can-send: Chats.pick != "loading" && (draft != "" || composing || picked-media);
     property <bool> can-stop: Chats.action == "stop" && !can-send;
     property <length> pick-h: has-pick ? (picked-media ? 76px : 48px) : 0px;
+    animate pick-h { duration: 300ms; easing: T.out; }
+    // One line sits in the middle of 56px; more grow the box upwards, up to six, then the text scrolls inside it.
+    property <length> line: probe.preferred-height;
+    property <length> pad: (56px - line) / 2;
+    property <length> area: max(56px, min(input.preferred-height, 6 * line) + 2 * pad);
+    animate area { duration: 300ms; easing: T.out; }
     out property <bool> focused;
-    function send(text: string) {
-        if (can-send) { Chats.send(text); draft = ""; }
-    }
-    height: 56px + pick-h;
-    animate height { duration: 300ms; easing: T.out; }
+    public function blur() { input.clear-focus(); }
+    height: area + pick-h;
     border-radius: radius;
     background: fill;
     border-width: 1px;
@@ -76,12 +80,17 @@ export component Composer inherits Rectangle {
             clicked => { Chats.unpick(); }
         }
     }
-    if Chats.ready: HorizontalLayout {
-        y: parent.height - 56px;
-        height: 56px;
+    probe := Text { visible: false; text: "Ag"; font-size: 16.5px; }
+    HorizontalLayout {
+        visible: Chats.ready;
+        y: parent.height - root.area;
+        height: root.area;
         padding-left: 4px;
         padding-right: 6px;
-        IconButton { icon: Icons.plus; stroke: Ink.text2; y: 4px; clicked => { Chats.attach(); } }
+        Rectangle {
+            width: 48px;
+            IconButton { y: parent.height - 52px; icon: Icons.plus; stroke: Ink.text2; clicked => { Chats.attach(); } }
+        }
         FocusScope {
             horizontal-stretch: 1;
             min-width: 0px;
@@ -92,12 +101,16 @@ export component Composer inherits Rectangle {
                 reject
             }
             window := Rectangle {
+                y: root.pad;
+                height: parent.height - 2 * root.pad;
                 clip: true;
                 property <length> scroll: 0px;
                 input := TextInput {
-                    x: min(0px, max(parent.width - self.width, parent.scroll));
-                    width: max(parent.width, self.preferred-width + 4px);
-                    height: parent.height;
+                    // fits: at the foot of the box (as it grows the lines rise from it); longer: scrolled to the caret
+                    y: max(parent.height - self.height, min(0px, parent.scroll));
+                    width: parent.width;
+                    height: max(root.line, self.preferred-height);
+                    enabled: Chats.ready;
                     text <=> root.draft;
                     font-size: 16.5px;
                     color: Ink.text;
@@ -106,8 +119,8 @@ export component Composer inherits Rectangle {
                     // looks like normal text and the caret keeps its colour. A real selection still shows.
                     selection-background-color: self.preedit-text != "" ? #e3a48c00 : #e3a48c33;
                     selection-foreground-color: Ink.text;
-                    vertical-alignment: center;
-                    single-line: true;
+                    single-line: false;
+                    wrap: word-wrap;
                     changed preedit-text => {
                         root.composing = self.preedit-text != "";
                         // The keyboard just committed its word: leave the caret at the end, nothing selected.
@@ -117,35 +130,35 @@ export component Composer inherits Rectangle {
                     }
                     // A sent or emptied field keeps nothing selected.
                     changed text => { if (self.text == "") { self.set-selection-offsets(0, 0); } }
-                    // The keyboard's word in progress goes too, then the keyboard's side of the field is emptied
-                    // (chat.slint, fix/1015). shortcut: the word is put at the end; one typed mid-text would go there.
+                    // Sends what is on screen: the keyboard's word in progress goes in where it stands (inbox.rs).
+                    // Then the keyboard's side of the field is emptied too (chat.slint, fix/1015), which also takes
+                    // away Android's caret handle left hanging under an emptied field.
                     function send-all() {
-                        if (self.preedit-text == "") {
-                            root.send(root.draft);
-                        } else if (root.can-send) {
-                            Chats.send(root.draft + self.preedit-text);
+                        if (root.can-send) {
+                            Chats.send-composed(root.draft, self.preedit-text, self.cursor-position-byte-offset);
+                            root.draft = "";
                             Chats.clear-field();
                         }
                     }
-                    accepted => { self.send-all(); }
-                    changed has-focus => { Home.editing(self.has-focus); root.focused = self.has-focus; }
+                    changed has-focus => { Home.typing = self.has-focus; root.focused = self.has-focus; }
                     cursor-position-changed(at) => {
-                        if (at.x + window.scroll < 0px) {
-                            window.scroll = -at.x;
-                        } else if (at.x + window.scroll > window.width - 4px) {
-                            window.scroll = window.width - 4px - at.x;
+                        if (at.y + window.scroll < 0px) {
+                            window.scroll = -at.y;
+                        } else if (at.y + root.line + window.scroll > window.height) {
+                            window.scroll = window.height - root.line - at.y;
                         }
                     }
                 }
                 Text {
                     visible: root.draft == "" && input.preedit-text == "";
-                    x: root.focused ? 4px : 0px; // just after the caret, never under it
+                    x: 2px; // just after the caret, never under it, and still when the field takes the cursor
                     text: Chats.hint;
                     font-size: 16.5px;
                     color: #6f7178;
-                    vertical-alignment: center;
                     width: parent.width - self.x;
-                    height: parent.height;
+                    height: root.line;
+                    y: parent.height - self.height;
+                    vertical-alignment: center;
                     overflow: elide;
                 }
             }
@@ -155,7 +168,7 @@ export component Composer inherits Rectangle {
             width: 48px;
             Rectangle {
                 x: 2px;
-                y: 6px;
+                y: parent.height - 50px;
                 width: 44px;
                 height: 44px;
                 border-radius: 22px;
@@ -185,6 +198,8 @@ export component Composer inherits Rectangle {
                 }
             }
             go := TouchArea {
+                y: parent.height - 52px;
+                height: 48px;
                 enabled: root.can-send || root.can-stop;
                 clicked => {
                     if (root.can-stop) { Chats.stop(); } else { input.send-all(); }

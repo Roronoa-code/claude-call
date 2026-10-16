@@ -113,6 +113,7 @@ export component Piece inherits Rectangle {
             default-font-size: m.kind == "h" ? root.prose-size + 2px : root.prose-size;
             default-color: m.kind == "quote" ? Ink.text2 : Ink.text;
             link-color: Ink.warm;
+            link-clicked(l) => { Chats.open-link(l); }
         }
         // Code: a quiet card, its language above, in a monospace face; long lines wrap (nothing runs off the edge).
         Rectangle {

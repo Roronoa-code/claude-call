@@ -58,6 +58,13 @@ export component HomeScreen inherits Window {
     // while Null's face rolls, the rest steps back
     property <float> rest: Home.shown >= 0 ? 0.35 : 1;
     animate rest { duration: 260ms; easing: T.out; }
+    // How far the keyboard reaches over the window, in step with it frame by frame as it slides (Slint has it from
+    // Android's inset animation; reading the insets ourselves only ever gave where it would end up). Bindings, not
+    // Home.kb, carry it to the field and the sheets, so they move in the very frame the keyboard does.
+    property <length> kb-overlap: self.virtual-keyboard-size.height > 0 ? max(0px, self.height - self.virtual-keyboard-position.y) : 0px;
+    // An open chat always follows it: back from another app, Android raises the keyboard again for the field
+    // without it taking focus anew.
+    property <length> kb: Home.typing || (Chats.open && Chats.current != "") ? kb-overlap : 0px;
 
     // Clawd's eyes follow a finger anywhere on the screen that nothing else takes.
     TouchArea {
@@ -93,7 +100,7 @@ export component HomeScreen inherits Window {
     // The stage, centred between the title and the bottom row.
     stage := VerticalLayout {
         // Out of the way while the keyboard is up (only the channel sheet is in use then).
-        opacity: Home.kb > 0 ? 0 : 1;
+        opacity: root.kb > 0 ? 0 : 1;
         animate opacity { duration: 200ms; easing: T.out; }
         x: 20px;
         width: parent.width - 40px;
@@ -176,7 +183,7 @@ export component HomeScreen inherits Window {
             y: 2px;
             icon: Icons.chat;
             dot: Chats.unread;
-            clicked => { Home.widgets = false; Home.channel = false; Home.more = false; Home.editing(false); Chats.open = true; }
+            clicked => { Home.widgets = false; Home.channel = false; Home.more = false; Home.typing = false; Chats.open = true; }
         }
         // Asks Claude (or Codex, if Null is picked) to call you; it rings within a minute or so.
         Rectangle {
@@ -206,7 +213,7 @@ export component HomeScreen inherits Window {
             icon: Icons.more;
             dot: !Home.ready;
             dot-color: #e8a33d;
-            clicked => { Home.widgets = false; Home.channel = false; Home.editing(false); Home.more = !Home.more; }
+            clicked => { Home.widgets = false; Home.channel = false; Home.typing = false; Home.more = !Home.more; }
         }
     }
 
@@ -217,27 +224,61 @@ export component HomeScreen inherits Window {
     // straight past the Chats screen and left the app, and the field kept its cursor handle on screen.
     property <string> chat-now: Chats.current;
     changed chat-now => { if (chat-now == "") { keys.focus(); } }
-    property <length> kb-now: Home.kb;
-    changed kb-now => { if (kb-now == 0 && Chats.current != "") { keys.focus(); } }
+    // Home.kb: for Rust (home.rs). At the end of the keyboard's slide away the chat's field lets go of the focus, so
+    // Back right after lands on the chat, not past it.
+    changed kb => {
+        Home.kb = self.kb;
+        if (self.kb == 0 && Chats.current != "") { keys.focus(); }
+    }
+    // Back steps out one level: the photo, picker, a row slid open, thread, Chats screen, then a home sheet. False when
+    // nothing is left; then the app goes to the background, warm, as the launcher left it (not closed).
+    function back() -> bool {
+        if (Chats.back()) { return true; }
+        if (Home.widgets || Home.channel || Home.more) {
+            Home.more = false;
+            Home.widgets = false;
+            Home.channel = false;
+            Home.typing = false;
+            return true;
+        }
+        return false;
+    }
     keys := FocusScope {
         key-pressed(e) => {
-            if (e.text == Key.Back && Chats.back()) {
-                return accept;
-            }
-            if (e.text == Key.Back && (Home.widgets || Home.channel || Home.more)) {
-                Home.more = false;
-                Home.widgets = false;
-                Home.channel = false;
-                Home.editing(false);
+            if (e.text == Key.Back) {
+                if (!root.back()) { Home.leave(); }
                 return accept;
             }
             reject
         }
     }
+    // The system back swipe (Shell.kt, while something is open): phase 0 starts, 1 moves (p 0..1), 2 lets go (Back),
+    // 3 cancels. An open chat follows the thumb as it does a pull down (chats/open.slint), up to the point where a
+    // pull would close it; the rest close as Back always has. The keyboard goes first, as it does for Back.
+    property <bool> held;
+    public function back-gesture(phase: int, p: float) {
+        if (phase == 0) {
+            root.held = Chats.current != "" && !Chats.viewing && !Home.typing && root.kb == 0;
+            if (root.held) { Chats.held = true; }
+        } else if (phase == 1) {
+            if (root.held) { thread.pull(p * 0.3 * root.height); }
+        } else if (phase == 3) {
+            if (root.held) { root.held = false; thread.let-go(false); }
+        } else if (root.held) {
+            root.held = false;
+            thread.let-go(true);
+        } else if (Home.typing && Chats.current != "") {
+            keys.focus(); // the field lets go: the keyboard goes
+        } else if (!root.back()) {
+            Home.leave();
+        }
+    }
+    property <bool> backable: Chats.open || Chats.viewing || Chats.picker || Chats.revealed != "" || Home.more || Home.widgets || Home.channel;
+    changed backable => { Home.backable(self.backable); }
 
     // A tap outside an open sheet closes it.
     if Home.widgets || Home.channel || Home.more: TouchArea {
-        clicked => { Home.more = false; Home.widgets = false; Home.channel = false; Home.editing(false); }
+        clicked => { Home.more = false; Home.widgets = false; Home.channel = false; Home.typing = false; }
     }
 
     // The ••• sheet: setup (while unfinished), Test ring and Widget.
@@ -283,7 +324,7 @@ export component HomeScreen inherits Window {
                 icon: Icons.hash;
                 title: "Private channel";
                 desc: "The ntfy topic the phone and PC share.";
-                clicked => { root.draft = Home.topic; Home.widgets = false; Home.channel = true; Home.editing(true); }
+                clicked => { root.draft = Home.topic; Home.widgets = false; Home.channel = true; Home.typing = true; }
             }
         }
     }
@@ -298,7 +339,7 @@ export component HomeScreen inherits Window {
         tw: root.sheet-w;
         th: 196px;
         // Over the bottom row; above the keyboard while typing.
-        ty: min(root.sheet-bottom - self.th, root.height - Home.kb - self.th - 12px);
+        ty: min(root.sheet-bottom - self.th, root.height - root.kb - self.th - 12px);
         face: Icons.hash;
         from: T.btn;
         VerticalLayout {
@@ -345,7 +386,7 @@ export component HomeScreen inherits Window {
                         clicked => {
                             Home.save-topic(root.draft);
                             Home.channel = false;
-                            Home.editing(false);
+                            Home.typing = false;
                         }
                     }
                 }
@@ -377,9 +418,16 @@ export component HomeScreen inherits Window {
         }
         thread := Sheet {
             open: Chats.current != "";
+            kb: root.kb;
             width: root.width;
             height: root.height;
-            if thread.shown: ChatThread { width: root.width; height: root.height; }
+            if thread.shown: ChatThread {
+                width: root.width;
+                height: root.height;
+                kb: root.kb;
+                pulled(p) => { thread.pull(p); }
+                let-go(close) => { thread.let-go(close); }
+            }
         }
     }
 

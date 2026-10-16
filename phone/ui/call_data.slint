@@ -5,7 +5,7 @@ import { Cap, Msg } from "parts.slint";
 export global Call {
     in property <length> sat: 36px; // status bar and gesture bar
     in property <length> sab: 24px;
-    in property <length> kb; // how far the keyboard reaches up from the bottom edge (0 when hidden)
+    in-out property <length> kb; // how far the keyboard reaches over the window, as it slides (call.slint)
     in property <string> phase: "incoming"; // incoming connecting talking listening hearing thinking hold ended
     in property <string> agent: "Claude"; // who is calling: Claude or Codex
     in property <string> time-text: "Calling you";
@@ -43,6 +43,7 @@ export global Call {
     in property <[Msg]> msgs;
     in-out property <bool> caps-open;
     in-out property <bool> typing;
+    in-out property <bool> more; // a look's More row is up (call_camera.slint, call_light.slint)
     in-out property <string> draft;
     // PREVIEW (branch preview/call-screen): which call screen shows, from debug.callme.call (0: as shipped).
     in property <int> look;

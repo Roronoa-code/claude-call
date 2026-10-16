@@ -152,10 +152,6 @@ pub fn insets() -> Option<(f32, f32)> {
     window_insets(1 | 2).map(|(top, bottom)| (top.max(36.0), bottom.max(24.0))) // statusBars() | navigationBars()
 }
 
-/// How far the on-screen keyboard reaches up from the bottom edge, in whole dp (0 when hidden).
-pub fn keyboard() -> f32 {
-    window_insets(8).map_or(0.0, |(_, bottom)| bottom.round()) // Type.ime()
-}
 /// The call connected: stop ringing, show the ongoing-call notification.
 pub fn call_began() {
     with(|env, act| crate::service::call_began(env, act));

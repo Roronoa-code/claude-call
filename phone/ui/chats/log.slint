@@ -1,6 +1,8 @@
-// The scrolling thread: it sticks to its end as lines arrive or the keyboard comes up, glides there instead of
-// jumping, and keeps a long answer's start in view as it lands. What goes after the pieces ("Thinking", how my
-// last message is going) comes in as children.
+// The scrolling thread. At its end it follows the end: lines that arrive glide into view, and the newest answer's start
+// stays in view as it lands. Scrolled up, it leaves alone what you are reading (an answer that comes in lights the
+// ↓ in thread.slint). When its room changes (the keyboard sliding, the field growing) the bottom of what is in view
+// stays where it is, in the same frame. What goes after the pieces ("Thinking", how my last message is going) comes
+// in as children.
 import { T } from "../parts.slint";
 import { Chats } from "../chat.slint";
 import { Piece } from "msg.slint";
@@ -9,10 +11,14 @@ export component Log inherits Flickable {
     in property <length> pad-top: 12px;
     in property <length> pad-bottom; // room under the last piece (the field floats over the thread's end)
     in property <length> side: 20px;
+    callback tapped(); // a tap on the thread, not on anything in it
     out property <bool> scrolled: self.content-y < -2px;
+    out property <bool> far: self.content-y > self.stick + 64px; // scrolled up from the end
+    out property <bool> fresh; // an answer came in while scrolled up (cleared at the end)
     // Rows that arrive once the thread is up rise in; the ones it opens with are simply there.
     property <bool> settled;
-    property <length> hold: -1px;
+    property <length> hold: -1px; // the newest answer's start, to glide to once as it lands
+    property <length> fresh-at: -1px; // ...and one that landed out of view, for ↓
     property <length> glide-to;
     property <bool> gliding;
     Timer { interval: 450ms; running: !root.settled; triggered => { root.settled = true; } }
@@ -23,6 +29,7 @@ export component Log inherits Flickable {
             if (Math.abs(root.glide-to - root.content-y) < 1px) {
                 root.content-y = root.glide-to;
                 root.gliding = false;
+                root.hold = -1px; // used once
             } else {
                 root.content-y += (root.glide-to - root.content-y) * 0.2;
             }
@@ -31,13 +38,70 @@ export component Log inherits Flickable {
     content-width: self.width;
     content-height: rows.preferred-height;
     property <length> stick: Math.min(0px, self.height - rows.preferred-height);
-    init => { self.content-y = self.stick; }
-    changed stick => {
-        root.glide-to = root.hold >= 0 ? Math.max(self.stick, -(root.hold - 14px)) : self.stick;
-        if (root.settled) { root.gliding = true; } else { self.content-y = root.glide-to; }
+    // The room the pieces have (the field covers the rest) and the pieces themselves, as last kept in step.
+    property <length> room: self.height - self.pad-bottom;
+    property <length> body: rows.preferred-height - self.pad-bottom;
+    property <length> seen-room;
+    property <length> seen-body;
+    init => {
+        self.content-y = self.stick;
+        self.seen-room = self.room;
+        self.seen-body = self.body;
     }
-    flicked => { root.gliding = false; }
+    function end() -> length {
+        return root.hold >= 0 ? Math.max(root.stick, -(root.hold - 14px)) : root.stick;
+    }
+    function sync() {
+        // The room changed: the bottom of what is in view stays put (at the end, the end rides with the field).
+        // Growing at the end, Slint may have already put it back in bounds; that is the same place.
+        let dr = root.room - root.seen-room;
+        if (dr != 0 && !(dr > 0 && root.content-y <= root.stick + 0.5px)) {
+            root.content-y = Math.max(root.stick, Math.min(0px, root.content-y + dr));
+        }
+        root.seen-room = root.room;
+        // New lines (or a line grown): followed if you were at the end, else left alone.
+        let db = root.body - root.seen-body;
+        root.seen-body = root.body;
+        if (db != 0 && root.content-y <= root.stick + db + 64px) {
+            root.fresh-at = -1px; // seen as it lands
+            root.glide-to = root.end();
+            if (root.settled) { root.gliding = true; } else { root.content-y = root.glide-to; }
+        } else if (root.gliding) {
+            root.glide-to = root.end();
+        } else if (db > 0 && root.fresh-at >= 0) {
+            root.fresh = true;
+        }
+    }
+    changed room => { root.sync(); }
+    changed body => { root.sync(); }
+    changed far => { if (!self.far) { self.fresh = false; self.fresh-at = -1px; } }
+    // A finger on the thread stops any glide and the answer's hold.
+    flicked => {
+        root.gliding = false;
+        root.hold = -1px;
+    }
+    // ↓: back down, to the answer that came in meanwhile if there is one.
+    public function to-latest() {
+        root.hold = root.fresh-at;
+        root.fresh = false;
+        root.fresh-at = -1px;
+        root.glide-to = root.end();
+        root.gliding = true;
+    }
+    TouchArea {
+        height: Math.max(root.height, rows.preferred-height);
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                root.gliding = false;
+                root.hold = -1px;
+            }
+        }
+        clicked => { root.tapped(); }
+    }
     rows := VerticalLayout {
+        // Between the room changing and the next sync() (a frame later), the rows are drawn where sync() will put
+        // them, so the end rides exactly with the keyboard.
+        y: Math.max(root.stick, Math.min(0px, root.content-y + root.room - root.seen-room)) - root.content-y;
         width: parent.width;
         padding-left: root.side;
         padding-right: root.side;
@@ -46,7 +110,10 @@ export component Log inherits Flickable {
         for m in Chats.msgs: Piece {
             m: m;
             settled: root.settled;
-            landed(y) => { root.hold = y; }
+            landed(y) => {
+                root.hold = y;
+                if (root.far) { root.fresh-at = y; }
+            }
         }
         @children
     }

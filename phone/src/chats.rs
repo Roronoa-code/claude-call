@@ -405,7 +405,47 @@ pub fn blocks(text: &str) -> Vec<Block> {
 /// Inline markdown made safe for Slint's parser: a "<" outside `code` is written as an entity, so `Vec<u8>` or
 /// "a < b" stay text instead of being read as HTML (which fails the whole block).
 pub fn inline(text: &str) -> String {
-    text.split('`').enumerate().map(|(i, part)| if i % 2 == 0 { part.replace('<', "&lt;") } else { part.to_string() }).collect::<Vec<_>>().join("`")
+    text.split('`').enumerate().map(|(i, part)| if i % 2 == 0 { links(&part.replace('<', "&lt;")) } else { part.to_string() }).collect::<Vec<_>>().join("`")
+}
+
+/// A bare web address (at the start, after a space or "(", not already in a markdown link) as a link: <https://…>.
+/// Punctuation that ends a sentence stays outside it.
+fn links(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = ["https://", "http://"].iter().filter_map(|p| rest.find(p)).min() {
+        let (before, from) = rest.split_at(at);
+        out.push_str(before);
+        let len = from.find(|c: char| c.is_whitespace() || c == '>' || c == '"').unwrap_or(from.len());
+        let url = from[..len].trim_end_matches(['.', ',', ';', ':', '!', '?', ')', '\'', '*', '_']);
+        let mut back = out.chars().rev();
+        let bare = match (back.next(), back.next()) {
+            (None, _) => true,
+            (Some('('), b) => b != Some(']'), // "(see https://…)", not a markdown link's "](https://…)"
+            (Some(c), _) => c.is_whitespace(),
+        };
+        if bare && url.len() > 8 {
+            out.push('<');
+            out.push_str(url);
+            out.push('>');
+            rest = &from[url.len()..];
+        } else {
+            out.push_str(&from[..len]);
+            rest = &from[len..];
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// What the field shows: its text with the keyboard's word in progress put in where the cursor is (`at`, a byte
+/// offset into `draft`).
+pub fn composed(draft: &str, word: &str, at: usize) -> String {
+    let mut at = at.min(draft.len());
+    while !draft.is_char_boundary(at) {
+        at -= 1;
+    }
+    format!("{}{word}{}", &draft[..at], &draft[at..])
 }
 
 /// The small grey line under my last message, and what tapping it does ("stop", "retry" or nothing).
