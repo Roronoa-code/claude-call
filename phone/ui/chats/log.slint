@@ -41,12 +41,13 @@ export component Log inherits Flickable {
         self.seen-room = self.room;
         self.seen-body = self.body;
     }
+    property <bool> at-end: root.content-y <= root.stick + 0.5px;
     function end() -> length {
         return root.hold >= 0 ? Math.max(root.stick, -(root.hold - 14px)) : root.stick;
     }
     function sync() {
         let dr = root.room - root.seen-room;
-        if (dr != 0 && !(dr > 0 && root.content-y <= root.stick + 0.5px)) {
+        if (dr != 0 && !(dr > 0 && root.at-end)) {
             root.content-y = Math.max(root.stick, Math.min(0px, root.content-y + dr));
         }
         root.seen-room = root.room;

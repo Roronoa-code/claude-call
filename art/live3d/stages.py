@@ -25,7 +25,8 @@ RO = TA + DIST * np.array([0.0, math.sin(EL), math.cos(EL)])
 WW = (TA - RO) / np.linalg.norm(TA - RO)
 UU = np.cross(WW, [0.0, 1.0, 0.0]); UU /= np.linalg.norm(UU)
 VV = np.cross(UU, WW)
-FEET_C = (-50.0, -96.25)
+PICS = {'clawd': (300, 250, -200, 221.25), 'null': (150, 230, 42, 194.6)}
+FEET_C = (PICS['clawd'][2] + PICS['clawd'][0] / 2, PICS['clawd'][1] / 2 - PICS['clawd'][3])
 
 
 def rays(X, Y, k):
@@ -175,7 +176,6 @@ def draw(prog, res, view, u):
     return a
 
 
-PICS = {'clawd': (300, 250, -200, 221.25), 'null': (150, 230, 42, 194.6)}
 
 
 def composite(name, uc, un, scale, pick='claude', bg=None):

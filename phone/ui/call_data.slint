@@ -39,7 +39,7 @@ export global Call {
     callback toggle-speaker();
     callback toggle-quiet();
     callback call-back();
-    callback send(string, string, int);
+    callback send(text: string, preedit: string, cursor-byte: int);
     callback clear-field();
     callback poke();
 }

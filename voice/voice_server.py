@@ -59,6 +59,9 @@ tts_lock = threading.Lock()
 gpu_lock = threading.Lock()
 STREAM_CHUNK = 4
 STREAM_GAIN = 1.6
+VOICE_SEED = 1234
+PROMPT_CHARS = 600
+VOCAB_CHARS = 350
 
 
 def speak(text: str) -> bytes:
@@ -66,7 +69,7 @@ def speak(text: str) -> bytes:
     with tts_lock, gpu_lock:
         for mood, words in pieces(text, voices) or [("", text)]:
             prompt, ref_text = take(mood)
-            torch.manual_seed(1234)
+            torch.manual_seed(VOICE_SEED)
             wavs, sr = model.generate_voice_clone(text=words, language="English", voice_clone_prompt=prompt, ref_text=ref_text)
             parts.append(np.asarray(wavs[0], dtype=np.float32))
     audio = np.concatenate(parts)
@@ -79,7 +82,7 @@ def speak_stream(text: str):
     with tts_lock:
         for mood, words in pieces(text, voices) or [("", text)]:
             prompt, ref_text = take(mood)
-            torch.manual_seed(1234)
+            torch.manual_seed(VOICE_SEED)
             gen = model.generate_voice_clone_streaming(text=words, language="English", voice_clone_prompt=prompt,
                                                        ref_text=ref_text, chunk_size=STREAM_CHUNK)
             try:
@@ -111,7 +114,7 @@ def vocab() -> str:
         mine = [w.strip() for w in WORDS.read_text(encoding="utf-8").splitlines() if w.strip()]
     except OSError:
         mine = []
-    return (", ".join([VOCAB] + mine))[-350:].lstrip(", ") + "."
+    return (", ".join([VOCAB] + mine))[-VOCAB_CHARS:].lstrip(", ") + "."
 
 
 def hear(pcm: np.ndarray, context: str) -> str:
@@ -122,13 +125,13 @@ def hear(pcm: np.ndarray, context: str) -> str:
     if long:
         kw.update(attention_mask=inputs.attention_mask.to("cuda:0"), return_timestamps=True)
     v = vocab()
-    context = (v + " " + context.strip()[-(600 - len(v) - 1):]).strip()
-    kw["prompt_ids"] = torch.tensor(asr_proc.get_prompt_ids(context[-600:])).to("cuda:0")
+    context = (v + " " + context.strip()[-(PROMPT_CHARS - len(v) - 1):]).strip()
+    kw["prompt_ids"] = torch.tensor(asr_proc.get_prompt_ids(context[-PROMPT_CHARS:])).to("cuda:0")
     with gpu_lock, torch.inference_mode():
         ids = asr.generate(inputs.input_features.to("cuda:0", torch.float16), **kw)
     text = asr_proc.batch_decode(ids, skip_special_tokens=True)[0].strip()
-    if text.startswith(context[-600:].strip()):
-        text = text[len(context[-600:].strip()):].strip()
+    if text.startswith(context[-PROMPT_CHARS:].strip()):
+        text = text[len(context[-PROMPT_CHARS:].strip()):].strip()
     return text
 
 

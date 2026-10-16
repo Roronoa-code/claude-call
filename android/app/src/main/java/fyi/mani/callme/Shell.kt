@@ -33,6 +33,8 @@ import android.window.BackEvent
 import android.window.OnBackAnimationCallback
 import android.window.OnBackInvokedDispatcher
 
+private const val FIRST_FRAME_TIMEOUT_MS = 3000L
+
 object Native {
     init { System.loadLibrary("callme_phone") }
     @JvmStatic external fun foreground(service: Service)
@@ -113,7 +115,7 @@ open class Shown : NativeActivity() {
         finish = drawingFinished
         waiting = true
         surfaceRedrawNeeded(holder)
-        window.decorView.postDelayed({ drawn() }, 3000)
+        window.decorView.postDelayed({ drawn() }, FIRST_FRAME_TIMEOUT_MS)
     }
     fun drawn() = runOnUiThread { waiting = false; finish?.run(); finish = null }
 

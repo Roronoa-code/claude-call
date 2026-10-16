@@ -156,21 +156,21 @@ export component Morph {
     in property <bool> zoom: true;
     property <float> k: open ? 1 : 0;
     animate k { duration: open ? 500ms : 300ms; easing: open ? T.spring : T.close; }
-    out property <float> g: Math.min(1, k);
+    out property <float> clamped-k: Math.min(1, k);
     out property <bool> shown: open || k > 0.002;
     visible: shown;
-    x: fx + (tx - fx) * g;
-    y: fy + (ty - fy) * g;
-    width: fw + (tw - fw) * g;
-    height: fh + (th - fh) * g;
+    x: fx + (tx - fx) * clamped-k;
+    y: fy + (ty - fy) * clamped-k;
+    width: fw + (tw - fw) * clamped-k;
+    height: fh + (th - fh) * clamped-k;
     Rectangle {
         x: 0;
         y: 0;
         width: parent.width;
         height: parent.height;
-        border-radius: root.fradius + (root.radius - root.fradius) * root.g;
-        background: root.panel.mix(root.from, root.g);
-        opacity: root.zoom ? 1 : Math.min(1, root.g * 5);
+        border-radius: root.fradius + (root.radius - root.fradius) * root.clamped-k;
+        background: root.panel.mix(root.from, root.clamped-k);
+        opacity: root.zoom ? 1 : Math.min(1, root.clamped-k * 5);
         clip: true;
         Icon {
             d: root.face;
@@ -185,8 +185,8 @@ export component Morph {
             height: root.th;
             transform-origin: { x: root.fx + root.fw / 2 - root.tx, y: root.fy + root.fh / 2 - root.ty };
             transform-scale: root.zoom ? Math.min(root.width / root.tw, root.height / root.th) : 1;
-            opacity: Math.max(0, Math.min(1, root.zoom ? (root.g - 0.12) * 3 : (root.g - 0.2) * 5));
-            TouchArea { }
+            opacity: Math.max(0, Math.min(1, root.zoom ? (root.clamped-k - 0.12) * 3 : (root.clamped-k - 0.2) * 5));
+            swallow-taps := TouchArea { }
             @children
         }
     }

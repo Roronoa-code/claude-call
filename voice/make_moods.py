@@ -16,6 +16,7 @@ HERE = Path(__file__).parent
 LINES, MOODS_DIR = HERE / "lines", HERE / "moods"
 VOICE_NAME = "American woman"
 MODEL = "eleven_v4"  # performs the [bracketed] tags
+MIN_HEARD_MATCH = 0.85
 SR = 24000
 TAG = re.compile(r"\[[^\]]*\]")
 SETTINGS = {"stability": 0.5, "similarity_boost": 0.75, "speed": 1.0}
@@ -75,7 +76,7 @@ def main():
                     texts[path] = hear(sf.read(path, dtype="float32")[0])
                     said = " ".join(TAG.sub(" ", line).split())
                     match = difflib.SequenceMatcher(None, said.lower(), texts[path].lower()).ratio()
-                    if match < 0.85:
+                    if match < MIN_HEARD_MATCH:
                         print(f"  CHECK {path.name} ({match:.2f}): heard {texts[path]!r}")
         sub = api("/v1/user/subscription")
         print(f"ElevenLabs credits left: {sub['character_limit'] - sub['character_count']}")
