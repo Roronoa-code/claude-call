@@ -15,6 +15,11 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+    <!-- Samsung's Gallery, so a chat's attach can open it (attach.rs) -->
+    <queries>
+        <package android:name="com.sec.android.gallery3d" />
+    </queries>
+
     <application
         android:label="Claude Call"
         android:icon="@drawable/ic_call_logo"

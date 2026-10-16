@@ -1,5 +1,6 @@
-//! A photo or video to send in a chat: the system picker, reading what was picked into filesDir/media (where the
-//! PC's files go too, so it shows and plays the same way), and the chip above the field until it is sent or removed.
+//! A photo or video to send in a chat: Samsung's Gallery or the system picker, reading what was picked into
+//! filesDir/media (where the PC's files go too, so it shows and plays the same way), and the chip above the field until
+//! it is sent or removed.
 //! A pick belongs to the chat it was picked in: once ready it is kept with that chat in the store (chats.json), so it
 //! never goes with a message in another chat and stays when the app is closed.
 use crate::{
@@ -23,30 +24,63 @@ enum Pick {
     Failed(String),
 }
 static PICK: Mutex<Option<(String, Pick)>> = Mutex::new(None);
-/// The chat the system picker was opened for (its answer comes later, in picked()).
+/// The chat the picker was opened for (its answer comes later, in picked()).
 static FOR: Mutex<String> = Mutex::new(String::new());
 const REQUEST: i32 = 7; // MainActivity.onActivityResult in Shell.kt
 
-/// Opens the system photo picker (photos and videos) for `chat`; Android 10-12 get "choose a file" limited to them.
+/// Samsung's own Gallery app: the pick opens there when the phone has it.
+const GALLERY: &str = "com.sec.android.gallery3d";
+
+/// Opens Samsung's Gallery for `chat` (photos and videos), or, without it, the system photo picker; Android 10-12
+/// get "choose a file" limited to them.
 pub fn open(env: &mut JNIEnv, act: &JObject, chat: &str) -> Result<()> {
     *FOR.lock().unwrap() = chat.to_string();
-    let pick_images = jx::sdk(env)? >= 33;
-    let action = s(env, if pick_images { "android.provider.action.PICK_IMAGES" } else { "android.intent.action.GET_CONTENT" })?;
-    let i = env.new_object("android/content/Intent", "(Ljava/lang/String;)V", &[JValue::Object(&action)])?;
-    if !pick_images {
-        let (any, openable) = (s(env, "*/*")?, s(env, "android.intent.category.OPENABLE")?);
-        env.call_method(&i, "setType", "(Ljava/lang/String;)Landroid/content/Intent;", &[JValue::Object(&any)])?;
-        env.call_method(&i, "addCategory", "(Ljava/lang/String;)Landroid/content/Intent;", &[JValue::Object(&openable)])?;
-        let types = env.new_object_array(2, "java/lang/String", JObject::null())?;
-        for (n, t) in ["image/*", "video/*"].into_iter().enumerate() {
-            let t = s(env, t)?;
-            env.set_object_array_element(&types, n as i32, t)?;
+    let i = match gallery(env, act)? {
+        Some(i) => i,
+        None => {
+            let pick_images = jx::sdk(env)? >= 33;
+            let i = new_intent(env, if pick_images { "android.provider.action.PICK_IMAGES" } else { "android.intent.action.GET_CONTENT" })?;
+            if !pick_images {
+                let openable = s(env, "android.intent.category.OPENABLE")?;
+                env.call_method(&i, "addCategory", "(Ljava/lang/String;)Landroid/content/Intent;", &[JValue::Object(&openable)])?;
+                media_types(env, &i)?;
+            }
+            i
         }
-        let key = s(env, "android.intent.extra.MIME_TYPES")?;
-        let sig = "(Ljava/lang/String;[Ljava/lang/String;)Landroid/content/Intent;";
-        env.call_method(&i, "putExtra", sig, &[JValue::Object(&key), JValue::Object(&types)])?;
-    }
+    };
     env.call_method(act, "startActivityForResult", "(Landroid/content/Intent;I)V", &[JValue::Object(&i), JValue::Int(REQUEST)])?;
+    Ok(())
+}
+
+/// The Gallery's pick, if the phone has Samsung's Gallery (its PICK takes image and video types: "*/*" with the
+/// two lets it offer both). Its answer is read like the system picker's (picked).
+fn gallery<'a>(env: &mut JNIEnv<'a>, act: &JObject) -> Result<Option<JObject<'a>>> {
+    let i = new_intent(env, "android.intent.action.PICK")?;
+    media_types(env, &i)?;
+    let pkg = s(env, GALLERY)?;
+    env.call_method(&i, "setPackage", "(Ljava/lang/String;)Landroid/content/Intent;", &[JValue::Object(&pkg)])?;
+    let pm = env.call_method(act, "getPackageManager", "()Landroid/content/pm/PackageManager;", &[])?.l()?;
+    let found = env.call_method(&i, "resolveActivity", "(Landroid/content/pm/PackageManager;)Landroid/content/ComponentName;", &[JValue::Object(&pm)])?.l()?;
+    Ok((!found.is_null()).then_some(i))
+}
+
+fn new_intent<'a>(env: &mut JNIEnv<'a>, action: &str) -> Result<JObject<'a>> {
+    let action = s(env, action)?;
+    env.new_object("android/content/Intent", "(Ljava/lang/String;)V", &[JValue::Object(&action)])
+}
+
+/// Any type, narrowed to photos and videos (EXTRA_MIME_TYPES).
+fn media_types(env: &mut JNIEnv, i: &JObject) -> Result<()> {
+    let any = s(env, "*/*")?;
+    env.call_method(i, "setType", "(Ljava/lang/String;)Landroid/content/Intent;", &[JValue::Object(&any)])?;
+    let types = env.new_object_array(2, "java/lang/String", JObject::null())?;
+    for (n, t) in ["image/*", "video/*"].into_iter().enumerate() {
+        let t = s(env, t)?;
+        env.set_object_array_element(&types, n as i32, t)?;
+    }
+    let key = s(env, "android.intent.extra.MIME_TYPES")?;
+    let sig = "(Ljava/lang/String;[Ljava/lang/String;)Landroid/content/Intent;";
+    env.call_method(i, "putExtra", sig, &[JValue::Object(&key), JValue::Object(&types)])?;
     Ok(())
 }
 
