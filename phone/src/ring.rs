@@ -7,7 +7,7 @@ use crate::jx::{intent, pending, put, s, service};
 use std::{collections::HashSet, sync::Mutex, time::Duration};
 
 const CHANNEL: &str = "calls";
-const NOTIFICATION_ID: i32 = 2;
+pub const RING_ID: i32 = 2;
 const RING_FOR: Duration = Duration::from_secs(60);
 pub const TEST_LINK: &str = "test:ring";
 
@@ -23,7 +23,7 @@ pub static RINGS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::n
 
 pub fn call_intent<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, link: &str, answer: bool) -> Result<JObject<'a>> {
     let i = intent(env, ctx, "CallActivity")?;
-    env.call_method(&i, "addFlags", "(I)Landroid/content/Intent;", &[JValue::Int(0x1000_0000)])?;
+    env.call_method(&i, "addFlags", "(I)Landroid/content/Intent;", &[JValue::Int(crate::jx::FLAG_ACTIVITY_NEW_TASK)])?;
     let l = s(env, link)?;
     put(env, &i, "link", JValue::Object(&l))?;
     put(env, &i, "answer", JValue::Bool(answer as u8))?;
@@ -89,7 +89,7 @@ pub fn ring(env: &mut JNIEnv, ctx: &JObject, link: &str, reason: &str) -> Result
     RINGS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
     let nm = service(env, ctx, "notification")?;
-    channel(env, &nm, CHANNEL, "Calls from Claude", 4, true)?; // a channel's sound plays once, so the ringtone is played here to loop
+    channel(env, &nm, CHANNEL, "Calls from Claude", crate::jx::IMPORTANCE_HIGH, true)?; // a channel's sound plays once, so the ringtone is played here to loop
     let full = call_screen(env, ctx, link, false, 1)?;
     let answer = call_screen(env, ctx, link, true, 2)?;
     let decline = hang_up(env, ctx, link, 3)?;
@@ -108,17 +108,17 @@ pub fn ring(env: &mut JNIEnv, ctx: &JObject, link: &str, reason: &str) -> Result
         .l()?;
     env.call_method(&b, "setStyle", "(Landroid/app/Notification$Style;)Landroid/app/Notification$Builder;", &[JValue::Object(&style)])?;
     let n = env.call_method(&b, "build", "()Landroid/app/Notification;", &[])?.l()?;
-    env.call_method(&nm, "notify", "(ILandroid/app/Notification;)V", &[JValue::Int(NOTIFICATION_ID), JValue::Object(&n)])?;
+    env.call_method(&nm, "notify", "(ILandroid/app/Notification;)V", &[JValue::Int(RING_ID), JValue::Object(&n)])?;
 
     // alarm usage wakes through Do Not Disturb
     let alarm = crate::settings::mode(env, ctx)? == "wake";
-    let uri = env.call_static_method("android/media/RingtoneManager", "getDefaultUri", "(I)Landroid/net/Uri;", &[JValue::Int(if alarm { 4 } else { 1 })])?.l()?;
+    let uri = env.call_static_method("android/media/RingtoneManager", "getDefaultUri", "(I)Landroid/net/Uri;", &[JValue::Int(if alarm { crate::jx::RINGTONE_TYPE_ALARM } else { crate::jx::RINGTONE_TYPE_RINGTONE })])?.l()?;
     let sig = "(Landroid/content/Context;Landroid/net/Uri;)Landroid/media/Ringtone;";
     let tone = env.call_static_method("android/media/RingtoneManager", "getRingtone", sig, &[JValue::Object(ctx), JValue::Object(&uri)])?.l()?;
     if !tone.is_null() {
         let ab = env.new_object("android/media/AudioAttributes$Builder", "()V", &[])?;
-        env.call_method(&ab, "setUsage", "(I)Landroid/media/AudioAttributes$Builder;", &[JValue::Int(if alarm { 4 } else { 6 })])?;
-        env.call_method(&ab, "setContentType", "(I)Landroid/media/AudioAttributes$Builder;", &[JValue::Int(4)])?;
+        env.call_method(&ab, "setUsage", "(I)Landroid/media/AudioAttributes$Builder;", &[JValue::Int(if alarm { crate::jx::USAGE_ALARM } else { crate::jx::USAGE_NOTIFICATION_RINGTONE })])?;
+        env.call_method(&ab, "setContentType", "(I)Landroid/media/AudioAttributes$Builder;", &[JValue::Int(crate::jx::CONTENT_TYPE_SONIFICATION)])?;
         let attrs = env.call_method(&ab, "build", "()Landroid/media/AudioAttributes;", &[])?.l()?;
         env.call_method(&tone, "setAudioAttributes", "(Landroid/media/AudioAttributes;)V", &[JValue::Object(&attrs)])?;
         env.call_method(&tone, "setLooping", "(Z)V", &[JValue::Bool(1)])?;
@@ -152,7 +152,7 @@ pub fn ring(env: &mut JNIEnv, ctx: &JObject, link: &str, reason: &str) -> Result
 
 pub fn tick(env: &mut JNIEnv, ctx: &JObject) -> Result<()> {
     let vib = service(env, ctx, "vibrator")?;
-    let effect = env.call_static_method("android/os/VibrationEffect", "createPredefined", "(I)Landroid/os/VibrationEffect;", &[JValue::Int(2)])?.l()?;
+    let effect = env.call_static_method("android/os/VibrationEffect", "createPredefined", "(I)Landroid/os/VibrationEffect;", &[JValue::Int(crate::jx::EFFECT_TICK)])?.l()?;
     env.call_method(&vib, "vibrate", "(Landroid/os/VibrationEffect;)V", &[JValue::Object(&effect)])?;
     Ok(())
 }
@@ -171,7 +171,7 @@ pub fn stop(env: &mut JNIEnv, ctx: &JObject, link: &str, handled: bool) -> Resul
     }
     stop_sound(env)?;
     let nm = service(env, ctx, "notification")?;
-    env.call_method(&nm, "cancel", "(I)V", &[JValue::Int(NOTIFICATION_ID)])?;
+    env.call_method(&nm, "cancel", "(I)V", &[JValue::Int(RING_ID)])?;
     Ok(())
 }
 

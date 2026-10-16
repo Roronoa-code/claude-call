@@ -83,7 +83,7 @@ pub fn auto(env: &mut JNIEnv, ctx: &JObject) -> Result<()> {
     let now = chats::now();
     path(env, ctx)?;
     let Some((due, stalled, waiting)) = read(|s| {
-        let waiting = s.chats.iter().flat_map(|c| &c.lines).filter(|l| chats::unsent(l, now) == "waiting").count() as u64;
+        let waiting = s.chats.iter().flat_map(|c| &c.lines).filter(|l| chats::unsent(l, now) == chats::Unsent::Waiting).count() as u64;
         let parts = s.stalled(now).into_iter().map(|(c, m)| (c, m, 60_000));
         let taken = s.unanswered(now).into_iter().map(|(c, m, since)| (c, m, ((now - since) / 4).clamp(60_000, 30 * 60_000)));
         (s.due(now), parts.chain(taken).collect::<Vec<_>>(), waiting)

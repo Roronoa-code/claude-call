@@ -180,9 +180,9 @@ fn build<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, wide: bool, size: Option<(f32,
 fn day(env: &mut JNIEnv, at: i64, by: i32) -> Result<(i32, i32)> {
     let c = env.call_static_method("java/util/Calendar", "getInstance", "()Ljava/util/Calendar;", &[])?.l()?;
     env.call_method(&c, "setTimeInMillis", "(J)V", &[JValue::Long(at)])?;
-    env.call_method(&c, "add", "(II)V", &[JValue::Int(5), JValue::Int(by)])?;
+    env.call_method(&c, "add", "(II)V", &[JValue::Int(crate::jx::CALENDAR_DATE), JValue::Int(by)])?;
     let get = |env: &mut JNIEnv, f: i32| env.call_method(&c, "get", "(I)I", &[JValue::Int(f)])?.i();
-    Ok((get(env, 1)?, get(env, 6)?))
+    Ok((get(env, crate::jx::CALENDAR_YEAR)?, get(env, crate::jx::CALENDAR_DAY_OF_YEAR)?))
 }
 
 fn since(env: &mut JNIEnv, ctx: &JObject, at: i64) -> Result<String> {

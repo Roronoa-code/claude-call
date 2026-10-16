@@ -18,9 +18,12 @@ pub fn stop() {
     GEN.fetch_add(1, Ordering::Relaxed);
 }
 
+const CALL_FRESH_S: i64 = 75;
+const CATCH_UP_MAX_S: i64 = 12 * 3600;
+
 fn start_since(cursor: i64) -> String {
     let now = crate::jx::now_ms() / 1000;
-    if cursor > 0 { (cursor - 5).max(now - 12 * 3600).to_string() } else { "75s".into() }
+    if cursor > 0 { (cursor - 5).max(now - CATCH_UP_MAX_S).to_string() } else { format!("{CALL_FRESH_S}s") }
 }
 
 pub fn listen(env: &mut JNIEnv, ctx: &JObject, topic: String, generation: u64) {
@@ -73,7 +76,7 @@ pub fn listen(env: &mut JNIEnv, ctx: &JObject, topic: String, generation: u64) {
         let link = msg["click"].as_str().unwrap_or("").to_string();
         crate::jx::ok(env, |env| match msg["title"].as_str() {
             Some("Contact mode") => crate::settings::received(env, ctx, &text, at),
-            Some("Claude is calling") if crate::jx::now_ms() - at < 75_000 && link.starts_with("https://") => {
+            Some("Claude is calling") if crate::jx::now_ms() - at < CALL_FRESH_S * 1000 && link.starts_with("https://") => {
                 crate::ring::ring(env, ctx, &link, &text)
             }
             Some("Chat reply") => crate::inbox::reply_arrived(env, ctx, &text),
@@ -140,7 +143,7 @@ pub fn request_call(topic: String, agent: String) {
     publish(topic, "Call request", agent);
 }
 
-pub fn latest_mode(topic: &str) -> Option<(String, i64)> {
+pub fn latest_mode_blocking(topic: &str) -> Option<(String, i64)> {
     RT.block_on(async {
         let r = HTTP.get(format!("https://ntfy.sh/{topic}/json?poll=1&since=12h")).timeout(Duration::from_secs(8)).send().await.ok()?;
         let text = r.text().await.ok()?;

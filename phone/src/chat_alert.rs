@@ -1,5 +1,5 @@
 use crate::{
-    chats::{self, Chat},
+    chats::{self, Chat, Kind, QuickAnswers},
     inbox,
     jx::{self, s, service},
     ring, settings,
@@ -11,12 +11,13 @@ use jni::{
 };
 
 fn notification_id(chat: &str) -> i32 {
-    100 + (chat.bytes().fold(0u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32)) & 0xf_ffff) as i32
+    FIRST_CHAT_ID + (chat.bytes().fold(0u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32)) & 0xf_ffff) as i32
 }
 
 /// Left ungrouped, Android bundles these with the listener's notification, and a tap on the bundle opens the home screen.
 const GROUP: &str = "chats";
 const SUMMARY_ID: i32 = 99;
+const FIRST_CHAT_ID: i32 = SUMMARY_ID + 1;
 const TYPED: &str = "reply";
 /// Reply's intent is mutable (Android adds the typed words), so only this action may carry a "choice".
 const CHOICE: &str = "fyi.mani.callme.CHOICE";
@@ -42,7 +43,7 @@ pub fn cancel(env: &mut JNIEnv, ctx: &JObject, chat: &str) -> Result<()> {
 /// Cancelling the summary would take the other chats' notifications with it.
 fn recount(env: &mut JNIEnv, ctx: &JObject, read: &str) -> Result<()> {
     let Some((need, Some(c))) = inbox::needing(read) else { return Ok(()) };
-    let last = c.lines.iter().rev().find(|l| !l.me && l.state != "partial");
+    let last = c.lines.iter().rev().find(|l| !l.me && l.state != chats::State::Partial);
     let name = chats::label(&c);
     let a = Alert {
         chat: &c.id,
@@ -52,8 +53,8 @@ fn recount(env: &mut JNIEnv, ctx: &JObject, read: &str) -> Result<()> {
         at: last.map_or(c.updated, |l| l.at),
         mine: None,
         note: None,
-        answers: (vec![], false, false),
-        updates: c.kind == "note",
+        answers: QuickAnswers::default(),
+        updates: c.kind == Kind::Note,
         alert: false,
     };
     if SUMMED.lock().unwrap().as_ref() == Some(&(need, summary_line(&a))) {
@@ -74,7 +75,7 @@ struct Alert<'a> {
     at: i64,
     mine: Option<&'a str>,
     note: Option<&'a str>,
-    answers: (Vec<String>, bool, bool),
+    answers: QuickAnswers,
     updates: bool,
     alert: bool,
 }
@@ -92,7 +93,7 @@ pub fn notify(env: &mut JNIEnv, ctx: &JObject, chat: &str, name: &str, text: &st
         mine: None,
         note: None,
         answers: chats::quick_answers(&c, now),
-        updates: c.kind == "note",
+        updates: c.kind == Kind::Note,
         alert: true,
     };
     show(env, ctx, &a)?;
@@ -122,7 +123,7 @@ fn not_sent(chat: &str, now: i64) -> Alert<'_> {
         at: now,
         mine: None,
         note: None,
-        answers: (vec![], false, false),
+        answers: QuickAnswers::default(),
         updates: false,
         alert: false,
     }
@@ -141,8 +142,8 @@ fn answer(env: &mut JNIEnv, ctx: &JObject, intent: &JObject, chat: &str, kept: &
     let mut seen: Option<Option<(Chat, bool, bool)>> = None;
     *kept = inbox::post(env, ctx, chat, |s| {
         let r = s.answer(chat, &text, now);
-        let msg = r.as_ref().and_then(|(_, m, _)| m.clone());
-        seen = Some(r.map(|(c, m, long)| (c, m.is_some(), long)));
+        let msg = r.as_ref().and_then(|a| a.msg.clone());
+        seen = Some(r.map(|a| (a.chat, a.msg.is_some(), a.too_long)));
         msg
     })?;
     let (c, tried, long) = match seen {
@@ -156,8 +157,8 @@ fn answer(env: &mut JNIEnv, ctx: &JObject, intent: &JObject, chat: &str, kept: &
             return show(env, ctx, &not_sent(chat, now));
         }
     };
-    let last = c.lines.iter().rev().find(|l| !l.me && l.state != "partial");
-    let (sent, note, answers) = chats::after_answer(&c, tried, *kept, now);
+    let last = c.lines.iter().rev().find(|l| !l.me && l.state != chats::State::Partial);
+    let chats::AfterAnswer { sent, note, answers } = chats::after_answer(&c, tried, *kept, now);
     let kept_long = long && inbox::saved_draft(chat).is_some_and(|d| d.ends_with(text.as_str()));
     let lost = (long && !kept_long) || (tried && !*kept);
     let note = match () {
@@ -175,7 +176,7 @@ fn answer(env: &mut JNIEnv, ctx: &JObject, intent: &JObject, chat: &str, kept: &
         mine: sent.then_some(text.as_str()),
         note,
         answers,
-        updates: c.kind == "note",
+        updates: c.kind == Kind::Note,
         alert: false,
     };
     show(env, ctx, &a)?;
@@ -208,13 +209,13 @@ fn typed(env: &mut JNIEnv, intent: &JObject) -> Result<Option<String>> {
 fn channel<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, nm: &JObject, updates: bool) -> Result<JObject<'a>> {
     let quiet = matches!(settings::mode(env, ctx)?.as_str(), "none" | "sleep");
     let id = if quiet {
-        ring::channel(env, nm, "chat_replies_quiet", "Chat replies (quiet)", 2, true)?;
+        ring::channel(env, nm, "chat_replies_quiet", "Chat replies (quiet)", jx::IMPORTANCE_LOW, true)?;
         "chat_replies_quiet"
     } else if updates {
-        ring::channel(env, nm, "chat_updates", "Updates from the PC", 2, true)?;
+        ring::channel(env, nm, "chat_updates", "Updates from the PC", jx::IMPORTANCE_LOW, true)?;
         "chat_updates"
     } else {
-        ring::channel(env, nm, "chat_replies", "Chat replies", 4, false)?;
+        ring::channel(env, nm, "chat_replies", "Chat replies", jx::IMPORTANCE_HIGH, false)?;
         "chat_replies"
     };
     s(env, id)
@@ -232,7 +233,7 @@ fn builder<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, nm: &JObject, updates: bool)
 
 fn open<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, chat: &str, code: i32) -> Result<JObject<'a>> {
     let home = jx::intent(env, ctx, "MainActivity")?;
-    env.call_method(&home, "addFlags", "(I)Landroid/content/Intent;", &[JValue::Int(0x0400_0000 | 0x2000_0000 | 0x1000_0000)])?;
+    env.call_method(&home, "addFlags", "(I)Landroid/content/Intent;", &[JValue::Int(jx::FLAG_ACTIVITY_CLEAR_TOP | jx::FLAG_ACTIVITY_SINGLE_TOP | jx::FLAG_ACTIVITY_NEW_TASK)])?;
     let c = s(env, chat)?;
     jx::put(env, &home, "chat", JValue::Object(&c))?;
     jx::pending(env, ctx, "getActivity", code, &home)
@@ -270,7 +271,7 @@ fn show(env: &mut JNIEnv, ctx: &JObject, a: &Alert) -> Result<()> {
         env.call_method(&style, "addMessage", add, &[JValue::Object(&t), JValue::Long(jx::now_ms()), JValue::Object(&none)])?;
     }
     jx::call(env, &b, "setStyle", &format!("(Landroid/app/Notification$Style;){BUILDER}"), &[JValue::Object(&style)])?;
-    let (choices, reply, more) = &a.answers;
+    let QuickAnswers { choices, reply, open: more } = &a.answers;
     for (k, c) in choices.iter().enumerate() {
         let i = jx::intent(env, ctx, "ChatAction")?;
         let what = s(env, CHOICE)?;
@@ -288,7 +289,7 @@ fn show(env: &mut JNIEnv, ctx: &JObject, a: &Alert) -> Result<()> {
         jx::put(env, &i, "chat", JValue::Object(&chat))?;
         // Mutable, so Android can put the typed words in.
         let sig = "(Landroid/content/Context;ILandroid/content/Intent;I)Landroid/app/PendingIntent;";
-        let flags = 0x0200_0000 | 0x0800_0000;
+        let flags = jx::PENDING_FLAG_MUTABLE | jx::PENDING_FLAG_UPDATE_CURRENT;
         let p = env.call_static_method("android/app/PendingIntent", "getBroadcast", sig, &[JValue::Object(ctx), JValue::Int(id * 8 + 3), JValue::Object(&i), JValue::Int(flags)])?.l()?;
         let input = {
             let k = s(env, TYPED)?;
@@ -318,7 +319,7 @@ fn summary(env: &mut JNIEnv, ctx: &JObject, a: &Alert, need: usize) -> Result<()
     let tap = open(env, ctx, "", SUMMARY_ID)?;
     jx::call(env, &b, "setContentIntent", &format!("(Landroid/app/PendingIntent;){BUILDER}"), &[JValue::Object(&tap)])?;
     jx::call(env, &b, "setGroupSummary", &format!("(Z){BUILDER}"), &[JValue::Bool(1)])?;
-    jx::call(env, &b, "setGroupAlertBehavior", &format!("(I){BUILDER}"), &[JValue::Int(2)])?;
+    jx::call(env, &b, "setGroupAlertBehavior", &format!("(I){BUILDER}"), &[JValue::Int(jx::GROUP_ALERT_CHILDREN)])?;
     let n = env.call_method(&b, "build", "()Landroid/app/Notification;", &[])?.l()?;
     env.call_method(&nm, "notify", "(ILandroid/app/Notification;)V", &[JValue::Int(SUMMARY_ID), JValue::Object(&n)])?;
     *SUMMED.lock().unwrap() = Some((need, summary_line(a)));
@@ -334,7 +335,7 @@ fn action<'a>(env: &mut JNIEnv<'a>, label: &str, p: &JObject, input: Option<&JOb
     )?;
     if let Some(i) = input {
         env.call_method(&ab, "addRemoteInput", "(Landroid/app/RemoteInput;)Landroid/app/Notification$Action$Builder;", &[JValue::Object(i)])?;
-        env.call_method(&ab, "setSemanticAction", "(I)Landroid/app/Notification$Action$Builder;", &[JValue::Int(1)])?;
+        env.call_method(&ab, "setSemanticAction", "(I)Landroid/app/Notification$Action$Builder;", &[JValue::Int(jx::SEMANTIC_ACTION_REPLY)])?;
         env.call_method(&ab, "setAllowGeneratedReplies", "(Z)Landroid/app/Notification$Action$Builder;", &[JValue::Bool(0)])?;
     }
     env.call_method(&ab, "build", "()Landroid/app/Notification$Action;", &[])?.l()

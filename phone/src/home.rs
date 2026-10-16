@@ -74,7 +74,8 @@ fn follow_fast(fast: &Rc<slint::Timer>, ui: &HomeScreen, swiping: &Rc<Cell<bool>
     });
 }
 
-const PAIR_SF: f32 = 2.75;
+const MAX_PAIR_PX_PER_DP: f32 = 2.75;
+const LIGHT_EASE_RATE: f32 = 12.0;
 
 pub fn run(app: android_activity::AndroidApp) {
     let ui = HomeScreen::new().expect("home screen");
@@ -168,7 +169,7 @@ pub fn run(app: android_activity::AndroidApp) {
         t.set_null_below(below[1]);
     }
     let screen_sf = app.config().density().map_or(1.0, |dpi| dpi as f32 / 160.0);
-    let r = (PAIR_SF / screen_sf).min(1.0);
+    let r = (MAX_PAIR_PX_PER_DP / screen_sf).min(1.0);
     let home_size = |i: usize, extra: f32| {
         let (w, h) = [alive::CLAWD_SIZE, alive::NULL_SIZE][i];
         (w * st.k, (h + extra) * st.k)
@@ -281,7 +282,7 @@ pub fn run(app: android_activity::AndroidApp) {
             let sf = ui.window().scale_factor() * r;
             let mut any = false;
             let codex = home.get_caller() == "codex";
-            let ease = 1.0 - (-(now - last_now) * 12.0).exp();
+            let ease = 1.0 - (-(now - last_now) * LIGHT_EASE_RATE).exp();
             last_now = now;
             for (i, c) in [&p.clawd, &p.null].into_iter().enumerate() {
                 let want = if (i == 1) == codex { 1.0 } else { 0.5 };

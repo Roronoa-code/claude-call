@@ -147,7 +147,7 @@ fn window_insets(types: i32) -> Option<(f32, f32)> {
 }
 
 pub fn insets() -> Option<(f32, f32)> {
-    window_insets(1 | 2).map(|(top, bottom)| (top.max(36.0), bottom.max(24.0)))
+    window_insets(crate::jx::INSETS_STATUS_BARS | crate::jx::INSETS_NAVIGATION_BARS).map(|(top, bottom)| (top.max(36.0), bottom.max(24.0)))
 }
 
 pub fn call_began() {

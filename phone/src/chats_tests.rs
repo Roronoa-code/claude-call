@@ -16,15 +16,15 @@ fn reply(chat: &str, re: &str, state: &str, text: &str, part: u32, parts: u32) -
 fn working_then_done_in_parts() {
     let (mut s, c, m) = store();
     assert!(s.apply_reply(&reply(&c, &m, "working", "", 1, 1), None).is_none());
-    assert_eq!(s.get(&c).unwrap().lines[0].state, "working");
+    assert_eq!(s.get(&c).unwrap().lines[0].state, State::Working);
     for (p, t) in [(2, "world "), (1, "hello "), (2, "world "), (3, "!")] {
         let r = s.apply_reply(&reply(&c, &m, "done", t, p, 3), None);
         assert_eq!(r.is_some(), p == 3, "notifies once, when whole");
     }
     assert!(s.apply_reply(&reply(&c, &m, "done", "!", 3, 3), None).is_none(), "replay");
     let chat = s.get(&c).unwrap();
-    assert_eq!((chat.lines[1].text.as_str(), chat.lines[1].state.as_str()), ("hello world !", "done"));
-    assert_eq!((chat.lines[0].state.as_str(), chat.unread, chat.lines.len()), ("answered", 1, 2));
+    assert_eq!((chat.lines[1].text.as_str(), chat.lines[1].state), ("hello world !", State::Done));
+    assert_eq!((chat.lines[0].state, chat.unread, chat.lines.len()), (State::Answered, 1, 2));
     assert_eq!(status(chat, now()), ("", ""));
 
     let (mut s, c, m) = store();
@@ -45,7 +45,7 @@ fn working_then_done_in_parts() {
     s.media_done("https://ntfy.sh/file/v.mp4", Some("/data/v.mp4"));
     s.media_done("https://ntfy.sh/file/abc123.jpg", None);
     let l = &s.get(&c).unwrap().lines[1];
-    assert_eq!((l.media[0].state.as_str(), l.media[1].state.as_str(), l.media[1].path.as_str()), ("failed", "ready", "/data/v.mp4"));
+    assert_eq!((l.media[0].state, l.media[1].state, l.media[1].path.as_str()), (MediaState::Failed, MediaState::Ready, "/data/v.mp4"));
     assert!(s.downloads().is_empty());
 }
 
@@ -113,7 +113,7 @@ fn only_safe_files_are_fetched() {
 #[test]
 fn delete_undo_keeps_late_replies_and_purge_frees_files() {
     let (mut s, c, m) = store();
-    let pic = |path: &str| Media { path: path.into(), state: "ready".into(), ..Media::default() };
+    let pic = |path: &str| Media { path: path.into(), state: MediaState::Ready, ..Media::default() };
     s.get_mut(&c).unwrap().lines[0].media = vec![pic("/m/shared.jpg"), pic("/m/only.jpg")];
     s.get_mut(&c).unwrap().pick = Some(pic("/m/picked.jpg"));
     let other = s.new_chat("codex", None);
@@ -144,10 +144,11 @@ fn delete_undo_keeps_late_replies_and_purge_frees_files() {
 
 #[test]
 fn signature_matches_shared_vector() {
-    let sig = sign("test-key", "c1", "m1", "claude", Some("haiku-5.5"), 1700000000000, "héllo 👋", None);
-    assert_eq!(sig, "ab529206c0c5da8e9c12efc38dac2b71aacc25df75a33f8d9c1b230be8b2f44e");
+    let c = Chat { id: "c1".into(), agent: "claude".into(), model: Some("haiku-5.5".into()), ..Chat::default() };
+    let l = Line { id: "m1".into(), at: 1700000000000, text: "héllo 👋".into(), ..Line::default() };
+    assert_eq!(sign("test-key", &c, &l), "ab529206c0c5da8e9c12efc38dac2b71aacc25df75a33f8d9c1b230be8b2f44e");
     let m = Media { url: "https://ntfy.sh/file/abc123.jpg".into(), name: "pic é.jpg".into(), mime: "image/jpeg".into(), size: 1234, sha256: "ab".repeat(32), ..Media::default() };
-    let sig = |m: &Media| sign("test-key", "c1", "m1", "claude", Some("haiku-5.5"), 1700000000000, "héllo 👋", Some(m));
+    let sig = |m: &Media| sign("test-key", &c, &Line { media: vec![m.clone()], ..l.clone() });
     assert_eq!(sig(&m), "f61fe75b634ec0074a302a1f927b60591ae6d5a1028b6cd8a4203befa10d0cf5");
     assert_ne!(sig(&Media { size: 1, ..m.clone() }), sig(&m));
 }
@@ -169,7 +170,7 @@ fn a_photo_goes_up_first_then_the_signed_message_carries_it() {
     assert_eq!(v["att"], json!({"url": "https://ntfy.sh/file/up.jpg", "name": "photo.jpg", "type": "image/jpeg", "size": 3,
         "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}));
     let l = &s.get(&c2).unwrap().lines[0];
-    assert_eq!(v["sig"], sign("k", &c2, &m, "codex", None, l.at, "", l.media.first()).as_str());
+    assert_eq!(v["sig"], sign("k", s.get(&c2).unwrap(), l).as_str());
     s.sent(&c2, &m, false);
     assert_eq!(s.retry(&c2, "", true), Some(m.clone()));
     assert!(s.to_upload(&c2, &m).is_none(), "a retry re-sends the link it went up to");
@@ -193,7 +194,7 @@ fn body_fits_at_the_cap_and_retry_resends_the_same() {
     let m = s.add_mine(&c, "retry me", None).unwrap();
     let first = s.body(&c, &m, "k");
     s.sent(&c, &m, false);
-    assert_eq!(unsent(s.get(&c).unwrap().lines.last().unwrap(), now()), "waiting");
+    assert_eq!(unsent(s.get(&c).unwrap().lines.last().unwrap(), now()), Unsent::Waiting);
     assert_eq!(s.retry(&c, "", true), Some(m.clone()));
     assert_eq!(s.body(&c, &m, "k"), first);
     assert!(s.add_mine(&c, "  ", None).is_none());
@@ -346,7 +347,7 @@ fn receipts_step_the_status_forward_only() {
     assert!(s.apply_receipt(&receipt(&c, &m, "read")));
     assert_eq!(shows(&s), ("Read", "stop"));
     assert!(!s.apply_receipt(&receipt(&c, &m, "delivered")), "late, lower receipt");
-    assert_eq!(line(&s).seen, "read");
+    assert_eq!(line(&s).seen, Seen::Read);
     for v in [receipt("nope", &m, "read"), receipt(&c, "nope", "read"), receipt(&c, &m, "seen"), receipt(&c, &m, ""), json!({"v": 2, "chat": c, "re": m, "state": "read"})] {
         assert!(!s.apply_receipt(&v), "{v}");
     }
@@ -356,10 +357,25 @@ fn receipts_step_the_status_forward_only() {
     assert!(!s.apply_receipt(&receipt(&c, &m, "read")));
     let path = std::env::temp_dir().join(format!("callme-receipts-{}.json", std::process::id()));
     before.save(&path).unwrap();
-    assert_eq!(Store::load(&path).unwrap().get(&c).unwrap().lines[0].seen, "read");
+    assert_eq!(Store::load(&path).unwrap().get(&c).unwrap().lines[0].seen, Seen::Read);
     std::fs::remove_file(&path).unwrap();
     let old: Store = serde_json::from_str(r#"{"chats":[{"id":"c1","lines":[{"id":"m1","me":true,"state":"sent"}]}]}"#).unwrap();
     assert_eq!(status(&old.chats[0], now()), ("Sent · the PC hasn't picked it up yet", ""), "no receipt for long");
+    let line = |state: &str, seen: &str, media: &str| {
+        let m = format!(r#"{{"part":1,"url":"","name":"","mime":"","size":0,"sha256":"","path":"","state":"{media}","uploaded":0}}"#);
+        format!(r#"{{"id":"m","me":true,"text":"","at":0,"since":0,"state":"{state}","parts":[],"media":[{m}],"choices":[],"seen":"{seen}","first":0,"tries":0}}"#)
+    };
+    let states = ["", "sending", "sent", "not_sent", "working", "queued", "answered", "partial", "done", "failed", "stopped", "missed"];
+    let (seen, media) = (["", "delivered", "read"], ["", "loading", "ready", "failed"]);
+    let lines: Vec<String> = states.iter().enumerate().map(|(i, s)| line(s, seen[i % 3], media[i % 4])).collect();
+    for kind in ["", "ask", "note"] {
+        let file = format!(
+            r#"{{"chats":[{{"id":"c1","agent":"claude","model":null,"title":"","updated":0,"unread":0,"lines":[{}],"kind":"{kind}","asked":0,"draft":"","pick":null,"deleted":0}}],"gone":[],"picking":""}}"#,
+            lines.join(",")
+        );
+        let back = serde_json::to_string(&serde_json::from_str::<Store>(&file).unwrap()).unwrap();
+        assert_eq!(back, file, "the saved file stays byte for byte the same");
+    }
 }
 
 
@@ -452,29 +468,29 @@ fn an_answer_shows_as_sending_until_the_pc_takes_it() {
     s.apply_note(&note("ask-r", "r", "ask", &["Yes"], "Ship it?", 1, 1), None);
     let m = s.add_mine("ask-r", "Yes", None).unwrap();
     let st = |s: &Store| ask_state(s.get("ask-r").unwrap(), now());
-    assert_eq!(st(&s), "sending");
+    assert_eq!(st(&s), Ask::Sending);
     s.sent("ask-r", &m, true);
-    assert_eq!(st(&s), "sending", "sent, not yet taken");
+    assert_eq!(st(&s), Ask::Sending, "sent, not yet taken");
     s.apply_receipt(&receipt("ask-r", &m, "delivered"));
-    assert_eq!(st(&s), "sending", "delivered: the PC has it, but hasn't taken it yet");
+    assert_eq!(st(&s), Ask::Sending, "delivered: the PC has it, but hasn't taken it yet");
     s.chats[0].lines[1].since -= 10 * 60_000;
-    assert_eq!(st(&s), "sending", "no time limit stands in for the PC's word");
+    assert_eq!(st(&s), Ask::Sending, "no time limit stands in for the PC's word");
     s.apply_reply(&reply("ask-r", &m, "done", "Got it.", 1, 1), None);
-    assert_eq!(st(&s), "answered");
+    assert_eq!(st(&s), Ask::Answered);
     let mut s3 = Store::default();
     s3.apply_note(&note("ask-r", "r", "ask", &["Yes"], "Ship it?", 1, 1), None);
     let m3 = s3.add_mine("ask-r", "Yes", None).unwrap();
     s3.apply_reply(&reply("ask-r", &m3, "missed", "This question expired (over a day old), so nothing is waiting for the answer now.", 1, 1), None);
-    assert_eq!(st(&s3), "expired");
-    assert_eq!(quick_answers(s3.get("ask-r").unwrap(), now()), (vec![], false, false), "nothing left to tap");
+    assert_eq!(st(&s3), Ask::Expired);
+    assert_eq!(quick_answers(s3.get("ask-r").unwrap(), now()), QuickAnswers::default(), "nothing left to tap");
     let mut s2 = Store::default();
     s2.apply_note(&note("ask-r", "r", "ask", &["Yes"], "Ship it?", 1, 1), None);
     let m2 = s2.add_mine("ask-r", "Yes", None).unwrap();
     s2.sent("ask-r", &m2, true);
-    s2.chats[0].lines[1].state = "not_sent".into();
-    assert_eq!(st(&s2), "sending", "still retrying by itself");
+    s2.chats[0].lines[1].state = State::NotSent;
+    assert_eq!(st(&s2), Ask::Sending, "still retrying by itself");
     s2.chats[0].lines[1].first -= AUTO_FOR;
-    assert_eq!(st(&s2), "waiting");
+    assert_eq!(st(&s2), Ask::Waiting);
 }
 
 
@@ -529,7 +545,7 @@ fn a_notification_reply_too_long_to_send_waits_whole_in_the_chat() {
     let long = format!("{} 👋 \"quoted\"", "word ".repeat(700));
     assert!(room(&long) < 0);
     let n = s.get(&mine).unwrap().lines.len();
-    let (_, msg, too_long) = s.answer(&mine, &long, now()).unwrap();
+    let Answered { msg, too_long, .. } = s.answer(&mine, &long, now()).unwrap();
     assert_eq!((msg, too_long), (None, true), "nothing goes, nothing is cut");
     assert_eq!(s.get(&mine).unwrap().lines.len(), n);
     assert_eq!(s.get(&mine).unwrap().draft, long.trim(), "the whole text waits in its box");
@@ -539,7 +555,7 @@ fn a_notification_reply_too_long_to_send_waits_whole_in_the_chat() {
     s.apply_note(&note("ask-l", "l1", "ask", &[], "?", 1, 1), None);
     let m = s.add_mine("ask-l", "Yes", None).unwrap();
     s.apply_reply(&reply("ask-l", &m, "done", "Got it.", 1, 1), None);
-    assert!(!s.answer("ask-l", &long, now()).unwrap().2);
+    assert!(!s.answer("ask-l", &long, now()).unwrap().too_long);
     assert_eq!(s.get("ask-l").unwrap().draft, "");
 }
 

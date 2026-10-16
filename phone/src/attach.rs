@@ -301,7 +301,7 @@ fn bitmap(env: &mut JNIEnv, path: &str, video: bool, max: i32) -> Result<Option<
         let r = env.new_object("android/media/MediaMetadataRetriever", "()V", &[])?;
         env.call_method(&r, "setDataSource", "(Ljava/lang/String;)V", &[JValue::Object(&p)])?;
         let sig = "(JIII)Landroid/graphics/Bitmap;";
-        let frame = env.call_method(&r, "getScaledFrameAtTime", sig, &[JValue::Long(0), JValue::Int(2), JValue::Int(max), JValue::Int(max)])?.l()?;
+        let frame = env.call_method(&r, "getScaledFrameAtTime", sig, &[JValue::Long(0), JValue::Int(jx::OPTION_CLOSEST_SYNC), JValue::Int(max), JValue::Int(max)])?.l()?;
         env.call_method(&r, "release", "()V", &[])?;
         frame
     } else {
@@ -347,7 +347,7 @@ pub fn play(env: &mut JNIEnv, act: &JObject, path: &str) -> Result<()> {
     let uri = env.call_method(&i, "getData", "()Landroid/net/Uri;", &[])?.l()?;
     let t = s(env, mime)?;
     env.call_method(&i, "setDataAndType", "(Landroid/net/Uri;Ljava/lang/String;)Landroid/content/Intent;", &[JValue::Object(&uri), JValue::Object(&t)])?;
-    env.call_method(&i, "addFlags", "(I)Landroid/content/Intent;", &[JValue::Int(1)])?;
+    env.call_method(&i, "addFlags", "(I)Landroid/content/Intent;", &[JValue::Int(jx::FLAG_GRANT_READ_URI_PERMISSION)])?;
     jx::start_activity(env, act, &i)
 }
 

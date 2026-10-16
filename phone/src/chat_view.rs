@@ -4,10 +4,10 @@ use crate::{
     attach::thumb,
 };
 
-const LINK_FOR: i64 = (3 * 60 - 10) * 60_000;
+const LINK_FOR: i64 = chats::NTFY_FILE_TTL - 10 * 60_000;
 
 pub fn choices(c: &chats::Chat, now: i64) -> Vec<slint::SharedString> {
-    if chats::ask_state(c, now) != "waiting" {
+    if chats::ask_state(c, now) != chats::Ask::Waiting {
         return vec![];
     }
     c.lines.iter().find(|l| !l.me).map_or(vec![], |l| l.choices.iter().map(|s| s.into()).collect())
@@ -73,9 +73,9 @@ pub fn arrange(mut rows: Vec<ChatRow>) -> Vec<ChatRow> {
 fn media_msg(me: bool, m: &Media, at: i64, now: i64) -> ChatMsg {
     let what = if m.video() { "video" } else { "photo" };
     let note = |text: String| ChatMsg { me, text: text.into(), kind: "note".into(), ..ChatMsg::default() };
-    match m.state.as_str() {
-        "loading" => note(format!("Downloading {what}…")),
-        "ready" => {
+    match m.state {
+        chats::MediaState::Loading => note(format!("Downloading {what}…")),
+        chats::MediaState::Ready => {
             match thumb(m) {
                 None if !m.video() => note(format!("Couldn't show this {what}")),
                 t => {
@@ -91,10 +91,10 @@ fn media_msg(me: bool, m: &Media, at: i64, now: i64) -> ChatMsg {
     }
 }
 
-pub fn thread(chat: &chats::Chat, ask: &str, now: i64) -> Vec<ChatMsg> {
-    let lines: Vec<_> = chat.lines.iter().filter(|l| l.me || l.state != "partial").collect();
-    let question = lines.iter().position(|l| !l.me).filter(|_| ask != "");
-    let sent = |c: &str| chat.lines.iter().any(|l| l.me && chats::unsent(l, now) != "failed" && l.text == c);
+pub fn thread(chat: &chats::Chat, ask: chats::Ask, now: i64) -> Vec<ChatMsg> {
+    let lines: Vec<_> = chat.lines.iter().filter(|l| l.me || l.state != chats::State::Partial).collect();
+    let question = lines.iter().position(|l| !l.me).filter(|_| ask != chats::Ask::NotAsked);
+    let sent = |c: &str| chat.lines.iter().any(|l| l.me && chats::unsent(l, now) != chats::Unsent::Failed && l.text == c);
     let last_mine = chat.lines.iter().rev().find(|l| l.me).map(|l| l.id.as_str());
     let mut msgs: Vec<ChatMsg> = vec![];
     for (i, l) in lines.iter().enumerate() {
@@ -105,9 +105,9 @@ pub fn thread(chat: &chats::Chat, ask: &str, now: i64) -> Vec<ChatMsg> {
                 items.push(ChatMsg { me: true, text: chats::shown(l).into(), ..ChatMsg::default() });
             }
             match chats::unsent(l, now) {
-                "" => {}
+                chats::Unsent::No => {}
                 _ if Some(l.id.as_str()) == last_mine => {}
-                "failed" => items.push(ChatMsg { me: true, text: "Not sent · Tap to retry".into(), kind: "unsent".into(), mark: "retry".into(), ..ChatMsg::default() }),
+                chats::Unsent::Failed => items.push(ChatMsg { me: true, text: "Not sent · Tap to retry".into(), kind: "unsent".into(), mark: "retry".into(), ..ChatMsg::default() }),
                 _ => items.push(ChatMsg { me: true, text: "Waiting for connection…".into(), kind: "unsent".into(), ..ChatMsg::default() }),
             }
         } else {
@@ -131,12 +131,12 @@ pub fn thread(chat: &chats::Chat, ask: &str, now: i64) -> Vec<ChatMsg> {
                 let choice = |c: &String| ChatMsg { text: c.into(), kind: "choice".into(), mark: if sent(c) { "on" } else { "" }.into(), ..ChatMsg::default() };
                 items.extend(l.choices.iter().map(choice));
                 match ask {
-                    "expired" => items.push(ChatMsg { text: "Expired".into(), kind: "tag".into(), ..ChatMsg::default() }),
-                    "sending" => items.push(ChatMsg { text: "Waiting for the PC".into(), kind: "tag".into(), ..ChatMsg::default() }),
+                    chats::Ask::Expired => items.push(ChatMsg { text: "Expired".into(), kind: "tag".into(), ..ChatMsg::default() }),
+                    chats::Ask::Sending => items.push(ChatMsg { text: "Waiting for the PC".into(), kind: "tag".into(), ..ChatMsg::default() }),
                     _ => {}
                 }
             }
-            if chat.kind.is_empty() && i + 1 == lines.len() && matches!(l.state.as_str(), "failed" | "missed") && Some(l.id.as_str()) == last_mine {
+            if chat.kind == chats::Kind::Chat && i + 1 == lines.len() && matches!(l.state, chats::State::Failed | chats::State::Missed) && Some(l.id.as_str()) == last_mine {
                 items.push(ChatMsg { text: "Send again".into(), kind: "again".into(), ..ChatMsg::default() });
             }
         }

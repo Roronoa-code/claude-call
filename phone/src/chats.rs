@@ -18,6 +18,89 @@ pub use text::{blocks, brief, composed, copy_text, has_link, inline, only_link};
 const MAX_TEXT: usize = 2800;
 const MAX_BODY: usize = 4000;
 
+#[derive(Serialize, Deserialize, Clone, Copy, Default, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum State {
+    #[default]
+    #[serde(rename = "")]
+    Unset,
+    Sending,
+    Sent,
+    NotSent,
+    Working,
+    Queued,
+    Answered,
+    Partial,
+    Done,
+    Failed,
+    Stopped,
+    Missed,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Default, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum Seen {
+    #[default]
+    #[serde(rename = "")]
+    Unseen,
+    Delivered,
+    Read,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Default, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MediaState {
+    #[default]
+    #[serde(rename = "")]
+    Unset,
+    Loading,
+    Ready,
+    Failed,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Default, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Kind {
+    #[default]
+    #[serde(rename = "")]
+    Chat,
+    Ask,
+    Note,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Ask {
+    NotAsked,
+    Waiting,
+    Sending,
+    Answered,
+    Expired,
+}
+
+impl Ask {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Ask::NotAsked => "",
+            Ask::Waiting => "waiting",
+            Ask::Sending => "sending",
+            Ask::Answered => "answered",
+            Ask::Expired => "expired",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Unsent {
+    No,
+    Waiting,
+    Failed,
+}
+
+/// A wire word as one of the saved enums; None for a word it doesn't have.
+pub fn wire<T: serde::de::DeserializeOwned>(s: &str) -> Option<T> {
+    serde_json::from_value(Value::from(s)).ok()
+}
+
 #[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq)]
 #[serde(default)]
 pub struct Line {
@@ -26,11 +109,11 @@ pub struct Line {
     pub text: String,
     pub at: i64,
     pub since: i64,
-    pub state: String,
+    pub state: State,
     pub parts: Vec<Option<String>>,
     pub media: Vec<Media>,
     pub choices: Vec<String>,
-    pub seen: String,
+    pub seen: Seen,
     pub first: i64,
     pub tries: u32,
 }
@@ -58,12 +141,13 @@ pub struct Media {
     pub size: u64,
     pub sha256: String,
     pub path: String,
-    pub state: String,
+    pub state: MediaState,
     pub uploaded: i64,
 }
 
 /// ntfy keeps an attachment 3 hours.
-const LINK_KEEP: i64 = 2 * 3600 * 1000;
+pub const NTFY_FILE_TTL: i64 = 3 * 3600 * 1000;
+const LINK_KEEP: i64 = NTFY_FILE_TTL - 3600 * 1000;
 
 impl Media {
     fn from(v: &Value, part: usize) -> Option<Self> {
@@ -83,7 +167,7 @@ impl Media {
             mime: mime.into(),
             size,
             sha256: sha.to_ascii_lowercase(),
-            state: "loading".into(),
+            state: MediaState::Loading,
             ..Media::default()
         })
     }
@@ -102,7 +186,7 @@ impl Media {
                 mime: mime.to_string(),
                 size,
                 sha256: hex(&Sha256::digest(bytes)),
-                state: "ready".into(),
+                state: MediaState::Ready,
                 ..Media::default()
             }),
         }
@@ -172,7 +256,7 @@ pub struct Chat {
     pub updated: i64,
     pub unread: u32,
     pub lines: Vec<Line>,
-    pub kind: String,
+    pub kind: Kind,
     pub asked: i64,
     pub draft: String,
     pub pick: Option<Media>,
@@ -209,11 +293,12 @@ fn id(prefix: &str) -> String {
     format!("{prefix}{}{}", base36(now() as u64, 0), base36(r, 4))
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn sign(key: &str, chat: &str, msg: &str, agent: &str, model: Option<&str>, ts: i64, text: &str, att: Option<&Media>) -> String {
+pub fn sign(key: &str, c: &Chat, l: &Line) -> String {
     let mut mac = Hmac::<Sha256>::new_from_slice(key.as_bytes()).expect("any key length");
+    let att = l.media.first();
     let v = if att.is_some() { "v2" } else { "v1" };
-    mac.update(format!("{v}\n{chat}\n{msg}\n{agent}\n{}\n{ts}\n{text}", model.unwrap_or("")).as_bytes());
+    let (chat, msg, agent, model, ts, text) = (&c.id, &l.id, &c.agent, c.model.as_deref().unwrap_or(""), l.at, &l.text);
+    mac.update(format!("{v}\n{chat}\n{msg}\n{agent}\n{model}\n{ts}\n{text}").as_bytes());
     if let Some(m) = att {
         mac.update(format!("\n{}\n{}\n{}\n{}\n{}", m.url, m.name, m.mime, m.size, m.sha256).as_bytes());
     }
@@ -288,38 +373,38 @@ pub fn name(agent: &str, model: Option<&str>) -> String {
 }
 
 pub fn label(c: &Chat) -> String {
-    match c.kind.as_str() {
-        "" => name(&c.agent, c.model.as_deref()),
+    match c.kind {
+        Kind::Chat => name(&c.agent, c.model.as_deref()),
         _ if c.title.trim().is_empty() => "Claude".into(),
         _ => c.title.clone(),
     }
 }
 
-pub fn ask_state(c: &Chat, now: i64) -> &'static str {
-    let reply = |id: &str| c.lines.iter().find(|l| !l.me && l.id == id).map_or("", |l| l.state.as_str());
-    let answers = || c.lines.iter().filter(|l| l.me && unsent(l, now) != "failed" && reply(&l.id) != "failed");
-    match c.kind.as_str() {
-        "ask" if answers().any(|l| reply(&l.id) == "done") => "answered",
-        "ask" if answers().any(|l| reply(&l.id) == "missed") => "expired",
-        "ask" if now - c.asked > ASK_FOR => "expired",
-        "ask" if answers().next().is_some() => "sending",
-        "ask" => "waiting",
-        _ => "",
+pub fn ask_state(c: &Chat, now: i64) -> Ask {
+    let reply = |id: &str| c.lines.iter().find(|l| !l.me && l.id == id).map_or(State::Unset, |l| l.state);
+    let answers = || c.lines.iter().filter(|l| l.me && unsent(l, now) != Unsent::Failed && reply(&l.id) != State::Failed);
+    match c.kind {
+        Kind::Ask if answers().any(|l| reply(&l.id) == State::Done) => Ask::Answered,
+        Kind::Ask if answers().any(|l| reply(&l.id) == State::Missed) => Ask::Expired,
+        Kind::Ask if now - c.asked > ASK_FOR => Ask::Expired,
+        Kind::Ask if answers().next().is_some() => Ask::Sending,
+        Kind::Ask => Ask::Waiting,
+        _ => Ask::NotAsked,
     }
 }
 
-pub fn ended(ask: &str) -> &'static str {
+pub fn ended(ask: Ask) -> &'static str {
     match ask {
-        "sending" => "Waiting for the PC to take your answer…",
-        "answered" => "You've answered this. Start a new chat to say more.",
-        "expired" => "This question has expired.",
+        Ask::Sending => "Waiting for the PC to take your answer…",
+        Ask::Answered => "You've answered this. Start a new chat to say more.",
+        Ask::Expired => "This question has expired.",
         _ => "",
     }
 }
 
 pub fn draft_line(c: &Chat, now: i64) -> String {
     match (c.draft.trim(), &c.pick) {
-        _ if !c.kind.is_empty() && ask_state(c, now) != "waiting" => String::new(),
+        _ if c.kind != Kind::Chat && ask_state(c, now) != Ask::Waiting => String::new(),
         ("", Some(m)) => if m.video() { "Video" } else { "Photo" }.to_string(),
         (t, _) => t.split_whitespace().collect::<Vec<_>>().join(" "),
     }
@@ -327,14 +412,14 @@ pub fn draft_line(c: &Chat, now: i64) -> String {
 
 pub const AUTO_FOR: i64 = 25 * 60_000;
 
-pub fn unsent(l: &Line, now: i64) -> &'static str {
+pub fn unsent(l: &Line, now: i64) -> Unsent {
     let limit = if l.media.is_empty() { 15_000 } else { 120_000 };
-    let stuck = l.state == "not_sent" || l.state == "sending" && now - l.since >= limit;
+    let stuck = l.state == State::NotSent || l.state == State::Sending && now - l.since >= limit;
     let first = if l.first > 0 { l.first } else { l.at };
     match () {
-        _ if !l.me || !stuck => "",
-        _ if now - first < AUTO_FOR => "waiting",
-        _ => "failed",
+        _ if !l.me || !stuck => Unsent::No,
+        _ if now - first < AUTO_FOR => Unsent::Waiting,
+        _ => Unsent::Failed,
     }
 }
 
@@ -347,14 +432,14 @@ pub fn face(agent: &str, model: Option<&str>) -> &'static str {
 }
 
 pub fn waiting(c: &Chat) -> bool {
-    c.lines.iter().rev().find(|l| l.me).is_some_and(|l| l.state == "working")
+    c.lines.iter().rev().find(|l| l.me).is_some_and(|l| l.state == State::Working)
 }
 
 pub fn think(c: &Chat, now: i64) -> String {
     match c.lines.iter().rev().find(|l| l.me) {
-        Some(l) if l.state == "working" && now - l.since >= 60_000 => format!("Thinking · {}", ago(now - l.since)),
-        Some(l) if l.state == "working" => "Thinking".into(),
-        Some(l) if l.state == "queued" => "Queued".into(),
+        Some(l) if l.state == State::Working && now - l.since >= 60_000 => format!("Thinking · {}", ago(now - l.since)),
+        Some(l) if l.state == State::Working => "Thinking".into(),
+        Some(l) if l.state == State::Queued => "Queued".into(),
         _ => String::new(),
     }
 }
@@ -369,11 +454,11 @@ pub fn ago(ms: i64) -> String {
 }
 
 pub fn shown(l: &Line) -> String {
-    match (l.text.as_str(), l.state.as_str()) {
+    match (l.text.as_str(), l.state) {
         ("", _) if !l.media.is_empty() => sent(&l.media),
-        ("", "failed") => "Something went wrong.".into(),
-        ("", "stopped") => "Stopped.".into(),
-        ("", "missed") => "No agent was free to take this.".into(),
+        ("", State::Failed) => "Something went wrong.".into(),
+        ("", State::Stopped) => "Stopped.".into(),
+        ("", State::Missed) => "No agent was free to take this.".into(),
         ("", _) => "Done.".into(),
         (t, _) => t.into(),
     }
@@ -381,21 +466,22 @@ pub fn shown(l: &Line) -> String {
 
 pub fn status(c: &Chat, now: i64) -> (&'static str, &'static str) {
     let Some(l) = c.lines.iter().rev().find(|l| l.me) else { return ("", "") };
-    let partial = c.lines.iter().any(|x| !x.me && x.id == l.id && x.state == "partial" && now - x.at > 3000);
-    match (l.state.as_str(), unsent(l, now)) {
-        (_, "waiting") => ("Waiting for connection…", ""),
-        (_, "failed") => ("Failed · Tap to retry", "retry"),
-        ("sending", _) => ("Sending…", ""),
-        _ if partial => ("Receiving reply…", if l.state == "working" { "stop" } else { "" }),
-        ("queued", _) => ("Queued", "stop"),
-        ("sent", _) if l.seen.is_empty() && now - l.since > 60_000 => ("Sent · the PC hasn't picked it up yet", ""),
-        ("sent" | "working", _) => {
-            let seen = match l.seen.as_str() {
-                "read" => "Read",
-                _ if l.seen == "delivered" || l.state == "working" => "Delivered",
+    let partial = c.lines.iter().any(|x| !x.me && x.id == l.id && x.state == State::Partial && now - x.at > 3000);
+    let working = l.state == State::Working;
+    match (l.state, unsent(l, now)) {
+        (_, Unsent::Waiting) => ("Waiting for connection…", ""),
+        (_, Unsent::Failed) => ("Failed · Tap to retry", "retry"),
+        (State::Sending, _) => ("Sending…", ""),
+        _ if partial => ("Receiving reply…", if working { "stop" } else { "" }),
+        (State::Queued, _) => ("Queued", "stop"),
+        (State::Sent, _) if l.seen == Seen::Unseen && now - l.since > 60_000 => ("Sent · the PC hasn't picked it up yet", ""),
+        (State::Sent | State::Working, _) => {
+            let seen = match l.seen {
+                Seen::Read => "Read",
+                _ if l.seen == Seen::Delivered || working => "Delivered",
                 _ => "Sent",
             };
-            (seen, if l.state == "working" { "stop" } else { "" })
+            (seen, if working { "stop" } else { "" })
         }
         _ => ("", ""),
     }
@@ -418,7 +504,7 @@ fn cut(s: &str, n: usize) -> &str {
 fn file_part(l: &mut Line, v: &Value) -> bool {
     let n = v["parts"].as_u64().unwrap_or(1).clamp(1, 50) as usize;
     let p = (v["part"].as_u64().unwrap_or(1) as usize).clamp(1, n) - 1;
-    l.state = "partial".into();
+    l.state = State::Partial;
     l.parts.resize(n, None);
     l.parts[p] = Some(v["text"].as_str().unwrap_or("").into());
     if let Some(m) = Media::from(&v["att"], p + 1).filter(|m| !l.media.iter().any(|x| x.part == m.part)) {
@@ -429,15 +515,34 @@ fn file_part(l: &mut Line, v: &Value) -> bool {
         return false;
     }
     l.text = l.parts.drain(..).flatten().collect();
-    l.state = "done".into();
+    l.state = State::Done;
     true
 }
 
+#[derive(Clone, Default, Debug, PartialEq)]
+pub struct QuickAnswers {
+    pub choices: Vec<String>,
+    pub reply: bool,
+    pub open: bool,
+}
+
+pub struct AfterAnswer {
+    pub sent: bool,
+    pub note: Option<&'static str>,
+    pub answers: QuickAnswers,
+}
+
+pub struct Answered {
+    pub chat: Chat,
+    pub msg: Option<String>,
+    pub too_long: bool,
+}
+
 /// Android shows at most three notification buttons.
-pub fn quick_answers(c: &Chat, now: i64) -> (Vec<String>, bool, bool) {
-    match c.kind.as_str() {
-        "" => (vec![], true, false),
-        "ask" if ask_state(c, now) == "waiting" => {
+pub fn quick_answers(c: &Chat, now: i64) -> QuickAnswers {
+    let (choices, reply, open) = match c.kind {
+        Kind::Chat => (vec![], true, false),
+        Kind::Ask if ask_state(c, now) == Ask::Waiting => {
             let choices = c.lines.iter().find(|l| !l.me).map_or(vec![], |l| l.choices.clone());
             match choices.len() {
                 0..=2 => (choices, true, false),
@@ -446,19 +551,20 @@ pub fn quick_answers(c: &Chat, now: i64) -> (Vec<String>, bool, bool) {
             }
         }
         _ => (vec![], false, false),
-    }
+    };
+    QuickAnswers { choices, reply, open }
 }
 
-pub fn after_answer(c: &Chat, tried: bool, kept: bool, now: i64) -> (bool, Option<&'static str>, (Vec<String>, bool, bool)) {
+pub fn after_answer(c: &Chat, tried: bool, kept: bool, now: i64) -> AfterAnswer {
     let sent = tried && kept;
     let note = match ask_state(c, now) {
         _ if tried && !kept => Some("Not sent. Try again"),
-        "answered" | "sending" if !sent => Some("Already answered"),
-        "expired" => Some("This question has closed"),
+        Ask::Answered | Ask::Sending if !sent => Some("Already answered"),
+        Ask::Expired => Some("This question has closed"),
         _ => None,
     };
-    let answers = if !sent || c.kind.is_empty() { quick_answers(c, now) } else { (vec![], false, false) };
-    (sent, note, answers)
+    let answers = if !sent || c.kind == Kind::Chat { quick_answers(c, now) } else { QuickAnswers::default() };
+    AfterAnswer { sent, note, answers }
 }
 
 #[cfg(test)]

@@ -44,7 +44,7 @@ impl Store {
         }
         c.updated = at;
         let media = media.into_iter().map(|m| Media { part: 1, url: String::new(), ..m }).collect();
-        c.lines.push(Line { id: msg.clone(), me: true, text: text.into(), at, since: at, first: at, state: "sending".into(), media, ..Line::default() });
+        c.lines.push(Line { id: msg.clone(), me: true, text: text.into(), at, since: at, first: at, state: State::Sending, media, ..Line::default() });
         Some(msg)
     }
 
@@ -87,7 +87,7 @@ impl Store {
     }
 
     pub fn drop_empty(&mut self, chat: &str) -> bool {
-        let empty = self.get(chat).is_some_and(|c| c.kind.is_empty() && c.lines.is_empty() && c.draft.trim().is_empty() && c.pick.is_none() && c.deleted == 0);
+        let empty = self.get(chat).is_some_and(|c| c.kind == Kind::Chat && c.lines.is_empty() && c.draft.trim().is_empty() && c.pick.is_none() && c.deleted == 0);
         empty && self.picking != chat && self.remove(chat).is_some()
     }
 
@@ -99,7 +99,7 @@ impl Store {
         if att.is_some_and(|m| m.url.is_empty()) {
             return None;
         }
-        let sig = sign(key, chat, msg, &c.agent, model, l.at, &l.text, att);
+        let sig = sign(key, c, l);
         let mut v = json!({"v": 1, "chat": chat, "msg": msg, "agent": c.agent, "model": model, "ts": l.at, "text": l.text, "sig": sig});
         if let Some(m) = att {
             v["att"] = json!({"url": m.url, "name": m.name, "type": m.mime, "size": m.size, "sha256": m.sha256});
@@ -119,19 +119,19 @@ impl Store {
     }
 
     pub fn sent(&mut self, chat: &str, msg: &str, ok: bool) {
-        if let Some(l) = self.get_mut(chat).and_then(|c| c.lines.iter_mut().find(|l| l.me && l.id == msg && l.state == "sending")) {
-            (l.state, l.since) = (if ok { "sent" } else { "not_sent" }.into(), now());
+        if let Some(l) = self.get_mut(chat).and_then(|c| c.lines.iter_mut().find(|l| l.me && l.id == msg && l.state == State::Sending)) {
+            (l.state, l.since) = (if ok { State::Sent } else { State::NotSent }, now());
         }
     }
 
     pub fn retry(&mut self, chat: &str, msg: &str, by_hand: bool) -> Option<String> {
         let c = self.get_mut(chat)?;
         let l = if msg.is_empty() { c.lines.iter_mut().rev().find(|l| l.me) } else { c.lines.iter_mut().find(|l| l.me && l.id == msg) }?;
-        if !matches!(l.state.as_str(), "sending" | "not_sent") {
+        if !matches!(l.state, State::Sending | State::NotSent) {
             return None;
         }
         let now = now();
-        (l.state, l.since, l.at) = ("sending".into(), now, now);
+        (l.state, l.since, l.at) = (State::Sending, now, now);
         if l.first == 0 {
             l.first = now;
         }
@@ -145,14 +145,15 @@ impl Store {
     }
 
     pub fn due(&self, now: i64) -> Vec<(String, String)> {
-        let due = |l: &Line| unsent(l, now) == "waiting" && (now >= l.since + backoff(l.tries) || l.since > now);
+        let clock_went_back = |since: i64| since > now;
+        let due = |l: &Line| unsent(l, now) == Unsent::Waiting && (now >= l.since + backoff(l.tries) || clock_went_back(l.since));
         self.chats.iter().filter(|c| c.deleted == 0).flat_map(|c| c.lines.iter().filter(|l| due(l)).map(|l| (c.id.clone(), l.id.clone()))).collect()
     }
 
     pub fn stalled(&self, now: i64) -> Vec<(String, String)> {
         let mut out = vec![];
         for c in self.chats.iter().filter(|c| c.deleted == 0) {
-            for l in c.lines.iter().filter(|l| !l.me && l.state == "partial" && (15_000..30 * 60_000).contains(&(now - l.at))) {
+            for l in c.lines.iter().filter(|l| !l.me && l.state == State::Partial && (15_000..30 * 60_000).contains(&(now - l.at))) {
                 if c.lines.iter().any(|m| m.me && m.id == l.id) {
                     out.push((c.id.clone(), l.id.clone()));
                 }
@@ -163,8 +164,8 @@ impl Store {
 
     pub fn unanswered(&self, now: i64) -> Vec<(String, String, i64)> {
         let mut out = vec![];
-        for c in self.chats.iter().filter(|c| c.deleted == 0 && ask_state(c, now) == "sending") {
-            for l in c.lines.iter().filter(|l| l.me && l.state == "sent" && now - l.since >= 60_000) {
+        for c in self.chats.iter().filter(|c| c.deleted == 0 && ask_state(c, now) == Ask::Sending) {
+            for l in c.lines.iter().filter(|l| l.me && l.state == State::Sent && now - l.since >= 60_000) {
                 if !c.lines.iter().any(|x| !x.me && x.id == l.id) {
                     out.push((c.id.clone(), l.id.clone(), l.since));
                 }
@@ -175,7 +176,7 @@ impl Store {
 
     pub fn downloads(&self) -> Vec<Media> {
         let mut out: Vec<Media> = vec![];
-        for m in self.chats.iter().flat_map(|c| &c.lines).flat_map(|l| &l.media).filter(|m| m.state == "loading") {
+        for m in self.chats.iter().flat_map(|c| &c.lines).flat_map(|l| &l.media).filter(|m| m.state == MediaState::Loading) {
             if !out.iter().any(|o| o.url == m.url) {
                 out.push(m.clone());
             }
@@ -185,14 +186,14 @@ impl Store {
 
     pub fn media_done(&mut self, url: &str, path: Option<&str>) {
         for m in self.chats.iter_mut().flat_map(|c| &mut c.lines).flat_map(|l| &mut l.media).filter(|m| m.url == url) {
-            (m.state, m.path) = (if path.is_some() { "ready" } else { "failed" }.into(), path.unwrap_or("").into());
+            (m.state, m.path) = (if path.is_some() { MediaState::Ready } else { MediaState::Failed }, path.unwrap_or("").into());
         }
     }
 
     pub fn refetch(&mut self, url: &str) -> bool {
         let mut any = false;
-        for m in self.chats.iter_mut().flat_map(|c| &mut c.lines).flat_map(|l| &mut l.media).filter(|m| m.url == url && m.state == "failed") {
-            m.state = "loading".into();
+        for m in self.chats.iter_mut().flat_map(|c| &mut c.lines).flat_map(|l| &mut l.media).filter(|m| m.url == url && m.state == MediaState::Failed) {
+            m.state = MediaState::Loading;
             any = true;
         }
         any
@@ -218,7 +219,7 @@ impl Store {
     pub fn remove(&mut self, chat: &str) -> Option<(usize, Chat)> {
         let i = self.chats.iter().position(|c| c.id == chat)?;
         let gone = self.chats.remove(i);
-        if !gone.kind.is_empty() {
+        if gone.kind != Kind::Chat {
             self.gone.extend(gone.lines.iter().filter(|l| !l.me).map(|l| format!("{}/{}", gone.id, l.id)));
             let extra = self.gone.len().saturating_sub(GONE_KEEP);
             self.gone.drain(..extra);
@@ -246,19 +247,19 @@ impl Store {
         self.chats.iter().filter(|c| c.unread > 0 && c.deleted == 0).count()
     }
 
-    pub fn answer(&mut self, chat: &str, text: &str, now: i64) -> Option<(Chat, Option<String>, bool)> {
+    pub fn answer(&mut self, chat: &str, text: &str, now: i64) -> Option<Answered> {
         let c = self.get(chat).filter(|c| c.deleted == 0)?.clone();
-        let open = c.kind.is_empty() || (c.kind == "ask" && ask_state(&c, now) == "waiting");
+        let open = c.kind == Kind::Chat || (c.kind == Kind::Ask && ask_state(&c, now) == Ask::Waiting);
         if open && room(text) < 0 {
             let d = &mut self.get_mut(chat)?.draft;
             *d = if d.trim().is_empty() { text.trim().into() } else { format!("{}\n\n{}", d.trim_end(), text.trim()) };
-            return Some((c, None, true));
+            return Some(Answered { chat: c, msg: None, too_long: true });
         }
         let msg = if open { self.add_mine(chat, text, None) } else { None };
         if msg.is_some() {
             self.mark_read(chat);
         }
-        Some((c, msg, false))
+        Some(Answered { chat: c, msg, too_long: false })
     }
 
     pub fn apply_reply(&mut self, v: &Value, open: Option<&str>) -> Option<(String, String, String)> {
@@ -266,33 +267,38 @@ impl Store {
         let c = self.get_mut(chat).filter(|_| v["v"] == 1)?;
         let mine = c.lines.iter().position(|l| l.me && l.id == re)?;
         let now = now();
-        if !matches!(state, "done" | "failed" | "stopped" | "missed") {
+        let state = wire::<State>(state);
+        let Some(state @ (State::Done | State::Failed | State::Stopped | State::Missed)) = state else {
             let l = &mut c.lines[mine];
-            let from: &[&str] = if state == "working" { &["sending", "sent", "not_sent", "queued"] } else { &["sending", "sent", "not_sent"] };
-            if matches!(state, "working" | "queued") && from.contains(&l.state.as_str()) {
-                (l.state, l.since) = (state.into(), now);
+            let from: &[State] = if state == Some(State::Working) {
+                &[State::Sending, State::Sent, State::NotSent, State::Queued]
+            } else {
+                &[State::Sending, State::Sent, State::NotSent]
+            };
+            if let Some(state @ (State::Working | State::Queued)) = state.filter(|_| from.contains(&l.state)) {
+                (l.state, l.since) = (state, now);
             }
             return None;
-        }
+        };
         let at = c.lines.iter().position(|l| !l.me && l.id == re);
-        if at.is_some_and(|i| c.lines[i].state != "partial") {
+        if at.is_some_and(|i| c.lines[i].state != State::Partial) {
             return None;
         }
         let i = at.unwrap_or_else(|| {
-            c.lines.push(Line { id: re.into(), at: now, state: state.into(), ..Line::default() });
+            c.lines.push(Line { id: re.into(), at: now, state, ..Line::default() });
             c.lines.len() - 1
         });
         let l = &mut c.lines[i];
-        if state == "done" {
+        if state == State::Done {
             if !file_part(l, v) {
                 return None;
             }
         } else {
-            (l.state, l.text) = (state.into(), v["text"].as_str().unwrap_or("").into());
+            (l.state, l.text) = (state, v["text"].as_str().unwrap_or("").into());
         }
         l.at = now;
         let shown = shown(l);
-        c.lines[mine].state = "answered".into();
+        c.lines[mine].state = State::Answered;
         c.updated = now;
         if open == Some(chat) {
             return None;
@@ -302,31 +308,31 @@ impl Store {
     }
 
     pub fn apply_receipt(&mut self, v: &Value) -> bool {
-        let rank = |s: &str| ["", "delivered", "read"].iter().position(|r| *r == s);
-        let (Some(chat), Some(re), Some(new)) = (v["chat"].as_str(), v["re"].as_str(), v["state"].as_str().and_then(rank)) else { return false };
+        let (Some(chat), Some(re), Some(new)) = (v["chat"].as_str(), v["re"].as_str(), v["state"].as_str().and_then(wire::<Seen>)) else { return false };
         let Some(l) = self.get_mut(chat).filter(|_| v["v"] == 1).and_then(|c| c.lines.iter_mut().find(|l| l.me && l.id == re)) else {
             return false;
         };
-        if new <= rank(&l.seen).unwrap_or(0) {
+        if new <= l.seen {
             return false;
         }
-        l.seen = v["state"].as_str().unwrap_or("").into();
-        if matches!(l.state.as_str(), "sending" | "not_sent") {
-            (l.state, l.since) = ("sent".into(), now());
+        l.seen = new;
+        if matches!(l.state, State::Sending | State::NotSent) {
+            (l.state, l.since) = (State::Sent, now());
         }
         true
     }
 
     pub fn apply_note(&mut self, v: &Value, open: Option<&str>) -> Option<(String, String, String)> {
         let id = |s: &str| (1..=40).contains(&s.len()) && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
-        let (chat, note, title, kind) = (v["chat"].as_str()?, v["note"].as_str()?, v["title"].as_str()?, v["kind"].as_str()?);
+        let (chat, note, title) = (v["chat"].as_str()?, v["note"].as_str()?, v["title"].as_str()?);
+        let kind = wire::<Kind>(v["kind"].as_str()?);
         let choices = v["choices"].as_array()?.iter().map(|c| c.as_str().map(String::from)).collect::<Option<Vec<_>>>()?;
         let (ts, part, parts) = (v["ts"].as_i64()?, v["part"].as_u64()?, v["parts"].as_u64()?);
         let ok = v["v"] == 1
             && id(chat)
             && id(note)
             && title.chars().count() <= 100
-            && matches!(kind, "ask" | "note")
+            && matches!(kind, Some(Kind::Ask | Kind::Note))
             && choices.len() <= 6
             && choices.iter().all(|c| (1..=80).contains(&c.chars().count()) && !c.chars().any(|ch| ch < ' '))
             && v["text"].is_string()
@@ -337,12 +343,12 @@ impl Store {
         }
         let now = now();
         if self.get(chat).is_none() {
-            let c = Chat { id: chat.into(), agent: "claude".into(), title: title.into(), kind: kind.into(), asked: ts, updated: now, ..Chat::default() };
+            let c = Chat { id: chat.into(), agent: "claude".into(), title: title.into(), kind: kind?, asked: ts, updated: now, ..Chat::default() };
             self.chats.push(c);
         }
         let c = self.get_mut(chat)?;
         let at = c.lines.iter().position(|l| !l.me && l.id == note);
-        if at.is_some_and(|i| c.lines[i].state != "partial") {
+        if at.is_some_and(|i| c.lines[i].state != State::Partial) {
             return None;
         }
         let i = at.unwrap_or_else(|| {

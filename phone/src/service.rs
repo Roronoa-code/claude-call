@@ -19,7 +19,7 @@ static RUNNING: AtomicU64 = AtomicU64::new(u64::MAX);
 const SPECIAL_USE: i32 = 0x4000_0000;
 const MICROPHONE: i32 = 0x80;
 const READY_ID: i32 = 1;
-const CALL_ID: i32 = 3;
+const CALL_ID: i32 = crate::ring::RING_ID + 1;
 
 pub fn active_link() -> Option<String> {
     ACTIVE.lock().unwrap().as_ref().map(|a| a.0.clone())
@@ -57,7 +57,7 @@ fn can_promote(env: &mut JNIEnv) -> bool {
 
 fn notification<'a>(env: &mut JNIEnv<'a>, svc: &JObject) -> Result<(JObject<'a>, i32)> {
     let nm = service(env, svc, "notification")?;
-    ring::channel(env, &nm, "listening", "Waiting for calls", 1, false)?;
+    ring::channel(env, &nm, "listening", "Waiting for calls", jx::IMPORTANCE_MIN, false)?;
     let sdk = jx::sdk(env)?;
     let mut types = if sdk >= 34 { SPECIAL_USE } else { 0 };
     let active = ACTIVE.lock().unwrap().clone();
@@ -69,7 +69,7 @@ fn notification<'a>(env: &mut JNIEnv<'a>, svc: &JObject) -> Result<(JObject<'a>,
         jx::call(env, &b, "setContentIntent", "(Landroid/app/PendingIntent;)Landroid/app/Notification$Builder;", &[JValue::Object(&open)])?;
         return Ok((env.call_method(&b, "build", "()Landroid/app/Notification;", &[])?.l()?, types));
     };
-    ring::channel(env, &nm, "ongoing_calls", "Ongoing Claude call", 2, false)?;
+    ring::channel(env, &nm, "ongoing_calls", "Ongoing Claude call", jx::IMPORTANCE_LOW, false)?;
     let open = ring::call_screen(env, svc, &link, true, 4)?;
     let end = ring::hang_up(env, svc, &link, 5)?;
     let b = ring::builder(env, svc, "ongoing_calls")?;
@@ -159,7 +159,7 @@ pub fn call_ended(env: &mut JNIEnv, ctx: &JObject, link: &str) -> Result<()> {
 pub fn call_opened(env: &mut JNIEnv, act: &JObject, intent: &JObject) -> Result<()> {
     let link = jx::extra(env, intent, "link")?.unwrap_or_default();
     if link == ring::TEST_LINK {
-        let (t, len) = (s(env, "✓ Test call worked")?, 1);
+        let (t, len) = (s(env, "✓ Test call worked")?, jx::TOAST_LENGTH_LONG);
         let sig = "(Landroid/content/Context;Ljava/lang/CharSequence;I)Landroid/widget/Toast;";
         let toast = env.call_static_method("android/widget/Toast", "makeText", sig, &[JValue::Object(act), JValue::Object(&t), JValue::Int(len)])?.l()?;
         env.call_method(&toast, "show", "()V", &[])?;
@@ -284,7 +284,7 @@ pub fn home_resumed(env: &mut JNIEnv, act: &JObject) -> Result<()> {
     let (vm, ctx, topic) = (env.get_java_vm()?, jx::app(env, act)?, settings::topic(env, act)?);
     let ctx = env.new_global_ref(ctx)?;
     std::thread::spawn(move || {
-        let Some((m, at)) = net::latest_mode(&topic) else { return };
+        let Some((m, at)) = net::latest_mode_blocking(&topic) else { return };
         if let Ok(mut env) = vm.attach_current_thread() {
             jx::ok(&mut env, |env| settings::received(env, ctx.as_obj(), &m, at));
         }

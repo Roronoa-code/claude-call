@@ -8,6 +8,31 @@ use jni::{
 pub const PKG: &str = "fyi.mani.callme";
 pub const FLAGS: i32 = 0x0400_0000 | 0x0800_0000;
 
+pub const IMPORTANCE_MIN: i32 = 1;
+pub const IMPORTANCE_LOW: i32 = 2;
+pub const IMPORTANCE_HIGH: i32 = 4;
+pub const FLAG_GRANT_READ_URI_PERMISSION: i32 = 1;
+pub const FLAG_ACTIVITY_CLEAR_TOP: i32 = 0x0400_0000;
+pub const FLAG_ACTIVITY_SINGLE_TOP: i32 = 0x2000_0000;
+pub const FLAG_ACTIVITY_NEW_TASK: i32 = 0x1000_0000;
+pub const PENDING_FLAG_MUTABLE: i32 = 0x0200_0000;
+pub const PENDING_FLAG_UPDATE_CURRENT: i32 = 0x0800_0000;
+pub const GROUP_ALERT_CHILDREN: i32 = 2;
+pub const SEMANTIC_ACTION_REPLY: i32 = 1;
+pub const TOAST_LENGTH_LONG: i32 = 1;
+pub const OPTION_CLOSEST_SYNC: i32 = 2;
+pub const INSETS_STATUS_BARS: i32 = 1;
+pub const INSETS_NAVIGATION_BARS: i32 = 2;
+pub const CALENDAR_YEAR: i32 = 1;
+pub const CALENDAR_DATE: i32 = 5;
+pub const CALENDAR_DAY_OF_YEAR: i32 = 6;
+pub const RINGTONE_TYPE_RINGTONE: i32 = 1;
+pub const RINGTONE_TYPE_ALARM: i32 = 4;
+pub const USAGE_ALARM: i32 = 4;
+pub const USAGE_NOTIFICATION_RINGTONE: i32 = 6;
+pub const CONTENT_TYPE_SONIFICATION: i32 = 4;
+pub const EFFECT_TICK: i32 = 2;
+
 pub fn s<'a>(env: &mut JNIEnv<'a>, text: &str) -> Result<JObject<'a>> {
     Ok(env.new_string(text)?.into())
 }

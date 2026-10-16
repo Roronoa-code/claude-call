@@ -184,12 +184,12 @@ fn show(ui: &HomeScreen) {
     let mut all: Vec<_> = st.chats.iter().filter(|c| c.deleted == 0).collect();
     all.sort_by_key(|c| -c.updated);
     let preview = |c: &chats::Chat| {
-        let last = c.lines.iter().rev().find(|l| l.me || l.state != "partial");
+        let last = c.lines.iter().rev().find(|l| l.me || l.state != chats::State::Partial);
         chats::brief(&last.map_or("New chat".to_string(), chats::shown)).replace('\n', " ")
     };
     let rows: Vec<ChatRow> = all
         .iter()
-        .filter(|c| c.kind.is_empty() || c.lines.iter().any(|l| l.me || l.state != "partial"))
+        .filter(|c| c.kind == chats::Kind::Chat || c.lines.iter().any(|l| l.me || l.state != chats::State::Partial))
         .map(|c| ChatRow {
             id: c.id.clone().into(),
             name: chats::label(c).into(),
@@ -198,7 +198,7 @@ fn show(ui: &HomeScreen) {
             time: chats::ago(now - c.updated).into(),
             unread: c.unread > 0,
             busy: chats::waiting(c),
-            asks: chats::ask_state(c, now) == "waiting",
+            asks: chats::ask_state(c, now) == chats::Ask::Waiting,
             choices: match chat_view::choices(c, now) {
                 v if v.is_empty() => ModelRc::default(),
                 v => ModelRc::new(VecModel::from(v)),
@@ -208,7 +208,7 @@ fn show(ui: &HomeScreen) {
             head: Default::default(),
             draft: chats::draft_line(c, now).into(),
             think: chats::think(c, now).into(),
-            mine_last: c.lines.iter().rev().find(|l| l.me || l.state != "partial").is_some_and(|l| l.me),
+            mine_last: c.lines.iter().rev().find(|l| l.me || l.state != chats::State::Partial).is_some_and(|l| l.me),
         })
         .collect();
     let (hero, line) = chat_view::hero(&rows);
@@ -247,24 +247,24 @@ fn show(ui: &HomeScreen) {
             let ask = chats::ask_state(chat, now);
             let msgs = chat_view::thread(chat, ask, now);
             let name = chats::label(chat);
-            let short = if chat.kind.is_empty() { name.rsplit(" · ").next().unwrap_or(&name) } else { &name }.to_string();
-            c.set_hint(if ask == "waiting" { "Type your answer".into() } else { format!("Message {short}").into() });
+            let short = if chat.kind == chats::Kind::Chat { name.rsplit(" · ").next().unwrap_or(&name) } else { &name }.to_string();
+            c.set_hint(if ask == chats::Ask::Waiting { "Type your answer".into() } else { format!("Message {short}").into() });
             c.set_short(short.into());
             c.set_name(name.into());
             c.set_face(chats::face(&chat.agent, chat.model.as_deref()).into());
             c.set_empty(msgs.is_empty());
             c.set_waiting(chats::waiting(chat));
-            c.set_replies(chat.lines.iter().filter(|l| !l.me && l.state != "partial").count() as i32);
-            c.set_title(match (chat.kind.as_str(), ask) {
-                ("", _) => chat.title.clone().into(),
-                (_, "waiting") => "Waiting for your answer".into(),
-                (_, "sending") => "Waiting for the PC".into(),
-                (_, "answered") => "Answered".into(),
-                (_, "expired") => "Expired".into(),
+            c.set_replies(chat.lines.iter().filter(|l| !l.me && l.state != chats::State::Partial).count() as i32);
+            c.set_title(match (chat.kind, ask) {
+                (chats::Kind::Chat, _) => chat.title.clone().into(),
+                (_, chats::Ask::Waiting) => "Waiting for your answer".into(),
+                (_, chats::Ask::Sending) => "Waiting for the PC".into(),
+                (_, chats::Ask::Answered) => "Answered".into(),
+                (_, chats::Ask::Expired) => "Expired".into(),
                 _ => "From your PC".into(),
             });
-            c.set_ask(ask.into());
-            c.set_readonly(chat.kind == "note");
+            c.set_ask(ask.as_str().into());
+            c.set_readonly(chat.kind == chats::Kind::Note);
             c.set_ended(chats::ended(ask).into());
             c.set_draft(chat.draft.clone().into());
             MSGS.with(|model| {
@@ -296,7 +296,7 @@ fn status(ui: &HomeScreen) {
         return;
     };
     let (text, action) = line;
-    if ask != c.get_ask().as_str() {
+    if ask.as_str() != c.get_ask().as_str() {
         changed();
     }
     let thinking = if waiting { format!("{} is thinking{}", c.get_short(), think.strip_prefix("Thinking").unwrap_or("")) } else { String::new() };
