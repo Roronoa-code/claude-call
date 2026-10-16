@@ -3,6 +3,7 @@
 // quiet lines. A photo always shows as a framed picture (a tall one from its top, never a tall empty box).
 import { T } from "../parts.slint";
 import { Chats, ChatMsg, Ink } from "../chat.slint";
+import { Home } from "../home_parts.slint";
 import "../fonts/JetBrainsMonoNL-Regular.ttf";
 
 // A word with a slow light passing through it while the PC works ("Thinking").
@@ -353,7 +354,8 @@ export component Piece inherits Rectangle {
         height: root.height - root.top;
         held(x, y) => { root.hold(self.x + x, self.y + y); }
         clicked => {
-            if (!self.fired && m.link != "") {
+            // with the keyboard up (or the field holding the cursor) a tap puts it away, as anywhere on the thread
+            if (!self.fired && m.link != "" && Home.kb == 0 && !Home.typing) {
                 Chats.open-link(m.link);
             } else if (!self.fired) {
                 root.tapped();

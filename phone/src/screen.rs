@@ -312,6 +312,37 @@ pub static OVERLAYS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBo
 /// which is the newest screen's: the home screen's, once it was opened during the call).
 static CLOSE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// The keyboard and Back, as Android's main thread last said (android::kb, back); true while the keyboard moves.
+fn follow(ui: &CallScreen) -> bool {
+    if CLOSE.swap(false, std::sync::atomic::Ordering::Relaxed) {
+        ui.invoke_close_overlays();
+    }
+    let moved = ui.global::<Call>().get_kb() != android::kb();
+    if moved {
+        ui.global::<Call>().set_kb(android::kb());
+    }
+    moved
+}
+
+/// While the keyboard slides: follow() every 4 ms (Shell.kt leads it by one 120 Hz frame, which the 16 ms frame
+/// timer would lose), until it has been still for 150 ms.
+fn follow_fast(fast: &Rc<slint::Timer>, ui: &CallScreen) {
+    if fast.running() {
+        return;
+    }
+    let (ui, me) = (ui.as_weak(), Rc::downgrade(fast));
+    let mut still = std::time::Instant::now();
+    fast.start(slint::TimerMode::Repeated, Duration::from_millis(4), move || {
+        if ui.upgrade().is_some_and(|ui| follow(&ui)) {
+            still = std::time::Instant::now();
+        } else if still.elapsed() > Duration::from_millis(150) {
+            if let Some(t) = me.upgrade() {
+                t.stop();
+            }
+        }
+    });
+}
+
 /// Back on the call screen (from Android's main thread): closes what is open over the call; false when nothing was.
 pub fn back() -> bool {
     if !OVERLAYS.swap(false, std::sync::atomic::Ordering::Relaxed) {
@@ -421,6 +452,7 @@ pub fn run(app: android_activity::AndroidApp) {
     });
     // The character, every frame: its springs and the voice's level need it; it is drawn only when due.
     let face_timer = slint::Timer::default();
+    let fast = Rc::new(slint::Timer::default()); // follow_fast
     face_timer.start(slint::TimerMode::Repeated, Duration::from_millis(16), {
         let (ui, e, f) = (ui.as_weak(), e.clone(), frame.clone());
         let mut drawn = -1.0f32;
@@ -428,12 +460,8 @@ pub fn run(app: android_activity::AndroidApp) {
         let mut mood = crate::caller::Mood::new(look >= 5);
         move || {
             let Some(ui) = ui.upgrade() else { return };
-            // the keyboard and Back, as Android's main thread last said (android::kb, back)
-            if ui.global::<Call>().get_kb() != android::kb() {
-                ui.global::<Call>().set_kb(android::kb());
-            }
-            if CLOSE.swap(false, std::sync::atomic::Ordering::Relaxed) {
-                ui.invoke_close_overlays();
+            if follow(&ui) {
+                follow_fast(&fast, &ui);
             }
             let now = start.elapsed().as_secs_f32();
             let (phase, agent, perched, me) = {

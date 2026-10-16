@@ -648,12 +648,21 @@ fn drafts_and_picks_belong_to_their_chat_and_go_with_the_send() {
     std::fs::remove_file(&path).unwrap();
     assert_eq!(back.get(&a).unwrap().draft, "half a thought", "survives the app being closed");
     assert_eq!(back.get(&a).unwrap().pick, Some(pic.clone()));
-    let msg = s.send(&a, "half a thought, done").unwrap();
+    let msg = s.send(&a, "half a thought, done", true).unwrap();
     let chat = s.get(&a).unwrap();
     assert_eq!((chat.draft.as_str(), chat.pick.is_none()), ("", true));
     let l = chat.lines.iter().find(|l| l.id == msg).unwrap();
     assert_eq!((l.text.as_str(), l.media[0].path.as_str()), ("half a thought, done", "/m/p.jpg"));
-    assert!(s.send(&b, "  ").is_none(), "nothing to send: nothing changes");
+    assert!(s.send(&b, "  ", true).is_none(), "nothing to send: nothing changes");
+    // a pick that failed shows its error: what is left behind it in the store (its removal couldn't be saved) never
+    // goes, and is cleared with the send
+    s.set_pick(&b, Some(pic.clone()));
+    let m = s.send(&b, "just words", false).unwrap();
+    let chat = s.get(&b).unwrap();
+    assert!(chat.lines.iter().find(|l| l.id == m).unwrap().media.is_empty());
+    assert!(chat.pick.is_none());
+    s.set_pick(&b, Some(pic.clone()));
+    assert!(s.send(&b, "", false).is_none(), "only the hidden pick: nothing to send");
 }
 
 #[test]
@@ -724,6 +733,7 @@ fn copy_plain_text_and_code_exactly() {
     assert_eq!(only_link("plain, and `https://in.code`"), "");
     assert_eq!(only_link("https://a.dev and [b](https://b.dev)"), "");
     assert_eq!(only_link("a](b and nothing else"), "", "not a web address: the words stay as they were");
+    assert_eq!(only_link("see https://example.com/a(b)/c"), "https://example.com/a(b)/c", "brackets inside stay");
 }
 
 #[test]

@@ -39,6 +39,9 @@ static HOME: Mutex<Option<GlobalRef>> = Mutex::new(None);
 mod send;
 pub(crate) use send::{auto, post};
 use send::fetch_media;
+#[path = "inbox_undo.rs"]
+mod undo;
+use undo::{delete, forget, undo, undo_timer};
 /// How long Undo stays.
 const UNDO_FOR: Duration = Duration::from_secs(5);
 thread_local! {
@@ -427,69 +430,6 @@ impl Tracker {
     }
 }
 
-/// Deletes a chat for UNDO_FOR (its notification goes): hidden, with "Chat deleted · Undo"; replies that come meanwhile
-/// are kept with it. Each deleted chat keeps its own Undo time; Undo brings back the newest.
-fn delete(ui: &HomeScreen, chat: &str) {
-    let c = ui.global::<Chats>();
-    if update(|s| s.delete(chat, chats::now())) != Some(true) {
-        c.set_leaving("".into()); // not deleted (the store can't be saved): the row comes back
-        show(ui);
-        return;
-    }
-    android::with(|env, act| chat_alert::cancel(env, act, chat));
-    if c.get_current() == chat {
-        c.set_current("".into());
-    }
-    changed();
-    show(ui);
-    undo_timer();
-}
-
-/// Lets each deleted chat go for good once its Undo is over.
-fn undo_timer() {
-    UNDO_TIMER.with(|t| {
-        t.start(slint::TimerMode::Repeated, Duration::from_millis(250), || {
-            forget(chats::now() - UNDO_FOR.as_millis() as i64);
-            if read(|s| s.undoable().is_none()).unwrap_or(true) {
-                UNDO_TIMER.with(slint::Timer::stop);
-            }
-        })
-    });
-}
-
-/// Undo: the newest deleted chat back, with anything that came for it meanwhile; its row opens back in.
-fn undo(ui: &HomeScreen) {
-    let c = ui.global::<Chats>();
-    let Some(Some(id)) = read(|s| s.undoable().map(|c| c.id.clone())) else { return };
-    if update(|s| s.undelete(&id)) != Some(true) {
-        return;
-    }
-    c.set_leaving("".into());
-    c.set_returning(id.into());
-    changed();
-    show(ui);
-    fetch_media(); // anything that was still on its way
-}
-
-/// Undo is over for the chats deleted at or before `before`: they go for good, with their photos and videos unless
-/// another chat (or a pick) uses them.
-fn forget(before: i64) {
-    let Some((n, files)) = update(|s| {
-        let gone = s.purge(before);
-        (gone.len(), gone.iter().flat_map(|c| s.unused_files(c)).collect::<Vec<_>>())
-    }) else {
-        return;
-    };
-    if n == 0 {
-        return;
-    }
-    changed(); // the Undo bar goes (or moves on to the one deleted before)
-    let Some(dir) = media_dir() else { return };
-    for name in files {
-        let _ = std::fs::remove_file(dir.join(name));
-    }
-}
-
 /// Connects the Chats callbacks of the home screen.
 pub fn wire(ui: &HomeScreen) -> Tracker {
     android::with(|env, act| {
@@ -548,11 +488,13 @@ pub fn wire(ui: &HomeScreen) -> Tracker {
             let text = chats::composed(&draft, &word, at.max(0) as usize);
             let text = text.trim();
             let chat = current(&ui);
-            let picked = read(|s| s.get(&chat).is_some_and(|c| c.pick.is_some())).unwrap_or(false);
+            // the box shows a pick that failed: nothing left in the store behind it goes (attach.rs)
+            let with_pick = !attach::failed(&chat);
+            let picked = with_pick && read(|s| s.get(&chat).is_some_and(|c| c.pick.is_some())).unwrap_or(false);
             if text.is_empty() && !picked {
                 return false;
             }
-            let ok = android::with(|env, act| post(env, act, &chat, |s| s.send(&chat, text))).unwrap_or(false);
+            let ok = android::with(|env, act| post(env, act, &chat, |s| s.send(&chat, text, with_pick))).unwrap_or(false);
             if ok {
                 // what was typed went with it: an older keystroke must not bring it back
                 PENDING.with(|p| p.borrow_mut().take_if(|(c, _)| *c == chat));

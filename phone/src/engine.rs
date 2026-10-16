@@ -421,7 +421,11 @@ impl Engine {
             s.view.msgs.retain(|m| m.id != bubble);
             s.view.status("Listening");
             s.view.notice = "Your reply didn't go. It's back in the box".into();
-            s.view.unsent = text;
+            // added after any other reply that failed before the screen took it back, in the order they failed
+            if !s.view.unsent.is_empty() {
+                s.view.unsent.push(' ');
+            }
+            s.view.unsent.push_str(&text);
         });
     }
 

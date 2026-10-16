@@ -149,6 +149,7 @@ fn not_sent(chat: &str, now: i64) -> Alert<'_> {
 fn answer(env: &mut JNIEnv, ctx: &JObject, intent: &JObject, chat: &str, kept: &mut bool) -> Result<()> {
     let action = env.call_method(intent, "getAction", "()Ljava/lang/String;", &[])?.l()?;
     let choice = if jx::string(env, action)?.as_deref() == Some(CHOICE) { jx::extra(env, intent, "choice")? } else { None };
+    let typed_words = choice.is_none();
     let text = match choice {
         Some(c) => c,
         None => typed(env, intent)?.unwrap_or_default(),
@@ -169,14 +170,20 @@ fn answer(env: &mut JNIEnv, ctx: &JObject, intent: &JObject, chat: &str, kept: &
             let nm = service(env, ctx, "notification")?;
             return env.call_method(&nm, "cancel", "(I)V", &[JValue::Int(notification_id(chat))]).map(drop);
         }
-        None => return show(env, ctx, &not_sent(chat, now)),
+        None => {
+            keep_typed(env, ctx, typed_words, &text);
+            return show(env, ctx, &not_sent(chat, now));
+        }
     };
     let last = c.lines.iter().rev().find(|l| !l.me && l.state != "partial");
     let (sent, note, answers) = chats::after_answer(&c, tried, *kept, now);
     // "in the chat" only once it really was saved there (else the words would be lost with this notification)
     let kept_long = long && inbox::saved_draft(chat).is_some_and(|d| d.ends_with(text.as_str()));
+    // typed words kept nowhere (the store couldn't be written) go on the clipboard, and the note says so
+    let lost = (long && !kept_long) || (tried && !*kept);
     let note = match () {
         _ if kept_long => Some("Too long to send from here. It's in the chat"),
+        _ if lost && keep_typed(env, ctx, typed_words, &text) => Some("Not sent. Copied, so you can paste it"),
         _ if long => Some("Not sent. Open the chat to try again"),
         _ => note,
     };
@@ -197,6 +204,11 @@ fn answer(env: &mut JNIEnv, ctx: &JObject, intent: &JObject, chat: &str, kept: &
         recount(env, ctx, chat)?; // answered from here: this chat no longer counts
     }
     Ok(())
+}
+
+/// Typed words that couldn't be kept in the app, put on the clipboard (Android's Reply box has emptied); true if so.
+fn keep_typed(env: &mut JNIEnv, ctx: &JObject, typed: bool, text: &str) -> bool {
+    typed && !text.is_empty() && jx::ok(env, |env| jx::copy(env, ctx, text)).is_some()
 }
 
 /// Reply's typed words, from the intent the notification filled in.

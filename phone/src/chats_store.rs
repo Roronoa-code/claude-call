@@ -56,10 +56,11 @@ impl Store {
         Some(msg)
     }
 
-    /// Sends what is in a chat's text box: `text` with the photo or video picked there; its draft and pick go once
-    /// the message is in (the caller saves both in one write, so nothing is lost if that fails).
-    pub fn send(&mut self, chat: &str, text: &str) -> Option<String> {
-        let media = self.get(chat)?.pick.clone();
+    /// Sends what is in a chat's text box: `text` with the photo or video picked there (`with_pick`: false while the
+    /// box shows a pick that failed, so a hidden older one never goes); its draft and pick go once the message is in
+    /// (the caller saves both in one write, so nothing is lost if that fails).
+    pub fn send(&mut self, chat: &str, text: &str, with_pick: bool) -> Option<String> {
+        let media = self.get(chat)?.pick.clone().filter(|_| with_pick);
         let msg = self.add_mine(chat, text, media)?;
         let c = self.get_mut(chat)?;
         (c.draft, c.pick) = (String::new(), None);

@@ -58,6 +58,43 @@ pub fn back_gesture(phase: i32, progress: f32) {
     BACK.lock().unwrap().push((phase, progress));
 }
 
+/// The keyboard and the back swipe, as Android's main thread last said (android::kb, back_gesture), played on the
+/// screen; true while either moves. `swiping`: a back swipe started and hasn't ended (Back or cancel).
+fn follow(ui: &HomeScreen, swiping: &Cell<bool>) -> bool {
+    let home = ui.global::<Home>();
+    let mut moved = swiping.get();
+    if home.get_kb() != android::kb() {
+        home.set_kb(android::kb());
+        moved = true;
+    }
+    for (phase, progress) in std::mem::take(&mut *BACK.lock().unwrap()) {
+        swiping.set(phase <= 1);
+        ui.invoke_back_gesture(phase, progress);
+        moved = true;
+    }
+    moved
+}
+
+/// While the keyboard slides or a back swipe moves: follow() every 4 ms (Shell.kt leads the keyboard by one 120 Hz
+/// frame, which the 16 ms frame timer would lose), until all is still for 150 ms or the screen goes away.
+fn follow_fast(fast: &Rc<slint::Timer>, ui: &HomeScreen, swiping: &Rc<Cell<bool>>) {
+    if fast.running() {
+        return;
+    }
+    let (ui, sw, me) = (ui.as_weak(), swiping.clone(), Rc::downgrade(fast));
+    let mut still = Instant::now();
+    fast.start(slint::TimerMode::Repeated, Duration::from_millis(4), move || {
+        let on = android::home_shown() && ui.upgrade().is_some_and(|ui| follow(&ui, &sw));
+        if on {
+            still = Instant::now();
+        } else if still.elapsed() > Duration::from_millis(150) || !android::home_shown() {
+            if let Some(t) = me.upgrade() {
+                t.stop();
+            }
+        }
+    });
+}
+
 /// The most device px per logical px the pair is drawn at: past it (a very dense screen) the GPU's work grows with
 /// the square for detail the eye can't see; the picture is scaled up to its place instead.
 const PAIR_SF: f32 = 2.75;
@@ -200,7 +237,8 @@ pub fn run(app: android_activity::AndroidApp) {
     let mut lit = [1.0f32; 2]; // PREVIEW: each one's light on a stage, easing to 1 or DIM as the Call button's pick changes
     let mut last_now = 0.0f32;
     let mut shown = false;
-    let mut swiping = false; // a back swipe started and hasn't ended (Back or cancel)
+    let swiping = Rc::new(Cell::new(false));
+    let fast = Rc::new(slint::Timer::default()); // follow_fast
     let mut last_refresh = Instant::now();
     let mut warmed = false; // the chats' characters' shaders built ahead (live_gl.rs Scene::warm)
     let mut voted = (0.0f32, Instant::now()); // the frame rate last asked of the display (0: no preference)
@@ -234,20 +272,14 @@ pub fn run(app: android_activity::AndroidApp) {
                 shown = false; // all drawn afresh on the way back
                 // hidden mid-swipe (a call came up): the swipe is called off, so nothing comes back half pulled
                 BACK.lock().unwrap().clear(); // steps never played left nothing on screen
-                if swiping {
-                    swiping = false;
+                if swiping.replace(false) {
                     ui.invoke_back_gesture(3, 0.0);
                 }
                 return;
             }
             let home = ui.global::<Home>();
-            // the keyboard and the back swipe, as Android's main thread last said (android::kb, back_gesture)
-            if home.get_kb() != android::kb() {
-                home.set_kb(android::kb());
-            }
-            for (phase, progress) in std::mem::take(&mut *BACK.lock().unwrap()) {
-                swiping = phase <= 1;
-                ui.invoke_back_gesture(phase, progress);
+            if follow(&ui, &swiping) {
+                follow_fast(&fast, &ui, &swiping);
             }
             chats.tick(&ui);
             // Permissions granted in Settings, or a mode changed elsewhere, show up within a second.

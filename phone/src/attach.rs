@@ -241,6 +241,12 @@ fn read(env: &mut JNIEnv, ctx: &JObject, uri: &JObject) -> Result<Option<(Vec<u8
     Ok(Some((bytes, mime)))
 }
 
+/// Whether the box of `chat` shows a pick that failed (then the store's pick, if a write failed to clear it, is not
+/// what Mani sees, and is not sent).
+pub fn failed(chat: &str) -> bool {
+    matches!(&*PICK.lock().unwrap(), Some((c, Pick::Failed(_))) if c == chat)
+}
+
 /// A pick under way for `chat` (also PREVIEW, fake_chat.rs); a pick in another chat's box stays as it is.
 pub fn set_loading(chat: &str) {
     *PICK.lock().unwrap() = Some((chat.to_string(), Pick::Loading));

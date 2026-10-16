@@ -51,7 +51,7 @@ pub struct View {
     pub mic_level: f32,
     /// Who is calling: "Claude" or "Codex" (from the call server).
     pub agent: String,
-    /// A typed reply that didn't reach the PC: it goes back in the reply field (screen.rs), then this is emptied.
+    /// Typed replies that didn't reach the PC, in order: they go back in the reply field (screen.rs), then this is emptied.
     pub unsent: String,
     /// "Call back" was tapped and the PC hasn't answered yet (no second tap, "Calling you back…" shows).
     pub asking_back: bool,

@@ -168,9 +168,10 @@ pub fn has_link(text: &str) -> bool {
 /// long-press copies it like any other.
 pub fn only_link(text: &str) -> String {
     let t = inline(text);
-    let bare = t.match_indices("<http").map(|(i, _)| &t[i + 1..]);
-    let named = t.match_indices("](").map(|(i, _)| &t[i + 2..]);
-    let mut all = bare.chain(named).map(|s| &s[..s.find(['>', ')']).unwrap_or(s.len())]);
+    // a bare address runs to its ">" (it may hold brackets: a(b)/c); a markdown one to its ")"
+    let bare = t.match_indices("<http").map(|(i, _)| &t[i + 1..]).map(|s| &s[..s.find('>').unwrap_or(s.len())]);
+    let named = t.match_indices("](").map(|(i, _)| &t[i + 2..]).map(|s| &s[..s.find(')').unwrap_or(s.len())]);
+    let mut all = bare.chain(named);
     match (all.next(), all.next()) {
         // only a web address opens (open-link takes nothing else): a stray "](" leaves the words as they were
         (Some(l), None) if l.starts_with("https://") || l.starts_with("http://") => l.to_string(),
