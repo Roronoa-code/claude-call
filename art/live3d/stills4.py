@@ -1,8 +1,3 @@
-# Sharper still pictures of the cast for the Chats screens
-# (phone/ui/chats/faces/<face>-<pose>.png), in three poses: idle, think (a chat the PC is working on) and happy (a
-# reply just in). Framed exactly like a live picture (alive.rs frame + HEAD of sky above), like stills.py, but at K
-# times home size so a bust crop up to that size stays crisp on a 2.75x screen.
-# Usage: python stills4.py
 import os, json
 from render import np, Image, moderngl
 import render as R
@@ -10,20 +5,20 @@ import render as R
 TL = r'D:\Outputs\CallMe\design\live3d\cast\timelines'
 OUT = os.path.join(R.HERE, '..', '..', 'phone', 'ui', 'chats', 'faces')
 K, SF, HEAD = 0.42, 2.75, 40
-SOLO = {'null': 1.2}  # alive.rs NULL_SOLO
+SOLO = {'null': 1.2}
 FACES = {'clawd': (300, 250), 'haiku': (300, 250), 'sonnet': (300, 250), 'opus': (300, 250), 'null': (150, 230)}
 POSES = ['idle', 'think', 'happy']
 
 if __name__ == '__main__':
     os.makedirs(OUT, exist_ok=True)
-    R.render('null', {}, 0.1)  # make the context
+    R.render('null', {}, 0.1)
     ctx = R._ctx
     for face, (fw, fh) in FACES.items():
         data = json.load(open(os.path.join(TL, face + '.json')))
         prog = R.program(data['shader'])
         k = K * SOLO.get(face, 1)
         w, h, vh = round(fw * k * SF), round(fh * k * SF), round((fh + HEAD) * k * SF)
-        S = 3  # drawn larger and scaled down, for clean edges
+        S = 3
         fbo = ctx.simple_framebuffer((w * S, vh * S), components=4)
         vao = ctx.vertex_array(prog, [])
         for pose in POSES:

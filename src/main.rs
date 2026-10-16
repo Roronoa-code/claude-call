@@ -1,6 +1,3 @@
-//! CallMe: lets Claude Code phone the user for a real two-way voice conversation.
-//!   callme           MCP server (stdio) plus this session's call web server, reached through the shared tunnel
-//!   callme gateway   the one Cloudflare quick tunnel shared by every CallMe server on this PC (started by the first server)
 mod call;
 mod gateway;
 mod mcp;
@@ -10,7 +7,6 @@ mod voice;
 
 use std::{io::Write, path::PathBuf, sync::OnceLock};
 
-/// The project folder: config.json, status.json, timing.log, voice/, bin/cloudflared.exe.
 pub fn dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
@@ -19,12 +15,9 @@ pub struct Config {
     pub topic: String,
     pub token: String,
     pub status_path: PathBuf,
-    /// Tests: their own status file, never the phone's setting or the real topic's mode messages.
     pub test_status: bool,
-    /// Tests: no tunnel, no phone.
     pub local: bool,
     pub no_gpu: bool,
-    /// Which agent is calling (Codex sets CALLME_AGENT=Codex).
     pub agent: String,
 }
 
@@ -33,7 +26,6 @@ pub fn cfg() -> &'static Config {
     CONFIG.get().expect("config")
 }
 
-/// config.json, read on each use so edits (e.g. "debug": true) apply to a running server.
 pub fn config_json() -> serde_json::Value {
     std::fs::read_to_string(dir().join("config.json"))
         .ok()
@@ -41,7 +33,6 @@ pub fn config_json() -> serde_json::Value {
         .unwrap_or_default()
 }
 
-/// Debug log of the phone's mic levels and interrupts: CALLME_DEBUG=1, or "debug": true in config.json.
 pub fn debug_on() -> bool {
     std::env::var("CALLME_DEBUG").is_ok_and(|v| v == "1") || config_json()["debug"] == true
 }
@@ -58,14 +49,12 @@ pub fn log_line(line: &str) {
     append_log("timing.log", line);
 }
 
-/// Appends a timestamped line to a log file in the project folder.
 pub fn append_log(file: &str, line: &str) {
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(dir().join(file)) {
         let _ = writeln!(f, "{} {line}", now_iso());
     }
 }
 
-/// Starts a helper with no console window that outlives this process (like Node's detached + windowsHide).
 /// Its stdin is never ours (the MCP pipe).
 pub fn spawn_hidden(cmd: &mut std::process::Command) -> std::io::Result<()> {
     cmd.stdin(std::process::Stdio::null());
@@ -103,7 +92,6 @@ async fn main() {
     });
     let port = call::serve().await;
     if !cfg().local {
-        // Make sure the shared gateway (and its tunnel) is up early, so it has settled before any call.
         tokio::spawn(async {
             loop {
                 if gateway::ensure_gateway().await {

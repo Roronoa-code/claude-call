@@ -1,12 +1,4 @@
-//! A photo or video to send in a chat: Samsung's Gallery or the system picker, reading what was picked into
-//! filesDir/media (where the PC's files go too, so it shows and plays the same way), and the chip above the field until
-//! it is sent or removed.
-//! A pick belongs to the chat it was picked in: once ready it is kept with that chat in the store (chats.json), so it
-//! never goes with a message in another chat and stays when the app is closed. The chat the picker is open for is kept
-//! in the store too (Store::picking): Samsung may close the app while the Gallery is open, and the pick still lands.
-//! The Gallery is tried first; if what it gives back can't be read (no grant, no type), the system picker opens at once
-//! instead, and is used for a day, or until the app is updated (one fluke must not turn the Gallery off for good). Both
-//! are kept in the settings, so they hold after Samsung closes the app while the Gallery is open, and after a restart.
+//! Samsung may close the app while its Gallery is open, so the chat being picked for is kept in the store.
 use crate::{
     Chats, HomeScreen, android,
     chats::{MEDIA_MAX, Media},
@@ -26,32 +18,25 @@ use std::{
     sync::Mutex,
 };
 
-/// A pick on its way, or one that can't be sent (why), and the chat it was picked in. Ready ones are in the store.
 #[derive(Clone)]
 enum Pick {
     Loading,
     Failed(String),
 }
 static PICK: Mutex<Option<(String, Pick)>> = Mutex::new(None);
-/// The chat the picker was opened for (its answer comes later, in picked()).
 static FOR: Mutex<String> = Mutex::new(String::new());
-const REQUEST: i32 = 7; // MainActivity.onActivityResult in Shell.kt
+const REQUEST: i32 = 7;
 
-/// Samsung's own Gallery app: the pick opens there when the phone has it.
 const GALLERY: &str = "com.sec.android.gallery3d";
-/// Settings: the picker open now is the Gallery.
 const IN_GALLERY: &str = "inGallery";
-/// Settings: when what the Gallery gave back couldn't be read (ms), so the system picker for GALLERY_OFF.
 const GALLERY_FAILED: &str = "galleryFailedAt";
 const GALLERY_OFF: i64 = 24 * 3600 * 1000;
 
-/// Whether the Gallery is off for now: it failed less than GALLERY_OFF ago, and the app wasn't updated since.
 fn gallery_off(env: &mut JNIEnv, act: &JObject) -> Result<bool> {
     let at = settings::stamp(env, act, GALLERY_FAILED)?;
     Ok(at > 0 && at > settings::updated_at(env, act)? && (0..GALLERY_OFF).contains(&(jx::now_ms() - at)))
 }
 
-/// Opens Samsung's Gallery for `chat` (photos and videos), or, without it (or once it failed), the system picker.
 pub fn open(env: &mut JNIEnv, act: &JObject, chat: &str) -> Result<()> {
     *FOR.lock().unwrap() = chat.to_string();
     inbox::path(env, act)?;
@@ -66,7 +51,7 @@ pub fn open(env: &mut JNIEnv, act: &JObject, chat: &str) -> Result<()> {
     Ok(())
 }
 
-/// The system photo picker (photos and videos); Android 10-12 get "choose a file" limited to them.
+/// Android 10-12 have no photo picker: they get "choose a file" limited to photos and videos.
 fn system<'a>(env: &mut JNIEnv<'a>) -> Result<JObject<'a>> {
     let pick_images = jx::sdk(env)? >= 33;
     let i = new_intent(env, if pick_images { "android.provider.action.PICK_IMAGES" } else { "android.intent.action.GET_CONTENT" })?;
@@ -78,8 +63,6 @@ fn system<'a>(env: &mut JNIEnv<'a>) -> Result<JObject<'a>> {
     Ok(i)
 }
 
-/// The Gallery's pick couldn't be read: the system picker opens for the same chat straight away (no question asked),
-/// and is used for a day (gallery_off). Whatever was showing "Getting it ready…" goes.
 fn instead(env: &mut JNIEnv, act: &JObject, chat: &str) -> Result<()> {
     android::log("attach: the Gallery's pick couldn't be read; the system picker instead");
     settings::set_stamp(env, act, GALLERY_FAILED, jx::now_ms())?;
@@ -96,8 +79,7 @@ fn instead(env: &mut JNIEnv, act: &JObject, chat: &str) -> Result<()> {
     Ok(())
 }
 
-/// The Gallery's pick, if the phone has Samsung's Gallery (its PICK takes image and video types: "*/*" with the
-/// two lets it offer both). Its answer is read like the system picker's (picked).
+/// Samsung's Gallery PICK offers photos and videos only with "*/*" plus both types in EXTRA_MIME_TYPES.
 fn gallery<'a>(env: &mut JNIEnv<'a>, act: &JObject) -> Result<Option<JObject<'a>>> {
     let i = new_intent(env, "android.intent.action.PICK")?;
     media_types(env, &i)?;
@@ -113,7 +95,6 @@ fn new_intent<'a>(env: &mut JNIEnv<'a>, action: &str) -> Result<JObject<'a>> {
     env.new_object("android/content/Intent", "(Ljava/lang/String;)V", &[JValue::Object(&action)])
 }
 
-/// Any type, narrowed to photos and videos (EXTRA_MIME_TYPES).
 fn media_types(env: &mut JNIEnv, i: &JObject) -> Result<()> {
     let any = s(env, "*/*")?;
     env.call_method(i, "setType", "(Ljava/lang/String;)Landroid/content/Intent;", &[JValue::Object(&any)])?;
@@ -128,8 +109,6 @@ fn media_types(env: &mut JNIEnv, i: &JObject) -> Result<()> {
     Ok(())
 }
 
-/// The picker closed (`data` is null when nothing was picked). Reads the file off the main thread. After Android closed
-/// the app while the picker was open, the chat it was for comes from the store, and opens again.
 pub fn picked(env: &mut JNIEnv, act: &JObject, data: &JObject) -> Result<()> {
     inbox::path(env, act)?;
     let gallery = settings::flag(env, act, IN_GALLERY)?;
@@ -145,10 +124,10 @@ pub fn picked(env: &mut JNIEnv, act: &JObject, data: &JObject) -> Result<()> {
     }
     let uri = if data.is_null() { JObject::null() } else { env.call_method(data, "getData", "()Landroid/net/Uri;", &[])?.l()? };
     if uri.is_null() && !data.is_null() && gallery && !chat.is_empty() {
-        return instead(env, act, &chat); // the Gallery answered with nothing to read
+        return instead(env, act, &chat);
     }
     let Some(dir) = inbox::media_dir().filter(|_| !uri.is_null() && !chat.is_empty()) else {
-        inbox::update(|s| s.picked(&chat)); // closed without a pick
+        inbox::update(|s| s.picked(&chat));
         return Ok(());
     };
     set_loading(&chat);
@@ -158,7 +137,6 @@ pub fn picked(env: &mut JNIEnv, act: &JObject, data: &JObject) -> Result<()> {
         let Ok(mut env) = vm.attach_current_thread() else { return set_result(&chat, Err("Couldn't read that file".into())) };
         let got = jx::ok(&mut env, |env| read(env, ctx.as_obj(), uri.as_obj())).flatten();
         let kind = got.as_ref().and_then(|(bytes, mime)| Media::kind(mime, bytes));
-        // no grant, nothing readable or no type it can tell: the system picker instead, straight away
         if gallery && kind.is_none() && jx::ok(&mut env, |env| instead(env, act.as_obj(), &chat)).is_some() {
             return;
         }
@@ -176,7 +154,6 @@ pub fn picked(env: &mut JNIEnv, act: &JObject, data: &JObject) -> Result<()> {
     Ok(())
 }
 
-/// A picked file checked (Media::picked) and saved in filesDir/media.
 fn keep(dir: &std::path::Path, bytes: &[u8], mime: &str) -> std::result::Result<Media, String> {
     let m = Media::picked(bytes, mime)?;
     let file = dir.join(m.file_name());
@@ -185,8 +162,7 @@ fn keep(dir: &std::path::Path, bytes: &[u8], mime: &str) -> std::result::Result<
     Ok(Media { path: file.to_string_lossy().into_owned(), ..m })
 }
 
-/// A HEIC / HEIF photo as a JPEG (the PC and the agent take JPEGs), at most 4096 px on its longer side. None: Android
-/// couldn't decode it.
+/// The PC and the agents take no HEIC / HEIF. None: Android couldn't decode it.
 fn jpeg(env: &mut JNIEnv, bytes: &[u8]) -> Result<Option<Vec<u8>>> {
     let arr = env.byte_array_from_slice(bytes)?;
     let o = env.new_object("android/graphics/BitmapFactory$Options", "()V", &[])?;
@@ -217,8 +193,6 @@ fn jpeg(env: &mut JNIEnv, bytes: &[u8]) -> Result<Option<Vec<u8>>> {
     Ok(Some(env.convert_byte_array(JByteArray::from(b))?))
 }
 
-/// The picked file's bytes (read up to just past MEDIA_MAX, enough to know it is too big) and the type it says it is;
-/// None when it can't be opened.
 fn read(env: &mut JNIEnv, ctx: &JObject, uri: &JObject) -> Result<Option<(Vec<u8>, String)>> {
     let cr = env.call_method(ctx, "getContentResolver", "()Landroid/content/ContentResolver;", &[])?.l()?;
     let t = env.call_method(&cr, "getType", "(Landroid/net/Uri;)Ljava/lang/String;", &[JValue::Object(uri)])?.l()?;
@@ -241,19 +215,15 @@ fn read(env: &mut JNIEnv, ctx: &JObject, uri: &JObject) -> Result<Option<(Vec<u8
     Ok(Some((bytes, mime)))
 }
 
-/// Whether the box of `chat` shows a pick that failed (then the store's pick, if a write failed to clear it, is not
-/// what Mani sees, and is not sent).
 pub fn failed(chat: &str) -> bool {
     matches!(&*PICK.lock().unwrap(), Some((c, Pick::Failed(_))) if c == chat)
 }
 
-/// A pick under way for `chat`; a pick in another chat's box stays as it is.
 pub fn set_loading(chat: &str) {
     *PICK.lock().unwrap() = Some((chat.to_string(), Pick::Loading));
     inbox::changed();
 }
 
-/// The pick's result: ready, it is kept with its chat; removed while it was loading, it stays removed.
 pub fn set_result(chat: &str, r: std::result::Result<Media, String>) {
     let mut p = PICK.lock().unwrap();
     if !matches!(&*p, Some((c, Pick::Loading)) if c == chat) {
@@ -263,7 +233,6 @@ pub fn set_result(chat: &str, r: std::result::Result<Media, String>) {
     *p = match r {
         Ok(m) if inbox::update(|s| s.set_pick(chat, Some(m.clone()))) == Some(true) => None,
         Ok(_) => Some((chat.to_string(), Pick::Failed("Couldn't save that file".into()))),
-        // what was picked before goes too: the box shows the error, and nothing hidden may go with the message
         Err(why) => {
             unpick(chat);
             Some((chat.to_string(), Pick::Failed(why)))
@@ -273,8 +242,6 @@ pub fn set_result(chat: &str, r: std::result::Result<Media, String>) {
     inbox::changed();
 }
 
-/// Takes what is picked in `chat` out of the store (the picker opened for it is done), and its file once nothing
-/// else uses it.
 fn unpick(chat: &str) {
     let unused = inbox::update(|s| {
         let path = s.get(chat).and_then(|c| c.pick.as_ref()).map(|m| m.path.clone());
@@ -286,7 +253,6 @@ fn unpick(chat: &str) {
     }
 }
 
-/// Removes what was picked in `chat` (the × on the chip), and its file once nothing else uses it.
 pub fn clear(chat: &str) {
     let mut p = PICK.lock().unwrap();
     if p.as_ref().is_some_and(|(c, _)| c == chat) {
@@ -297,7 +263,6 @@ pub fn clear(chat: &str) {
     inbox::changed();
 }
 
-/// The chip above the field, for the open chat (`pick`: what its store entry holds).
 pub fn show(ui: &HomeScreen, chat: &str, pick: Option<&Media>) {
     let c = ui.global::<Chats>();
     let busy = PICK.lock().unwrap().clone().filter(|(c, _)| c == chat).map(|(_, p)| p);
@@ -321,24 +286,21 @@ pub fn show(ui: &HomeScreen, chat: &str, pick: Option<&Media>) {
 }
 
 thread_local! {
-    /// Thumbnails already drawn, by file (None: it couldn't be read).
     static THUMBS: RefCell<HashMap<String, Option<(slint::Image, f32)>>> = RefCell::new(HashMap::new());
 }
 
-/// A photo, or a video's first frame, at most about `max` pixels on its longer side, as (picture, height / width).
 pub fn picture(path: &str, video: bool, max: i32) -> Option<(slint::Image, f32)> {
     let (w, h, px) = android::with(|env, _| env.with_local_frame(16, |env| bitmap(env, path, video, max))).flatten()?;
     let buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(&px, w, h);
     Some((slint::Image::from_rgba8_premultiplied(buf), h as f32 / w as f32))
 }
 
-/// Decodes with Android (any format it knows; a video through MediaMetadataRetriever) into RGBA bytes.
 fn bitmap(env: &mut JNIEnv, path: &str, video: bool, max: i32) -> Result<Option<(u32, u32, Vec<u8>)>> {
     let p = s(env, path)?;
     let bmp = if video {
         let r = env.new_object("android/media/MediaMetadataRetriever", "()V", &[])?;
         env.call_method(&r, "setDataSource", "(Ljava/lang/String;)V", &[JValue::Object(&p)])?;
-        let sig = "(JIII)Landroid/graphics/Bitmap;"; // OPTION_CLOSEST_SYNC, scaled to fit max x max
+        let sig = "(JIII)Landroid/graphics/Bitmap;";
         let frame = env.call_method(&r, "getScaledFrameAtTime", sig, &[JValue::Long(0), JValue::Int(2), JValue::Int(max), JValue::Int(max)])?.l()?;
         env.call_method(&r, "release", "()V", &[])?;
         frame
@@ -359,7 +321,7 @@ fn bitmap(env: &mut JNIEnv, path: &str, video: bool, max: i32) -> Result<Option<
     if bmp.is_null() {
         return Ok(None);
     }
-    // A plain ARGB_8888 copy (video frames can come as RGB_565): its bytes are RGBA, premultiplied.
+    // video frames can come as RGB_565
     let cfg = env.get_static_field("android/graphics/Bitmap$Config", "ARGB_8888", "Landroid/graphics/Bitmap$Config;")?.l()?;
     let soft = env.call_method(&bmp, "copy", "(Landroid/graphics/Bitmap$Config;Z)Landroid/graphics/Bitmap;", &[JValue::Object(&cfg), JValue::Bool(0)])?.l()?;
     env.call_method(&bmp, "recycle", "()V", &[])?;
@@ -374,8 +336,6 @@ fn bitmap(env: &mut JNIEnv, path: &str, video: bool, max: i32) -> Result<Option<
     Ok(Some((w as u32, h as u32, env.convert_byte_array(JByteArray::from(bytes))?)))
 }
 
-/// Plays a video the PC sent in the phone's video player, through the app's own content link (MediaProvider in
-/// Shell.kt) with a one-time read grant.
 pub fn play(env: &mut JNIEnv, act: &JObject, path: &str) -> Result<()> {
     let name = std::path::Path::new(path).file_name().and_then(|n| n.to_str()).unwrap_or("");
     let mime = match name.rsplit('.').next() {
@@ -387,11 +347,10 @@ pub fn play(env: &mut JNIEnv, act: &JObject, path: &str) -> Result<()> {
     let uri = env.call_method(&i, "getData", "()Landroid/net/Uri;", &[])?.l()?;
     let t = s(env, mime)?;
     env.call_method(&i, "setDataAndType", "(Landroid/net/Uri;Ljava/lang/String;)Landroid/content/Intent;", &[JValue::Object(&uri), JValue::Object(&t)])?;
-    env.call_method(&i, "addFlags", "(I)Landroid/content/Intent;", &[JValue::Int(1)])?; // FLAG_GRANT_READ_URI_PERMISSION
+    env.call_method(&i, "addFlags", "(I)Landroid/content/Intent;", &[JValue::Int(1)])?;
     jx::start_activity(env, act, &i)
 }
 
-/// A file's thumbnail, drawn once (a photo, or a video's first frame).
 pub fn thumb(m: &Media) -> Option<(slint::Image, f32)> {
     THUMBS.with(|t| t.borrow_mut().entry(m.path.clone()).or_insert_with(|| picture(&m.path, m.video(), 720)).clone())
 }

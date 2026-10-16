@@ -1,4 +1,3 @@
-//! The chats rules' tests (chats.rs): the store, signatures (with the vectors the PC shares), replies and notes.
 use super::*;
 
 fn store() -> (Store, String, String) {
@@ -124,13 +123,11 @@ fn delete_undo_keeps_late_replies_and_purge_frees_files() {
     assert!(s.delete(&c, 1000));
     assert!(!s.delete(&c, 2000), "once");
     assert_eq!(s.undoable().unwrap().id, c);
-    // the PC answers while Undo is still up: kept (no notification), and back with Undo
     assert!(s.apply_reply(&reply(&c, &m, "done", "late", 1, 1), None).is_none());
     assert!(s.undelete(&c));
     assert_eq!(s.get(&c).unwrap().lines[1].text, "late");
     assert_eq!(s.get(&c).unwrap().unread, 1);
 
-    // two deletes in a row: each keeps its own time; the first going for good leaves the second undoable
     assert!(s.delete(&c, 1000) && s.delete(&other, 4000));
     assert_eq!(s.undoable().unwrap().id, other, "Undo brings back the newest");
     let gone = s.purge(999);
@@ -139,7 +136,6 @@ fn delete_undo_keeps_late_replies_and_purge_frees_files() {
     assert_eq!(gone.len(), 1);
     assert_eq!((s.get(&c), s.undoable().map(|c| c.id.clone())), (None, Some(other.clone())));
     assert_eq!(s.unused_files(&gone[0]), vec!["only.jpg".to_string(), "picked.jpg".to_string()], "a file the other chat uses stays");
-    // gone for good: its replies are dropped
     assert!(s.apply_reply(&reply(&c, &m, "done", "later", 1, 1), None).is_none());
     assert!(s.get(&c).is_none());
     assert!(s.undelete(&other));
@@ -255,7 +251,6 @@ fn note(chat: &str, id: &str, kind: &str, choices: &[&str], text: &str, part: u3
 #[test]
 fn bad_notes_are_dropped_but_long_unicode_fits() {
     let mut s = Store::default();
-    // counted in characters, never bytes: a 100-character title of 200 bytes and a choice of 80 emoji (320 bytes) pass
     let mut v = note("ask-x", "x", "ask", &[], "q", 1, 1);
     (v["title"], v["choices"]) = (json!("é".repeat(100)), json!(["😀".repeat(80)]));
     assert!(s.apply_note(&v, None).is_some());
@@ -269,7 +264,7 @@ fn bad_notes_are_dropped_but_long_unicode_fits() {
         ("choices", json!(["a", "b", "c", "d", "e", "f", "g"])),
         ("choices", json!([""])),
         ("choices", json!(["two\nlines"])),
-        ("choices", json!(["Blue\u{1f}Keep it"])), // joined, it would sign the same as two choices
+        ("choices", json!(["Blue\u{1f}Keep it"])),
         ("choices", json!("Blue")),
         ("ts", json!("soon")),
         ("text", json!(null)),
@@ -296,16 +291,13 @@ fn a_deleted_thread_stays_deleted_and_undo_brings_it_back() {
     assert_eq!(s, before, "undo puts it back exactly");
     s.delete("ask-r1", 1);
     assert_eq!(s.purge(1).len(), 1);
-    // its last part and a resend of the whole note arrive late: dropped, the thread doesn't come back
     assert!(s.apply_note(&note("ask-r1", "r1", "ask", &["Yes"], "!", 2, 2), None).is_none());
     assert!(s.apply_note(&ask, None).is_none());
     assert!(s.get("ask-r1").is_none());
-    // updates: the old notes' replays are dropped, a new update opens the thread again
     s.remove("updates").unwrap();
     assert!(s.apply_note(&note("updates", "n1", "note", &[], "Built.", 1, 1), None).is_none());
     assert!(s.apply_note(&note("updates", "n2", "note", &[], "Deployed.", 1, 1), None).is_some());
     assert_eq!(s.get("updates").unwrap().lines.len(), 1);
-    // my own chats leave no trace
     s.remove(&mine).unwrap();
     assert_eq!(s.gone, vec!["ask-r1/r1".to_string(), "updates/n1".to_string()]);
 }
@@ -316,7 +308,6 @@ fn receipt(chat: &str, re: &str, state: &str) -> Value {
 
 #[test]
 fn receipt_vectors_match_the_pc() {
-    // PROTOCOL-asks.md, "Read receipts" (key test-key)
     for (state, sig) in [
         ("delivered", "b7f7d1d56b961afaca9ca2cd7a80538ab72c9f9ac076c0256be198fe8d1cd283"),
         ("read", "c30a0bb0ca6ba10dacd0112fc1bff039a760aa0117c06d289ab01af1495471f5"),
@@ -356,7 +347,6 @@ fn receipts_step_the_status_forward_only() {
     assert_eq!(shows(&s), ("Read", "stop"));
     assert!(!s.apply_receipt(&receipt(&c, &m, "delivered")), "late, lower receipt");
     assert_eq!(line(&s).seen, "read");
-    // unknown chat, message, state or version; and the PC's own line is never mine
     for v in [receipt("nope", &m, "read"), receipt(&c, "nope", "read"), receipt(&c, &m, "seen"), receipt(&c, &m, ""), json!({"v": 2, "chat": c, "re": m, "state": "read"})] {
         assert!(!s.apply_receipt(&v), "{v}");
     }
@@ -364,7 +354,6 @@ fn receipts_step_the_status_forward_only() {
     assert!(s.apply_reply(&reply(&c, &m, "done", "hi", 1, 1), None).is_some());
     assert_eq!(shows(&s), ("", ""), "answered: the line goes");
     assert!(!s.apply_receipt(&receipt(&c, &m, "read")));
-    // survives a restart (the store is the chat file); a file from before receipts still loads
     let path = std::env::temp_dir().join(format!("callme-receipts-{}.json", std::process::id()));
     before.save(&path).unwrap();
     assert_eq!(Store::load(&path).unwrap().get(&c).unwrap().lines[0].seen, "read");
@@ -387,19 +376,16 @@ fn unsent_messages_retry_by_themselves_then_fail() {
     s.sent(&c, &m, false);
     assert!(s.due(now() + 15_000).is_empty(), "backs off");
     assert_eq!(s.due(now() + 30_000).len(), 1);
-    // past AUTO_FOR from the first send: failed, tap to retry; a tap starts over
     s.chats[0].lines[0].first -= AUTO_FOR;
     assert_eq!(status(&s.chats[0], now()), ("Failed · Tap to retry", "retry"));
     assert!(s.due(now() + 600_000).is_empty());
     s.retry(&c, "", true);
     s.sent(&c, &m, false);
     assert_eq!(status(&s.chats[0], now()), ("Waiting for connection…", ""));
-    // an earlier message is retried by its own id
     let m2 = s.add_mine(&c, "second", None).unwrap();
     s.sent(&c, &m2, true);
     assert_eq!(s.retry(&c, &m, true), Some(m.clone()));
     assert_eq!(s.retry(&c, &m2, true), None, "it went");
-    // a file from before these fields: first falls back to its time
     let old: Store = serde_json::from_str(r#"{"chats":[{"id":"c1","lines":[{"id":"m1","me":true,"state":"not_sent","at":1,"since":1}]}]}"#).unwrap();
     assert_eq!(status(&old.chats[0], now()), ("Failed · Tap to retry", "retry"));
 
@@ -431,8 +417,6 @@ fn drafts_and_picks_belong_to_their_chat_and_go_with_the_send() {
     let l = chat.lines.iter().find(|l| l.id == msg).unwrap();
     assert_eq!((l.text.as_str(), l.media[0].path.as_str()), ("half a thought, done", "/m/p.jpg"));
     assert!(s.send(&b, "  ", true).is_none(), "nothing to send: nothing changes");
-    // a pick that failed shows its error: what is left behind it in the store (its removal couldn't be saved) never
-    // goes, and is cleared with the send
     s.set_pick(&b, Some(pic.clone()));
     let m = s.send(&b, "just words", false).unwrap();
     let chat = s.get(&b).unwrap();
@@ -477,14 +461,12 @@ fn an_answer_shows_as_sending_until_the_pc_takes_it() {
     assert_eq!(st(&s), "sending", "no time limit stands in for the PC's word");
     s.apply_reply(&reply("ask-r", &m, "done", "Got it.", 1, 1), None);
     assert_eq!(st(&s), "answered");
-    // the PC turned it away (answered elsewhere, or the question closed): closed, not answered by me
     let mut s3 = Store::default();
     s3.apply_note(&note("ask-r", "r", "ask", &["Yes"], "Ship it?", 1, 1), None);
     let m3 = s3.add_mine("ask-r", "Yes", None).unwrap();
     s3.apply_reply(&reply("ask-r", &m3, "missed", "This question expired (over a day old), so nothing is waiting for the answer now.", 1, 1), None);
     assert_eq!(st(&s3), "expired");
     assert_eq!(quick_answers(s3.get("ask-r").unwrap(), now()), (vec![], false, false), "nothing left to tap");
-    // failed for good: the choices come back
     let mut s2 = Store::default();
     s2.apply_note(&note("ask-r", "r", "ask", &["Yes"], "Ship it?", 1, 1), None);
     let m2 = s2.add_mine("ask-r", "Yes", None).unwrap();
@@ -503,14 +485,13 @@ fn retries_resend_the_uploaded_link_until_ntfy_may_have_dropped_it() {
     let m = s.add_mine(&c, "look", Some(pic)).unwrap();
     s.uploaded(&c, &m, "https://ntfy.sh/file/up.jpg");
     for _ in 0..5 {
-        s.sent(&c, &m, false); // the publish failed after the upload worked
+        s.sent(&c, &m, false);
         assert_eq!(s.retry(&c, &m, false), Some(m.clone()));
         assert!(s.to_upload(&c, &m).is_none(), "auto-retry never uploads it again");
     }
     s.sent(&c, &m, false);
     s.retry(&c, &m, true);
     assert!(s.to_upload(&c, &m).is_none(), "nor does a tap while the link works");
-    // past LINK_KEEP the link may be gone: the next retry uploads it once more
     s.get_mut(&c).unwrap().lines.last_mut().unwrap().media[0].uploaded -= LINK_KEEP + 1;
     s.sent(&c, &m, false);
     s.retry(&c, &m, true);
@@ -533,10 +514,9 @@ fn a_new_chat_waiting_on_the_picker_survives_the_app_being_closed() {
     assert!(back.set_pick(&c, Some(pic)));
     assert_eq!(back.picking, "", "the pick landed");
     assert!(!back.drop_empty(&c), "it has a pick now");
-    // closed without a pick: an empty chat goes as before
     let d = back.new_chat("claude", None);
     back.picking_for(&d);
-    back.picked(&c); // another chat's answer leaves it waiting
+    back.picked(&c);
     assert_eq!(back.picking, d);
     back.picked(&d);
     assert!(back.drop_empty(&d));
@@ -553,11 +533,9 @@ fn a_notification_reply_too_long_to_send_waits_whole_in_the_chat() {
     assert_eq!((msg, too_long), (None, true), "nothing goes, nothing is cut");
     assert_eq!(s.get(&mine).unwrap().lines.len(), n);
     assert_eq!(s.get(&mine).unwrap().draft, long.trim(), "the whole text waits in its box");
-    // what was already typed there stays, first
     s.set_draft(&mine, "already typed");
     s.answer(&mine, &long, now());
     assert_eq!(s.get(&mine).unwrap().draft, format!("already typed\n\n{}", long.trim()));
-    // a question that no longer waits takes nothing, long or not
     s.apply_note(&note("ask-l", "l1", "ask", &[], "?", 1, 1), None);
     let m = s.add_mine("ask-l", "Yes", None).unwrap();
     s.apply_reply(&reply("ask-l", &m, "done", "Got it.", 1, 1), None);

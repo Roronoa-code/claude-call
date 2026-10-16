@@ -1,5 +1,4 @@
-//! Small JNI helpers for the Android parts written in Rust. App classes are named by string (setClassName), never
-//! looked up with FindClass: threads started from Rust only see the system's classes.
+//! Threads started from Rust only see the system's classes with FindClass, so app classes are named by string.
 use jni::{
     JNIEnv,
     errors::Result,
@@ -7,13 +6,12 @@ use jni::{
 };
 
 pub const PKG: &str = "fyi.mani.callme";
-pub const FLAGS: i32 = 0x0400_0000 | 0x0800_0000; // PendingIntent.FLAG_IMMUTABLE | FLAG_UPDATE_CURRENT
+pub const FLAGS: i32 = 0x0400_0000 | 0x0800_0000;
 
 pub fn s<'a>(env: &mut JNIEnv<'a>, text: &str) -> Result<JObject<'a>> {
     Ok(env.new_string(text)?.into())
 }
 
-/// A Java String (or null) as a Rust string.
 pub fn string(env: &mut JNIEnv, o: JObject) -> Result<Option<String>> {
     if o.is_null() {
         return Ok(None);
@@ -21,7 +19,6 @@ pub fn string(env: &mut JNIEnv, o: JObject) -> Result<Option<String>> {
     Ok(Some(env.get_string(&JString::from(o))?.into()))
 }
 
-/// Runs `f`; a failure (and its pending Java exception) is logged and dropped.
 pub fn ok<R>(env: &mut JNIEnv, f: impl FnOnce(&mut JNIEnv) -> Result<R>) -> Option<R> {
     match f(env) {
         Ok(r) => Some(r),
@@ -36,7 +33,6 @@ pub fn ok<R>(env: &mut JNIEnv, f: impl FnOnce(&mut JNIEnv) -> Result<R>) -> Opti
     }
 }
 
-/// A method call whose result isn't needed (builder setters, RemoteViews calls).
 pub fn call(env: &mut JNIEnv, o: &JObject, method: &str, sig: &str, args: &[JValue]) -> Result<()> {
     env.call_method(o, method, sig, args)?;
     Ok(())
@@ -55,7 +51,6 @@ pub fn app<'a>(env: &mut JNIEnv<'a>, ctx: &JObject) -> Result<JObject<'a>> {
     env.call_method(ctx, "getApplicationContext", "()Landroid/content/Context;", &[])?.l()
 }
 
-/// An Intent for one of the app's own classes, e.g. "CallActivity".
 pub fn intent<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, class: &str) -> Result<JObject<'a>> {
     let i = env.new_object("android/content/Intent", "()V", &[])?;
     let c = s(env, &format!("{PKG}.{class}"))?;
@@ -84,13 +79,11 @@ pub fn extra_bool(env: &mut JNIEnv, i: &JObject, key: &str) -> Result<bool> {
     env.call_method(i, "getBooleanExtra", "(Ljava/lang/String;Z)Z", &[JValue::Object(&k), JValue::Bool(0)])?.z()
 }
 
-/// PendingIntent.getActivity / getBroadcast.
 pub fn pending<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, kind: &str, code: i32, i: &JObject) -> Result<JObject<'a>> {
     let sig = "(Landroid/content/Context;ILandroid/content/Intent;I)Landroid/app/PendingIntent;";
     env.call_static_method("android/app/PendingIntent", kind, sig, &[JValue::Object(ctx), JValue::Int(code), JValue::Object(i), JValue::Int(FLAGS)])?.l()
 }
 
-/// Intent(action, Uri.parse(uri)).
 pub fn view_intent<'a>(env: &mut JNIEnv<'a>, action: &str, uri: &str) -> Result<JObject<'a>> {
     let (a, u) = (s(env, action)?, s(env, uri)?);
     let uri = env.call_static_method("android/net/Uri", "parse", "(Ljava/lang/String;)Landroid/net/Uri;", &[JValue::Object(&u)])?.l()?;
@@ -107,7 +100,6 @@ pub fn granted(env: &mut JNIEnv, ctx: &JObject, permission: &str) -> Result<bool
     Ok(env.call_method(ctx, "checkSelfPermission", "(Ljava/lang/String;)I", &[JValue::Object(&p)])?.i()? == 0)
 }
 
-/// A resource id by name, e.g. ("id", "tile_call").
 pub fn res(env: &mut JNIEnv, ctx: &JObject, kind: &str, name: &str) -> Result<i32> {
     let r = env.call_method(ctx, "getResources", "()Landroid/content/res/Resources;", &[])?.l()?;
     let (n, k, p) = (s(env, name)?, s(env, kind)?, s(env, PKG)?);
@@ -125,7 +117,6 @@ pub fn now_ms() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64
 }
 
-/// Puts `text` on the clipboard (plain text).
 pub fn copy(env: &mut JNIEnv, ctx: &JObject, text: &str) -> Result<()> {
     let cm = service(env, ctx, "clipboard")?;
     let (label, t) = (s(env, "Claude Call")?, s(env, text)?);

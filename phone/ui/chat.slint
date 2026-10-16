@@ -3,25 +3,10 @@ import { Home } from "home_parts.slint";
 import { Actor } from "actor.slint";
 import "fonts/JetBrainsMonoNL-Regular.ttf";
 
-// asks: an agent's question waiting for my answer.
 export struct ChatRow { id: string, name: string, face: string, preview: string, time: string, unread: bool, busy: bool, asks: bool,
-    // a waiting question's answers, my last message, how many unread, and the group a row starts ("" none)
     choices: [string], topic: string, count: int, head: string,
-    // what is typed (or picked) in its text box and not sent ("Draft: …"), and where the PC is with my last message
-    // ("Thinking", "Thinking · 3 min", "Queued")
     draft: string, think: string,
-    // my message is the last word: sent, not answered yet
     mine-last: bool }
-// One piece of the thread (inbox.rs thread). kind: "" my text bubble; "note" a quiet line (downloading, couldn't load,
-// stopped); "image" or "video" a card (pic, ratio = height / width) that opens the file at path when tapped; the
-// PC's text as blocks: "p", "h", "li" (mark "1." or "•", level 0 or 1), "quote" (all with their inline markdown in
-// body) or "code" (text, mark its language); under an agent's question, a "choice" (an answer to tap; mark "on": the
-// one I sent) and a "tag" (a small grey word, "Expired"). gap: px of room above it; n: its place in its message (the
-// arrival's stagger); anchor: the first block of the newest answer. line: its message's id (long-press copies it);
-// links: its words hold a link (the long-press then stays off them, unless it is the only one: link, which a tap on
-// the words then opens). "unsent": a quiet line under an earlier message of
-// mine that didn't go (mark "retry": tap to retry); "again": a "Send again" chip under the PC's failed answer (mark: a
-// caption); a "note" with mark "refetch" fetches its photo again (path: its link).
 export struct ChatMsg {
     me: bool,
     text: string,
@@ -35,13 +20,12 @@ export struct ChatMsg {
     gap: float,
     n: int,
     anchor: bool,
-    last: bool, // the last piece of its message
+    last: bool,
     line: string,
     links: bool,
     link: string,
 }
 
-// The chats' own colours: near-black like the home stage, one warm tone for me.
 export global Ink {
     out property <color> bg: #0e0e10;
     out property <color> surface: #1a1a1d;
@@ -51,29 +35,26 @@ export global Ink {
     out property <color> text2: #b9bac0;
     out property <color> muted: #8a8c93;
     out property <color> me: #b05a3f;
-    out property <color> warm: #e3a48c; // links, "Thinking…" in the list
+    out property <color> warm: #e3a48c;
 }
 
 export global Chats {
-    in property <[ChatRow]> rows; // newest first
-    in property <[ChatMsg]> msgs; // the open chat
-    in property <image> full; // the photo open full screen
-    in-out property <bool> viewing; // ...while this is true
-    in property <string> name; // the open chat's agent, "Claude · Opus" (a PC-started thread: its task, "Weather app")
-    in property <string> short; // ...in a word, "Opus"
-    in property <string> title; // ...and what it is about (a PC-started thread: where it stands)
-    in property <string> hint: "Message"; // the empty field's words
-    // An agent's question (chats.rs ask_state): "waiting" for my answer (its choices take a tap), "answered" or
-    // "expired"; "" any other chat.
+    in property <[ChatRow]> rows;
+    in property <[ChatMsg]> msgs;
+    in property <image> full;
+    in-out property <bool> viewing;
+    in property <string> name;
+    in property <string> short;
+    in property <string> title;
+    in property <string> hint: "Message";
     in property <string> ask;
-    in property <bool> readonly; // the updates thread: no field
-    callback choose(string); // a tapped choice: sent as my message
-    // Its character (actor.slint), alive: small by the name, big in the middle while the chat is empty (faces.rs).
+    in property <bool> readonly;
+    callback choose(string);
     in property <string> face: "clawd";
     in property <bool> empty;
-    in property <bool> waiting; // the PC is working on my last message
-    in property <int> replies; // how many answers it has
-    in property <bool> live: true; // false: the GPU can't draw the cast, so still pictures stand in
+    in property <bool> waiting;
+    in property <int> replies;
+    in property <bool> live: true;
     in property <image> face-live;
     in property <int> face-w;
     in property <int> face-h;
@@ -82,71 +63,60 @@ export global Chats {
     in property <int> big-w;
     in property <int> big-h;
     in property <int> big-th;
-    callback poke(); // a tap on the character: a hop
-    in property <string> think; // the header's word on the PC: "Thinking", "Thinking · 3 min", "Queued" ("" none)
-    in property <string> thinking; // ...and the thread's line while it works: "Opus is thinking · 3 min"
-    // An answered or expired question: one plain line where the text box was ("" : the box).
+    callback poke();
+    in property <string> think;
+    in property <string> thinking;
     in property <string> ended;
-    // Why a message couldn't be kept to send ("Couldn't save your message. Try again."), for a few seconds.
     in-out property <string> trouble;
-    in property <string> status; // the small line under my last message
-    in property <string> action; // what it allows: "retry" (tap it) or "stop" (the PC is working: Stop in the field)
-    in property <bool> ready: true; // false until the PC has set chat up
-    in property <bool> unread; // any chat has something new
-    in property <string> pick; // what goes with the next message: "" nothing, "loading", "image", "video" or "error"
-    in property <image> pick-pic; // its thumbnail
-    in property <string> pick-text; // "Photo · 1.2 MB", or why it can't be sent
-    in-out property <bool> open; // the Chats screen
-    in-out property <string> current; // the open chat's id ("" = the list)
-    in-out property <length> from-y: Home.sat + 116px; // where a chat opens out of (home.slint): the tapped row...
-    in-out property <length> from-h: 78px; // ...or the new-chat picker
-    // The tapped card's id and its character's box on the screen (x, y, w, h) at its scale fk: a chat opening (or
-    // closing) carries the character between there and its place by the text box (chats/open.slint).
+    in property <string> status;
+    in property <string> action;
+    in property <bool> ready: true;
+    in property <bool> unread;
+    in property <string> pick;
+    in property <image> pick-pic;
+    in property <string> pick-text;
+    in-out property <bool> open;
+    in-out property <string> current;
+    in-out property <length> from-y: Home.sat + 116px;
+    in-out property <length> from-h: 78px;
     in-out property <string> from-id;
     in-out property <length> fx;
     in-out property <length> fy;
     in-out property <length> fw;
     in-out property <length> fh;
     in-out property <float> fk;
-    in-out property <float> open-k; // the sheet, 0 (list) to 1 (chat)
-    in-out property <bool> flying; // the character is on its way (its places on both screens stand empty)
-    in-out property <bool> held; // a finger (or the back swipe) holds the open chat partway down (chats/open.slint)
-    callback tick(); // a light tick under the finger
-    callback open-link(string); // a link tapped in the thread: the browser (http and https only)
-    in-out property <bool> picker; // the new-chat picker
-    in-out property <bool> want-focus; // put the cursor in the field once it is on screen
+    in-out property <float> open-k;
+    in-out property <bool> flying;
+    in-out property <bool> held;
+    callback tick();
+    callback open-link(string);
+    in-out property <bool> picker;
+    in-out property <bool> want-focus;
     callback open-chat(string);
-    callback new-chat(string, string); // agent, model
-    // What is in the field, the keyboard's word still in progress and where it stands (a byte offset into the
-    // field's text): sent as one message, with what is picked, if anything (inbox.rs).
-    // True once it is kept to send: only then does the field empty (what is typed is never lost).
+    callback new-chat(string, string);
     callback send-composed(string, string, int) -> bool;
-    in property <string> draft; // the open chat's text box as it was left (inbox.rs keeps it per chat)
-    callback keep-draft(string, string); // chat, text: the text box changed
-    pure callback room(string) -> int; // how much more fits (chats.rs room); negative: too long
-    callback copy(string, bool, int); // a long-press: the message (line, mine), and which piece of it (n)
-    callback again(string); // "Send again": my message (line) as a new one
-    callback refetch(string); // a photo that couldn't be loaded, by its link: fetched again
-    callback clear-field(); // empties the keyboard's side of the field (Shell.kt clearField)
-    callback stop(); // a bare "stop", never with what is picked
-    callback retry(string); // a message of mine that didn't go, by its id ("" : the last)
-    callback attach(); // opens the photo and video picker
+    in property <string> draft;
+    callback keep-draft(string, string);
+    pure callback room(string) -> int;
+    callback copy(string, bool, int);
+    callback again(string);
+    callback refetch(string);
+    callback clear-field();
+    callback stop();
+    callback retry(string);
+    callback attach();
     callback unpick();
-    callback open-media(string, string); // path, kind: a photo opens full screen here, a video in the video player
-    callback sharpen(); // the photo open full screen is zoomed in: decoded again, sharper
-    // Deleting a chat: a row slid (or long-pressed) open shows Delete; a tapped Delete slides the row out and closes
-    // the gap, then the chat goes (delete-chat). For a few seconds "Chat deleted · Undo" can bring it back.
-    in-out property <string> revealed; // the row slid open to show Delete ("" none)
-    in-out property <string> leaving; // the row on its way out
-    in-out property <string> returning; // the row coming back with Undo
-    in property <string> deleted; // the chat Undo would bring back ("" : no bar)
+    callback open-media(string, string);
+    callback sharpen();
+    in-out property <string> revealed;
+    in-out property <string> leaving;
+    in-out property <string> returning;
+    in property <string> deleted;
     callback delete-chat(string);
     callback undo();
-    // The list's live character: whose it is (the row at the top), who matters now and one line on where it stands.
     in property <string> live-row;
-    in property <ChatRow> hero; // who matters now, and what it is doing
+    in property <ChatRow> hero;
     in property <string> hero-line;
-    // Back steps out one level: photo, picker, a row slid open, thread, Chats screen. False when there is nothing left.
     public function back() -> bool {
         if (viewing) { viewing = false; return true; }
         if (picker) { picker = false; return true; }
@@ -157,11 +127,10 @@ export global Chats {
     }
 }
 
-// A round icon button with a soft press.
 export component IconButton {
     in property <string> icon;
     in property <brush> stroke: Ink.text;
-    in property <string> label; // what it does, for TalkBack
+    in property <string> label;
     callback clicked;
     width: 48px;
     height: 48px;
@@ -179,7 +148,6 @@ export component IconButton {
     touch := TouchArea { clicked => { root.clicked(); } }
 }
 
-// The round arrow at the left of both headers.
 export component BackButton inherits IconButton {
     x: 4px;
     y: 6px;
@@ -188,7 +156,6 @@ export component BackButton inherits IconButton {
     clicked => { Chats.back(); }
 }
 
-// The new-chat picker: who to talk to, each standing on its tile.
 export component NewChat {
     VerticalLayout {
         padding: 10px;
@@ -220,9 +187,9 @@ export component NewChat {
                 tile := TouchArea {
                     clicked => {
                         Chats.picker = false;
-                        Chats.from-y = root.absolute-position.y; // the picker itself (home.slint) opens into the chat
+                        Chats.from-y = root.absolute-position.y;
                         Chats.from-h = 166px;
-                        Chats.from-id = ""; // a new chat's character stands big in the middle: nothing to carry
+                        Chats.from-id = "";
                         Chats.new-chat(a.agent, a.model);
                         Chats.want-focus = true;
                     }

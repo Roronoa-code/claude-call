@@ -1,5 +1,3 @@
-//! Ringing for an incoming call: the full-screen call alert (Answer / Decline), the looping ringtone and the
-//! vibration. Android's own notification, ringtone and vibrator classes, called from Rust through JNI.
 use jni::{
     JNIEnv,
     errors::Result,
@@ -16,31 +14,27 @@ pub const TEST_LINK: &str = "test:ring";
 #[derive(Default)]
 struct State {
     current: Option<String>,
-    handled: HashSet<String>, // answered or declined: Claude's re-rings for these stay quiet
+    handled: HashSet<String>,
     ringtone: Option<GlobalRef>,
     vibrator: Option<GlobalRef>,
 }
 static STATE: Mutex<Option<State>> = Mutex::new(None);
-/// Calls that have rung, counted: the home screen's Call button tells a call that came from one that never did.
 pub static RINGS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// The call screen for link, answered or not.
 pub fn call_intent<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, link: &str, answer: bool) -> Result<JObject<'a>> {
     let i = intent(env, ctx, "CallActivity")?;
-    env.call_method(&i, "addFlags", "(I)Landroid/content/Intent;", &[JValue::Int(0x1000_0000)])?; // NEW_TASK
+    env.call_method(&i, "addFlags", "(I)Landroid/content/Intent;", &[JValue::Int(0x1000_0000)])?;
     let l = s(env, link)?;
     put(env, &i, "link", JValue::Object(&l))?;
     put(env, &i, "answer", JValue::Bool(answer as u8))?;
     Ok(i)
 }
 
-/// The call screen, answered or not, as a PendingIntent.
 pub fn call_screen<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, link: &str, answer: bool, code: i32) -> Result<JObject<'a>> {
     let i = call_intent(env, ctx, link, answer)?;
     pending(env, ctx, "getActivity", code, &i)
 }
 
-/// "Decline" / "End call": tells Claude and closes the call (DeclineReceiver).
 pub fn hang_up<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, link: &str, code: i32) -> Result<JObject<'a>> {
     let i = intent(env, ctx, "DeclineReceiver")?;
     let l = s(env, link)?;
@@ -59,14 +53,12 @@ pub fn channel(env: &mut JNIEnv, nm: &JObject, id: &str, name: &str, importance:
     Ok(())
 }
 
-/// Calls a Notification.Builder setter that takes a CharSequence.
 pub fn set_text(env: &mut JNIEnv, b: &JObject, method: &str, text: &str) -> Result<()> {
     let t = s(env, text)?;
     env.call_method(b, method, "(Ljava/lang/CharSequence;)Landroid/app/Notification$Builder;", &[JValue::Object(&t)])?;
     Ok(())
 }
 
-/// An ongoing notification on channel, with the call icon.
 pub fn builder<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, channel: &str) -> Result<JObject<'a>> {
     let ch = s(env, channel)?;
     let b = env.new_object("android/app/Notification$Builder", "(Landroid/content/Context;Ljava/lang/String;)V", &[JValue::Object(ctx), JValue::Object(&ch)])?;
@@ -84,7 +76,6 @@ pub fn person<'a>(env: &mut JNIEnv<'a>, name: &str) -> Result<JObject<'a>> {
     env.call_method(&p, "build", "()Landroid/app/Person;", &[])?.l()
 }
 
-/// Rings for `link` unless it is already ringing or was already answered or declined.
 pub fn ring(env: &mut JNIEnv, ctx: &JObject, link: &str, reason: &str) -> Result<()> {
     {
         let mut st = STATE.lock().unwrap();
@@ -98,7 +89,7 @@ pub fn ring(env: &mut JNIEnv, ctx: &JObject, link: &str, reason: &str) -> Result
     RINGS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
     let nm = service(env, ctx, "notification")?;
-    channel(env, &nm, CHANNEL, "Calls from Claude", 4, true)?; // we play the ringtone ourselves so it loops
+    channel(env, &nm, CHANNEL, "Calls from Claude", 4, true)?; // a channel's sound plays once, so the ringtone is played here to loop
     let full = call_screen(env, ctx, link, false, 1)?;
     let answer = call_screen(env, ctx, link, true, 2)?;
     let decline = hang_up(env, ctx, link, 3)?;
@@ -108,7 +99,7 @@ pub fn ring(env: &mut JNIEnv, ctx: &JObject, link: &str, reason: &str) -> Result
     let cat = s(env, "call")?;
     env.call_method(&b, "setCategory", "(Ljava/lang/String;)Landroid/app/Notification$Builder;", &[JValue::Object(&cat)])?;
     env.call_method(&b, "setFullScreenIntent", "(Landroid/app/PendingIntent;Z)Landroid/app/Notification$Builder;", &[JValue::Object(&full), JValue::Bool(1)])?;
-    env.call_method(&b, "setContentIntent", "(Landroid/app/PendingIntent;)Landroid/app/Notification$Builder;", &[JValue::Object(&answer)])?; // tapping answers
+    env.call_method(&b, "setContentIntent", "(Landroid/app/PendingIntent;)Landroid/app/Notification$Builder;", &[JValue::Object(&answer)])?;
     env.call_method(&b, "setTimeoutAfter", "(J)Landroid/app/Notification$Builder;", &[JValue::Long(RING_FOR.as_millis() as i64)])?;
     let who = person(env, "Claude")?;
     let sig = "(Landroid/app/Person;Landroid/app/PendingIntent;Landroid/app/PendingIntent;)Landroid/app/Notification$CallStyle;";
@@ -119,21 +110,20 @@ pub fn ring(env: &mut JNIEnv, ctx: &JObject, link: &str, reason: &str) -> Result
     let n = env.call_method(&b, "build", "()Landroid/app/Notification;", &[])?.l()?;
     env.call_method(&nm, "notify", "(ILandroid/app/Notification;)V", &[JValue::Int(NOTIFICATION_ID), JValue::Object(&n)])?;
 
-    // The ringtone, looping, on the ringtone volume; in wake mode an alarm, which wakes through Do Not Disturb.
+    // alarm usage wakes through Do Not Disturb
     let alarm = crate::settings::mode(env, ctx)? == "wake";
     let uri = env.call_static_method("android/media/RingtoneManager", "getDefaultUri", "(I)Landroid/net/Uri;", &[JValue::Int(if alarm { 4 } else { 1 })])?.l()?;
     let sig = "(Landroid/content/Context;Landroid/net/Uri;)Landroid/media/Ringtone;";
     let tone = env.call_static_method("android/media/RingtoneManager", "getRingtone", sig, &[JValue::Object(ctx), JValue::Object(&uri)])?.l()?;
     if !tone.is_null() {
         let ab = env.new_object("android/media/AudioAttributes$Builder", "()V", &[])?;
-        env.call_method(&ab, "setUsage", "(I)Landroid/media/AudioAttributes$Builder;", &[JValue::Int(if alarm { 4 } else { 6 })])?; // ALARM / NOTIFICATION_RINGTONE
-        env.call_method(&ab, "setContentType", "(I)Landroid/media/AudioAttributes$Builder;", &[JValue::Int(4)])?; // SONIFICATION
+        env.call_method(&ab, "setUsage", "(I)Landroid/media/AudioAttributes$Builder;", &[JValue::Int(if alarm { 4 } else { 6 })])?;
+        env.call_method(&ab, "setContentType", "(I)Landroid/media/AudioAttributes$Builder;", &[JValue::Int(4)])?;
         let attrs = env.call_method(&ab, "build", "()Landroid/media/AudioAttributes;", &[])?.l()?;
         env.call_method(&tone, "setAudioAttributes", "(Landroid/media/AudioAttributes;)V", &[JValue::Object(&attrs)])?;
         env.call_method(&tone, "setLooping", "(Z)V", &[JValue::Bool(1)])?;
         env.call_method(&tone, "play", "()V", &[])?;
     }
-    // Vibration: buzz, pause, repeat. Cancelled on the same Vibrator that started it.
     let vm = service(env, ctx, "vibrator_manager")?;
     let vib = env.call_method(&vm, "getDefaultVibrator", "()Landroid/os/Vibrator;", &[])?.l()?;
     let timings = env.new_long_array(3)?;
@@ -147,7 +137,6 @@ pub fn ring(env: &mut JNIEnv, ctx: &JObject, link: &str, reason: &str) -> Result
         st.vibrator = Some(env.new_global_ref(&vib)?);
     }
 
-    // Missed: go quiet after a minute, but Claude's next re-ring for this call may ring again.
     let (vm, ctx, link) = (env.get_java_vm()?, env.new_global_ref(ctx)?, link.to_string());
     std::thread::spawn(move || {
         std::thread::sleep(RING_FOR);
@@ -161,16 +150,13 @@ pub fn ring(env: &mut JNIEnv, ctx: &JObject, link: &str, reason: &str) -> Result
     Ok(())
 }
 
-/// A light haptic tick (one per face as Null's face rolls through the modes on the home screen).
 pub fn tick(env: &mut JNIEnv, ctx: &JObject) -> Result<()> {
     let vib = service(env, ctx, "vibrator")?;
-    let effect = env.call_static_method("android/os/VibrationEffect", "createPredefined", "(I)Landroid/os/VibrationEffect;", &[JValue::Int(2)])?.l()?; // EFFECT_TICK
+    let effect = env.call_static_method("android/os/VibrationEffect", "createPredefined", "(I)Landroid/os/VibrationEffect;", &[JValue::Int(2)])?.l()?;
     env.call_method(&vib, "vibrate", "(Landroid/os/VibrationEffect;)V", &[JValue::Object(&effect)])?;
     Ok(())
 }
 
-/// Stops ringing for `link` only: ending or touching one call must not silence another one that is ringing.
-/// An answered or declined call is remembered so its re-rings stay quiet.
 pub fn stop(env: &mut JNIEnv, ctx: &JObject, link: &str, handled: bool) -> Result<()> {
     {
         let mut st = STATE.lock().unwrap();

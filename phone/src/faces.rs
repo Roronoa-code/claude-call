@@ -1,7 +1,3 @@
-//! The Chats screens' live character (chats/screens.slint, still.slint). In a chat: standing by the text box, and
-//! big in the middle while the chat is still empty; it thinks while the PC works on a message, talks for a moment
-//! when an answer arrives, looks at you while its question waits, and rests still once nothing happens. On the list:
-//! the one standing at the top, alive only while it thinks or its answer comes in. Nothing is drawn otherwise.
 use crate::{
     Chats, HomeScreen, alive,
     cast::{Cast, State, Who},
@@ -9,12 +5,11 @@ use crate::{
 };
 use slint::ComponentHandle;
 
-pub const SMALL_K: f32 = 0.26; // standing by the text box
-pub const BIG_K: f32 = 0.7; // the empty chat's
-pub const HERO_K: f32 = 0.36; // at the top of the list (drawn into the big texture)
-const TALK_FOR: f32 = 2.2; // seconds of talk when an answer arrives
+pub const SMALL_K: f32 = 0.26;
+pub const BIG_K: f32 = 0.7;
+pub const HERO_K: f32 = 0.36;
+const TALK_FOR: f32 = 2.2;
 
-/// The textures' sizes (logical px): the widest and tallest picture (a Clawd's) with room above, at each size.
 pub fn sizes() -> [(f32, f32); 2] {
     [SMALL_K, BIG_K].map(alive::solo_size)
 }
@@ -27,8 +22,6 @@ pub struct Faces {
     talk_until: f32,
     big_until: f32,
     seed: u64,
-    // On the list: the chat being worked on, then a moment of talk when its answer comes in; and when the small one
-    // last had something to do (it rests still after).
     list_busy: Option<String>,
     list_talk: Option<String>,
     list_who: Option<Who>,
@@ -45,7 +38,6 @@ impl Faces {
         self.casts.iter_mut().for_each(|c| c.hop(now));
     }
 
-    /// Advances to `now` and marks a new frame in `slots` (small, big) when one is due. True if any was.
     pub fn tick(&mut self, ui: &HomeScreen, slots: &mut [Slot], now: f32, sf: f32) -> bool {
         let c = ui.global::<Chats>();
         if c.get_open() && c.get_current().is_empty() && !c.get_picker() {
@@ -65,7 +57,6 @@ impl Faces {
         let who = Who::named(&c.get_face());
         let replies = c.get_replies();
         if self.who != Some(who) {
-            // a chat opened: its character, fresh (each copy on its own clock so they never move in step)
             self.seed = self.seed.rotate_left(7) ^ (now.to_bits() as u64);
             self.casts = [Cast::new(who, self.seed), Cast::new(who, self.seed.rotate_left(31) | 1)];
             self.who = Some(who);
@@ -87,15 +78,14 @@ impl Faces {
             self.quiet_from = now.max(self.talk_until) + 0.8;
         }
         if c.get_empty() {
-            self.big_until = now + 0.5; // drawn until it has faded out
+            self.big_until = now + 0.5;
         }
         let mut any = false;
         for (i, (cast, k)) in self.casts.iter_mut().zip([SMALL_K, BIG_K]).enumerate() {
             cast.set_state(state);
-            cast.attend(c.get_ask() == "waiting"); // eyes on you while its question waits
+            cast.attend(c.get_ask() == "waiting");
             cast.tick(now);
             let shown = i == 0 || now < self.big_until;
-            // the small one rests still once it has nothing to do (no frames for a quiet screen)
             let resting = i == 0 && self.drawn[0] >= 0.0 && now > self.quiet_from && !cast.moving();
             if shown && !resting && (self.drawn[i] < 0.0 || alive::due(cast, self.drawn[i], now)) {
                 let (res, view) = alive::view(who, alive::solo(who, k), sf);
@@ -105,17 +95,15 @@ impl Faces {
             }
         }
         if now >= self.big_until {
-            self.drawn[1] = -1.0; // drawn at once when it shows again
+            self.drawn[1] = -1.0;
         }
         any
     }
 
-    /// The list: the one at the top is alive while the PC works on its chat (thinking) and for a moment of talk when
-    /// the answer comes in, then rests as a still again. Nothing is drawn otherwise.
     fn list(&mut self, ui: &HomeScreen, slots: &mut [Slot], now: f32, sf: f32) -> bool {
         use slint::Model;
         let c = ui.global::<Chats>();
-        self.who = None; // a chat opened from here starts its character afresh
+        self.who = None;
         let rows = c.get_rows();
         let busy = rows.iter().find(|r| r.busy).map(|r| r.id.to_string());
         if let Some(prev) = self.list_busy.take() {
@@ -133,7 +121,7 @@ impl Faces {
             _ => (String::new(), State::Idle),
         };
         if id != c.get_hero().id.as_str() {
-            id.clear(); // only the one standing at the top shows alive
+            id.clear();
         }
         if c.get_live_row() != id.as_str() {
             c.set_live_row(id.as_str().into());
@@ -148,7 +136,7 @@ impl Faces {
             self.casts = [Cast::new(who, self.seed), Cast::new(who, self.seed.rotate_left(31) | 1)];
             (self.list_who, self.drawn) = (Some(who), [-1.0; 2]);
             self.frame(ui, who, sf);
-            let view = alive::view(who, alive::solo(who, HERO_K), sf).1; // drawn at its own size into the big texture
+            let view = alive::view(who, alive::solo(who, HERO_K), sf).1;
             c.set_big_w(view.0);
             c.set_big_h(view.1);
         }
@@ -165,7 +153,6 @@ impl Faces {
         false
     }
 
-    /// A character, fresh (each copy on its own clock so they never move in step), and its textures' framing.
     fn frame(&mut self, ui: &HomeScreen, who: Who, sf: f32) {
         let c = ui.global::<Chats>();
         {

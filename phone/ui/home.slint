@@ -1,8 +1,3 @@
-// The home screen ("stage"): Clawd and Null in the spotlight, one line under them naming the contact mode, and a row
-// along the bottom: Chats (the in-app chats with the agents) and Call (asks the agent picked by tapping Clawd or Null
-// to phone you); while setup is unfinished, a quiet amber line under the mode opens it; once it is done, the same
-// place names an agent's question while it waits, and opens it. The mode is changed on Null
-// himself: drag up or down on him and his LED face rolls through the six modes; letting go keeps the one he shows.
 import { T, Icon, Icons, Morph, SwapText } from "parts.slint";
 import { Home, RoundIcon } from "home_parts.slint";
 import { Toys, Clawd, Null } from "toys.slint";
@@ -15,16 +10,13 @@ import { StageBack } from "stage.slint";
 export component HomeScreen inherits Window {
     background: #010101;
     title: "Claude Call";
-    property <length> row-y: self.height - Home.sab - 20px - 56px; // the bottom row
+    property <length> row-y: self.height - Home.sab - 20px - 56px;
     property <length> under: 112px;
-    // while Null's face rolls, the rest steps back
     property <float> rest: Home.shown >= 0 ? 0.35 : 1;
     animate rest { duration: 260ms; easing: T.out; }
-    // The keyboard, while a field is in use, frame by frame as it slides (Home.kb). An open chat always follows it:
-    // back from another app, Android raises the keyboard again for the field without it taking focus anew.
+    // Back from another app, Android raises the keyboard again for the field without it taking focus anew.
     property <length> kb: Home.typing || (Chats.open && Chats.current != "") ? Home.kb : 0px;
 
-    // Clawd's eyes follow a finger anywhere on the screen that nothing else takes.
     TouchArea {
         function point(down: bool) {
             Toys.point(self.mouse-x - clawd.absolute-position.x - clawd.width / 2, self.mouse-y - clawd.absolute-position.y - clawd.height * 0.4, down);
@@ -47,16 +39,13 @@ export component HomeScreen inherits Window {
         horizontal-alignment: center;
         opacity: root.rest;
     }
-    // The stage, centred between the title and the bottom row.
     stage := VerticalLayout {
-        // Out of the way while the keyboard is up.
         opacity: root.kb > 0 ? 0 : 1;
         animate opacity { duration: 200ms; easing: T.out; }
         x: 20px;
         width: parent.width - 40px;
         y: Home.sat + 52px + (root.row-y - Home.sat - 52px - self.preferred-height) * 0.5;
         height: self.preferred-height;
-        // The vinyl Clawd and Null (toys.slint), alive; the one the Call button asks for is lit, the other dimmed.
         pair := HorizontalLayout {
             alignment: center;
             spacing: 4px * Toys.k;
@@ -72,7 +61,6 @@ export component HomeScreen inherits Window {
             }
         }
         Rectangle { height: root.under; }
-        // The mode, in words: it changes as Null's face rolls.
         SwapText {
             height: 34px;
             text: Home.current.title;
@@ -81,7 +69,6 @@ export component HomeScreen inherits Window {
             color: T.fg;
             align: center;
         }
-        // Setup, while unfinished: one quiet amber line; a tap goes through what is still needed.
         if !Home.ready: Rectangle {
             height: 30px;
             opacity: root.rest;
@@ -96,8 +83,6 @@ export component HomeScreen inherits Window {
             TouchArea { y: -9px; height: 48px; clicked => { Home.set-up(); } }
         }
     }
-    // An agent's question waiting (setup done): its chat named in warm words where the setup line was; a tap opens it
-    // as a notification does. Over the stage, not in it, so the pair never moves when one comes or goes.
     property <bool> asking: Home.ready && Home.ask-chat != "" && root.kb == 0;
     Rectangle {
         x: 24px;
@@ -123,13 +108,12 @@ export component HomeScreen inherits Window {
             enabled: root.asking;
             clicked => {
                 Chats.picker = false;
-                Chats.from-id = ""; // no card to carry a character from
+                Chats.from-id = "";
                 Chats.open = true;
-                Chats.open-chat(Home.ask-chat); // through Rust, as the list does: its own draft is in place first
+                Chats.open-chat(Home.ask-chat);
             }
         }
     }
-    // The one-time hint by Null's feet: his face rolls up or down.
     Icon {
         d: Icons.updown;
         width: 18px;
@@ -142,7 +126,6 @@ export component HomeScreen inherits Window {
         animate opacity { duration: 600ms; easing: T.out; }
     }
 
-    // The bottom row: Chats, and Call filling the rest (the one big warm button).
     Rectangle {
         x: 24px;
         y: root.row-y;
@@ -156,7 +139,6 @@ export component HomeScreen inherits Window {
             dot: Chats.unread;
             clicked => { Chats.open = true; }
         }
-        // Asks Claude (or Codex, if Null is picked) to call you; it rings within a minute or so.
         Rectangle {
             x: 52px + 16px;
             width: parent.width - self.x;
@@ -180,18 +162,10 @@ export component HomeScreen inherits Window {
         }
     }
 
-    // Back closes what is open (the new-chat picker, a chat, the Chats screen); otherwise the app goes to the
-    // background.
     forward-focus: keys;
-    // Leaving a chat, or putting the keyboard away in one, hands focus back here: with nothing focused, Back went
-    // straight past the Chats screen and left the app, and the field kept its cursor handle on screen.
     property <string> chat-now: Chats.current;
     changed chat-now => { if (chat-now == "") { keys.focus(); } }
-    // At the end of the keyboard's slide away the chat's field lets go of the focus, so Back right after lands on
-    // the chat, not past it.
     changed kb => { if (self.kb == 0 && Chats.current != "") { keys.focus(); } }
-    // Back steps out one level: the photo, picker, a row slid open, thread, Chats screen. False when nothing is left;
-    // then the app goes to the background, warm, as the launcher left it (not closed).
     function back() -> bool {
         return Chats.back();
     }
@@ -204,9 +178,6 @@ export component HomeScreen inherits Window {
             reject
         }
     }
-    // The system back swipe (Shell.kt, while something is open): phase 0 starts, 1 moves (p 0..1), 2 lets go (Back),
-    // 3 cancels. An open chat follows the thumb as it does a pull down (chats/open.slint), up to the point where a
-    // pull would close it; the rest close as Back always has. The keyboard goes first, as it does for Back.
     property <bool> held;
     public function back-gesture(phase: int, p: float) {
         if (phase == 0) {
@@ -220,7 +191,7 @@ export component HomeScreen inherits Window {
             root.held = false;
             thread.let-go(true);
         } else if (Home.typing && Chats.current != "") {
-            keys.focus(); // the field lets go: the keyboard goes
+            keys.focus();
         } else if (!root.back()) {
             Home.leave();
         }
@@ -228,7 +199,6 @@ export component HomeScreen inherits Window {
     property <bool> backable: Chats.open || Chats.viewing || Chats.picker || Chats.revealed != "";
     changed backable => { Home.backable(self.backable); }
 
-    // The Chats screen grows out of its button and fills the screen; the new-chat picker grows out of its "+".
     Morph {
         open: Chats.open;
         panel: Ink.bg;
@@ -242,7 +212,6 @@ export component HomeScreen inherits Window {
         radius: 0px;
         face: Icons.chat;
         from: T.btn;
-        // The list sinks back a little under a chat rising over it (chats/open.slint).
         ChatList {
             width: root.width;
             height: root.height;
@@ -265,7 +234,6 @@ export component HomeScreen inherits Window {
         }
     }
 
-    // The list dims behind the picker; a tap there closes it.
     Rectangle {
         background: #000000;
         opacity: Chats.picker ? 0.55 : 0;
@@ -275,8 +243,6 @@ export component HomeScreen inherits Window {
         clicked => { Chats.picker = false; }
     }
 
-    // Picking an agent opens its chat at once, out of the picker: the picker gives way to it there and then, rather
-    // than shrinking back into a "+" that the chat doesn't have (or fading out over it).
     Rectangle {
         opacity: Chats.current == "" ? 1 : 0;
         Morph {

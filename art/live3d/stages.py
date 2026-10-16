@@ -1,9 +1,4 @@
-# Home-stage previews (branch preview/home-stage): four worlds for Clawd and Null to stand in. Renders each stage's
-# backdrop for the phone (phone/ui/stage/<name>.png: logical px BW wide, ABOVE over and BELOW under the pair's feet
-# line, centred on the screen) and an offline composite of the pair in it, lit, shadowed and reflected as the app's
-# shaders draw them (uStage, uKey, uKeyCol, uShadow; the numbers come from STAGES, as phone/src/stage.rs has them).
-# The backdrop is ray traced with Clawd's camera turned square on (same height, tilt and distance), so its floor is
-# the floor his feet, shadow and reflection are on. Usage: python stages.py [name ...] [--scale 2.625] [--asset]
+# Usage: python stages.py [name ...] [--scale 2.625] [--asset]
 import os, sys, json, math
 from render import VERT, HERE, np, Image, moderngl
 import render as R
@@ -11,17 +6,12 @@ import render as R
 TL = r'D:\Outputs\CallMe\design\live3d\cast\timelines'
 ASSETS = os.path.join(HERE, '..', '..', 'phone', 'ui', 'stage')
 PREV = r'D:\Outputs\CallMe\design\step2-stage\offline'
-BW, ABOVE, BELOW = 500, 640, 760  # the backdrop's logical size round the anchor (screen centre, feet line)
-ASSET_SCALE = 1.5                 # backdrop px per logical px: smooth light, so 1.5 is plenty on a 3x screen
+BW, ABOVE, BELOW = 500, 640, 760
+ASSET_SCALE = 1.5
 
-# Per stage: character scale k, logical px of floor under each picture, and the shader's stage uniforms.
 STAGES = {
-    # k: the pair's scale; floor: logical px under the feet line their reflections and shadows may reach (the desk's
-    # front edge cuts them there); the rest are the shaders' uniforms (uStage.y and uShadow.z are filled in per picture)
     'spot': dict(k=1.08, floor=110, uStage=(0.32, 0, 0.08, 3.0), uKey=(0.0, 1.0, 0.15, 0.2), uKeyCol=(-0.05, -0.12, -0.2, -0.45), uShadow=(0.65, 3.0, 30, 0.35)),
 }
-# Each character's camera is turned round the floor's vertical from the backdrop's square-on one (clawd_cast.frag,
-# null.frag): the key light is turned the same way, so it falls on them from where it falls on the backdrop.
 AZ = {'clawd': -0.17, 'null': 0.24}
 
 
@@ -29,20 +19,17 @@ def turn(v, a):
     x, y, z = v[:3]
     return (x * math.cos(a) + z * math.sin(a), y, -x * math.sin(a) + z * math.cos(a)) + tuple(v[3:])
 
-# --- the backdrop camera: Clawd's (clawd_cast.frag main) without its turn -------------------------------------------
 TA = np.array([0.0, 1.27, 0.0])
 EL, DIST, FL = 0.18, 9.5, 5.0
 RO = TA + DIST * np.array([0.0, math.sin(EL), math.cos(EL)])
 WW = (TA - RO) / np.linalg.norm(TA - RO)
 UU = np.cross(WW, [0.0, 1.0, 0.0]); UU /= np.linalg.norm(UU)
 VV = np.cross(UU, WW)
-FEET_C = (-50.0, -96.25)  # Clawd's picture centre from the anchor at k = 1 (alive.rs framing in home.slint's row)
+FEET_C = (-50.0, -96.25)
 
 
 def rays(X, Y, k):
-    """Unit view rays for logical points X (right) and Y (down) from the anchor. Clawd's picture is 250 k px tall and
-    the shader's screen runs -1..1 over it; turned square on, the picture's centre sits on the screen's middle."""
-    sx = (X - FEET_C[0] * k - 50.0 * k) / (125.0 * k)  # turned square on, the pair's middle is straight ahead
+    sx = (X - FEET_C[0] * k - 50.0 * k) / (125.0 * k)
     sy = (FEET_C[1] * k - Y) / (125.0 * k)
     d = sx[..., None] * UU + sy[..., None] * VV + FL * WW
     return d / np.linalg.norm(d, axis=-1, keepdims=True)
@@ -54,12 +41,10 @@ def floor_hit(rd, y=0.0):
 
 
 def anchor_world(k):
-    """Where the anchor (the pair's middle, on the feet line) is on the floor."""
     t, p = floor_hit(rays(np.array([0.0]), np.array([0.0]), k))
     return p[0]
 
 
-# --- small helpers -------------------------------------------------------------------------------------------------
 def ss(a, b, x):
     t = np.clip((x - a) / (b - a), 0, 1)
     return t * t * (3 - 2 * t)
@@ -97,10 +82,7 @@ def fbm(x, y, n=4, seed=0):
     return s / w
 
 
-# --- the four worlds (linear light) --------------------------------------------------------------------------------
 def spot(X, Y, k, rng):
-    """A black void, one cone of warm light straight down on a glossy black floor: a pool, the beam in faint haze,
-    and the beam's reflection in the floor."""
     rd = rays(X, Y, k)
     P0 = anchor_world(k) + np.array([0.0, 0.0, -0.35])
     L = P0 + np.array([0.0, 9.0, 0.9])
@@ -113,7 +95,6 @@ def spot(X, Y, k, rng):
         return ss(math.cos(half + soft), math.cos(half - soft), dot(d, axis)) / np.maximum(dot(p - L, p - L), 16.0) * 81.0
 
     def haze(o, d, tmax, n=56):
-        # in-scattered light along the ray, thinner higher up so the beam fades into the dark above the pair
         acc = 0.0
         t0, t1 = 2.0, np.minimum(tmax, 22.0)
         jit = rng.random(o.shape[:-1] if o.ndim > 1 else rd.shape[:-1])
@@ -129,12 +110,10 @@ def spot(X, Y, k, rng):
     col = np.zeros(rd.shape)
     beam = haze(np.broadcast_to(RO, rd.shape), rd, np.where(floor, tf, 22.0))
     col += warm * 0.026 * beam[..., None]
-    # the pool: a dark glossy floor, its edge soft; a little light scattered round it
     irr = cone(F) * ss(0, 1, nrm(L - F)[..., 1])
     alb = 0.05 * (0.92 + 0.08 * fbm(F[..., 0] * 3, F[..., 2] * 3, 3, 7))
     pool = warm * (alb * irr)[..., None] * 1.7
     glow = warm * 0.0025 * np.exp(-np.hypot(F[..., 0] - P0[0], (F[..., 2] - P0[2]) * 1.0) / 2.6)[..., None]
-    # the floor mirrors the beam: the same haze along the mirrored ray, softened by the floor's roughness
     r = rd * np.array([1, -1, 1])
     refl = np.zeros(tf.shape)
     for j in range(4):
@@ -166,18 +145,16 @@ def backdrop(name, scale, ssaa=2):
 
 def to_srgb8(lin, seed=1):
     s = np.where(lin <= 0.0031308, lin * 12.92, 1.055 * np.power(np.maximum(lin, 0), 1 / 2.4) - 0.055)
-    # triangular dither: no banding in the dark gradients
     rng = np.random.default_rng(seed)
     n = (rng.random(s.shape) - rng.random(s.shape)) / 255.0
     return (np.clip(s + n, 0, 1) * 255 + 0.5).astype(np.uint8)
 
 
-# --- the pair, as the app draws them -------------------------------------------------------------------------------
 def program(name, define):
     src = open(os.path.join(HERE, name + '.frag'), encoding='utf8').read()
     version, rest = src.split('\n', 1)
     src = '#version 330\n' + define + '\n' + rest.replace('precision highp float;', '', 1)
-    R.render('null', {}, 0.1)  # make the context
+    R.render('null', {}, 0.1)
     return R._ctx.program(vertex_shader=VERT, fragment_shader=src)
 
 
@@ -198,7 +175,6 @@ def draw(prog, res, view, u):
     return a
 
 
-# (picture w, h, feet as a fraction of h, its left edge from the anchor and its top above the feet line at k = 1)
 PICS = {'clawd': (300, 250, -200, 221.25), 'null': (150, 230, 42, 194.6)}
 
 
@@ -210,7 +186,7 @@ def composite(name, uc, un, scale, pick='claude', bg=None):
     for who, u, prog in (('clawd', uc, PC), ('null', un, PN)):
         pw, ph, left, top = PICS[who]
         res = (math.ceil(pw * k * scale), math.ceil(ph * k * scale))
-        below = max(st['floor'] - (ph - PICS[who][3]), 0)  # from the picture's bottom, which is under the feet
+        below = max(st['floor'] - (ph - PICS[who][3]), 0)
         full = (res[0], math.ceil((ph + below) * k * scale))
         uu = dict(u)
         uu['uStage'] = (st['uStage'][0], full[1] - res[1], st['uStage'][2], st['uStage'][3])

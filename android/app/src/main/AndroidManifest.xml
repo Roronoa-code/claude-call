@@ -15,7 +15,6 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
-    <!-- Samsung's Gallery, so a chat's attach can open it (attach.rs) -->
     <queries>
         <package android:name="com.sec.android.gallery3d" />
     </queries>
@@ -59,7 +58,6 @@
                 android:value="Keeps a connection open so Claude can ring the user like a phone call." />
         </service>
 
-        <!-- Chat videos for the video player: read-only, reached only through a one-time grant (Shell.kt). -->
         <provider
             android:name=".MediaProvider"
             android:authorities="fyi.mani.callme.media"

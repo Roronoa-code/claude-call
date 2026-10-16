@@ -1,16 +1,9 @@
-"""Local voice and hearing for calls, on the GPU.
-
-Voice: Qwen3-TTS Base clones the chosen reference clip (voice.json), and one clip per mood: a line can switch mood
-with tags, "[bored] Cute. [excited] We did it!" (moods.py; the clips are built by make_moods.py).
-Hearing: Whisper large-v3-turbo, prompted with what Claude just said so names are heard right.
-
-Started by callme.exe (src/voice.rs) and shared by every session; exits after 30 idle minutes.
-Usage: python voice_server.py <port>
+"""Usage: python voice_server.py <port>
 POST /tts         (body: UTF-8 text)                                  ->  audio/wav (whole line)
 POST /tts_stream  (body: UTF-8 text)                                  ->  16-bit mono PCM, streamed as it is made
                                                                           (header X-Sample-Rate; 500 if the first chunk fails)
 POST /stt?context=...  (body: 16 kHz mono float32 PCM)               ->  text/plain
-Prints "ready" once both models are loaded and warmed up (first run captures CUDA graphs).
+Prints "ready" once both models are loaded and warmed up.
 """
 import io
 import json
@@ -38,13 +31,10 @@ model = FasterQwen3TTS.from_pretrained(MODEL)
 
 
 def clone(ref: dict):
-    """Encodes a reference clip once, not on every line: (prompt, its words)."""
     p = model.model.create_voice_clone_prompt(ref_audio=str(HERE / ref["clip"]), ref_text=ref["text"], x_vector_only_mode=False)
     return p, ref["text"]
 
 
-# Several takes per mood (make_moods.py); "" is the normal voice. One take per mood is picked at random for each call
-# and kept for it, so her tone stays steady within a call (a new take every sentence sounded jumpy) and varies between calls.
 moods = voice.get("moods", {})
 voices = {"": [clone(voice)] + [clone(t) for t in moods.get("normal", [])],
           **{mood: [clone(t) for t in takes] for mood, takes in moods.items() if mood != "normal"}}
@@ -52,7 +42,7 @@ voices = {"": [clone(voice)] + [clone(t) for t in moods.get("normal", [])],
 
 chosen: dict[str, tuple] = {}
 last_spoke = 0.0
-NEW_CALL_S = 10 * 60  # after this long without a word, the next line starts a new call: fresh takes
+NEW_CALL_S = 10 * 60
 
 
 def take(mood: str):
@@ -64,12 +54,11 @@ def take(mood: str):
         chosen[mood] = random.choice(voices[mood])
     return chosen[mood]
 
-# One voice at a time (the CUDA graphs hold a single generation's state), and one GPU job at a time.
-# Streaming takes the GPU per chunk, so hearing (live captions, interrupts) slips in between voice chunks.
+# The CUDA graphs hold a single generation's state.
 tts_lock = threading.Lock()
 gpu_lock = threading.Lock()
-STREAM_CHUNK = 4      # codec steps per streamed chunk (12 per second of audio): small = first sound sooner
-STREAM_GAIN = 1.6     # fixed level for streamed lines (whole lines are peak-normalised; a stream can't look ahead)
+STREAM_CHUNK = 4
+STREAM_GAIN = 1.6
 
 
 def speak(text: str) -> bytes:
@@ -77,7 +66,7 @@ def speak(text: str) -> bytes:
     with tts_lock, gpu_lock:
         for mood, words in pieces(text, voices) or [("", text)]:
             prompt, ref_text = take(mood)
-            torch.manual_seed(1234)  # same sampling every time, so pieces of one reply sound like the same person
+            torch.manual_seed(1234)
             wavs, sr = model.generate_voice_clone(text=words, language="English", voice_clone_prompt=prompt, ref_text=ref_text)
             parts.append(np.asarray(wavs[0], dtype=np.float32))
     audio = np.concatenate(parts)
@@ -87,7 +76,6 @@ def speak(text: str) -> bytes:
 
 
 def speak_stream(text: str):
-    """Yields (sample_rate, int16 PCM bytes) pieces of one line as they are made, mood by mood."""
     with tts_lock:
         for mood, words in pieces(text, voices) or [("", text)]:
             prompt, ref_text = take(mood)
@@ -114,8 +102,6 @@ asr_proc = AutoProcessor.from_pretrained(ASR)
 asr = WhisperForConditionalGeneration.from_pretrained(ASR, torch_dtype=torch.float16).to("cuda:0").eval()
 
 
-# Words Whisper keeps mishearing (e.g. "call screen" -> "cold screen"); always part of the prompt. Mani's own list
-# (names, bands, songs) is words.txt, one per line, added to on calls with the add_words tool; read fresh each time.
 VOCAB = "Claude, Codex, call screen, Discord, ntfy, Whisper, widget, Haiku, Sonnet, Opus"
 WORDS = HERE / "words.txt"
 
@@ -125,12 +111,11 @@ def vocab() -> str:
         mine = [w.strip() for w in WORDS.read_text(encoding="utf-8").splitlines() if w.strip()]
     except OSError:
         mine = []
-    # Newest words last, so a long list keeps the recent ones; capped so Claude's own line still fits the prompt.
     return (", ".join([VOCAB] + mine))[-350:].lstrip(", ") + "."
 
 
 def hear(pcm: np.ndarray, context: str) -> str:
-    long = len(pcm) > 30 * 16000  # over 30 s: Whisper's long-form mode instead of cutting the end off
+    long = len(pcm) > 30 * 16000  # over 30 s: Whisper's long-form mode
     inputs = asr_proc(pcm, sampling_rate=16000, return_tensors="pt",
                       **(dict(truncation=False, padding="longest", return_attention_mask=True) if long else {}))
     kw = dict(language="en", task="transcribe", max_new_tokens=220)
@@ -142,14 +127,13 @@ def hear(pcm: np.ndarray, context: str) -> str:
     with gpu_lock, torch.inference_mode():
         ids = asr.generate(inputs.input_features.to("cuda:0", torch.float16), **kw)
     text = asr_proc.batch_decode(ids, skip_special_tokens=True)[0].strip()
-    # With a prompt, some versions echo it back first; drop it if so.
     if text.startswith(context[-600:].strip()):
         text = text[len(context[-600:].strip()):].strip()
     return text
 
 
 class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):  # health check: callme.exe uses it to find a running instance
+    def do_GET(self):
         self.send_response(200 if self.path == "/health" else 404)
         self.end_headers()
 
@@ -168,7 +152,7 @@ class Handler(BaseHTTPRequestHandler):
                 data, kind = hear(np.frombuffer(body, dtype="<f4").copy(), context).encode("utf-8"), "text/plain; charset=utf-8"
             else:
                 data, kind = speak(body.decode("utf-8").strip()), "audio/wav"
-        except Exception as e:  # report, keep serving
+        except Exception as e:
             self.send_error(500, str(e)[:200]); return
         self.send_response(200)
         self.send_header("Content-Type", kind)
@@ -179,13 +163,13 @@ class Handler(BaseHTTPRequestHandler):
     def stream(self, pieces):
         try:
             try:
-                sr, first = next(pieces)  # make the first piece before answering, so a failure is a clean 500
+                sr, first = next(pieces)
             except Exception as e:
                 self.send_error(500, str(e)[:200]); return
             self.send_response(200)
             self.send_header("Content-Type", "application/octet-stream")
             self.send_header("X-Sample-Rate", str(sr))
-            self.end_headers()  # no length: the stream ends when the connection closes
+            self.end_headers()
             self.wfile.write(first); self.wfile.flush()
             while not self.hung_up():
                 piece = next(pieces, None)
@@ -193,18 +177,18 @@ class Handler(BaseHTTPRequestHandler):
                     break
                 self.wfile.write(piece[1]); self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
-            pass  # caller hung up (line replaced or interrupted): stop making it
+            pass
         finally:
             pieces.close()
 
-    def hung_up(self):  # the caller closed the connection (line replaced or interrupted): don't make another chunk
+    def hung_up(self):
         return bool(select.select([self.connection], [], [], 0)[0])
 
     def log_message(self, *args):
         pass
 
 
-IDLE_EXIT_S = 30 * 60  # free the GPU after 30 minutes without a call
+IDLE_EXIT_S = 30 * 60
 
 
 def watchdog(server):
@@ -215,7 +199,7 @@ def watchdog(server):
 
 
 if __name__ == "__main__":
-    speak("Warming up.")  # captures CUDA graphs so the first real line is fast (in any mood: the graphs are shared)
+    speak("Warming up.")
     for _ in speak_stream("Warming up."):
         pass
     hear(np.zeros(16000, dtype=np.float32), "")

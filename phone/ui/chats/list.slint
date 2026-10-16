@@ -1,7 +1,3 @@
-// The Chats list. At the top the agent that matters now stands on a soft floor, with a short line on where things
-// stand (has a question, working on what you asked, replied, done), alive while it thinks; below, "Chats" and every
-// chat grouped by what needs doing (Needs you, Working on it, Earlier), each a card titled with what you asked, its
-// character standing in it. A card slides (or long-presses) open to Delete, with Undo after.
 import { T, Icon, Icons } from "../parts.slint";
 import { Home } from "../home_parts.slint";
 import { Chats, ChatRow, Ink, BackButton } from "../chat.slint";
@@ -13,13 +9,9 @@ export component ChatList inherits Rectangle {
     background: Ink.bg;
     property <ChatRow> h: Chats.hero;
     property <bool> alive: h.id == Chats.live-row && Chats.live && h.id != "";
-    // The character on its way into (or back from) a chat isn't also standing here.
     function away(id: string) -> bool {
         return Chats.flying && Chats.from-id == id;
     }
-    // A chat starting to close (or pulled): its character flies back to where its card is now (a message sent moves
-    // the card), measured as it will stand once the list has grown back from 0.94 (home.slint). A card scrolled out
-    // of view: only the sheet drops, with the character in it.
     function aim(p: Point, w: length, h: length, k: float) {
         let s = 1 - 0.06 * Chats.open-k;
         let x = root.width * 0.5 + (p.x - root.width * 0.5) / s;
@@ -34,7 +26,6 @@ export component ChatList inherits Rectangle {
         Chats.fh = h;
         Chats.fk = k;
     }
-    // Back, and New chat (a warm round button the picker grows out of), on one 48px row.
     Rectangle {
         y: Home.sat;
         height: 48px;
@@ -48,7 +39,6 @@ export component ChatList inherits Rectangle {
             background: nb.pressed ? #9a4e36 : Ink.me;
             animate background { duration: 160ms; easing: T.out; }
             Icon { d: Icons.plus; x: 10px; y: 10px; stroke: #fff8f5; }
-            // 44px to see, 48px to touch
             nb := TouchArea {
                 x: -2px;
                 y: -2px;
@@ -71,7 +61,6 @@ export component ChatList inherits Rectangle {
             padding-right: 16px;
             padding-top: 8px;
             padding-bottom: Home.sab + 24px;
-            // Who matters now, standing on the floor, and where things stand in a word or two.
             if h.id != "": hero := Rectangle {
                 height: 104px;
                 property <bool> going: Chats.current == "" || Chats.held;
@@ -100,7 +89,7 @@ export component ChatList inherits Rectangle {
                     visible: !root.away(h.id);
                     face: h.face;
                     pose: h.busy ? "think" : h.unread ? "happy" : "idle";
-                    k: 0.36; // faces.rs HERO_K
+                    k: 0.36;
                     live: root.alive;
                     source: Chats.big-live;
                     lw: Chats.big-w;
@@ -113,7 +102,6 @@ export component ChatList inherits Rectangle {
                     alignment: center;
                     spacing: 4px;
                     Text { text: h.name; font-size: 13px; font-weight: 600; color: Ink.warm; overflow: elide; }
-                    // at most two lines; a long question ends in "…"
                     Rectangle {
                         height: min(line.preferred-height, 52px);
                         clip: true;
@@ -140,7 +128,6 @@ export component ChatList inherits Rectangle {
                 color: Ink.text;
                 vertical-alignment: bottom;
             }
-            // No chats yet: a proper empty page, not a blank one.
             if Chats.rows.length == 0: VerticalLayout {
                 padding-top: 48px;
                 spacing: 6px;
@@ -153,14 +140,12 @@ export component ChatList inherits Rectangle {
                 Text { text: "Start one with +"; font-size: 15px; color: Ink.muted; horizontal-alignment: center; }
             }
             for r in Chats.rows: VerticalLayout {
-                // (opened from this card, or from the hero that has since moved on to another chat)
                 property <bool> going: Chats.current == "" || Chats.held;
                 changed going => {
                     if (self.going && Chats.from-id == r.id && (Chats.fw != 104px || Chats.hero.id != r.id)) {
                         root.aim(fig.absolute-position, 64px, 56px, 0.2);
                     }
                 }
-                // the group's name over its first card
                 if r.head != "": Text {
                     height: 38px;
                     text: r.head;
@@ -187,10 +172,8 @@ export component ChatList inherits Rectangle {
                         Chats.fk = 0.2;
                         Chats.open-chat(r.id);
                     }
-                    // the character standing in its card, on a little floor
                     Floor { x: 10px; y: 56px; width: 60px; height: 16px; }
                     fig := Figure { x: 8px; y: 14px; width: 64px; height: 56px; visible: !root.away(r.id); face: r.face; pose: r.busy ? "think" : "idle"; k: 0.2; }
-                    // who and when
                     Text { x: 84px; y: 13px; width: parent.width - 84px - 70px; height: 16px; text: r.name; font-size: 12px; color: #9a9aa3; vertical-alignment: center; overflow: elide; }
                     Text {
                         x: parent.width - 70px;
@@ -204,7 +187,6 @@ export component ChatList inherits Rectangle {
                         horizontal-alignment: right;
                         vertical-alignment: center;
                     }
-                    // what was asked: the card's title
                     Text {
                         x: 84px;
                         y: 31px;
@@ -218,7 +200,6 @@ export component ChatList inherits Rectangle {
                         vertical-alignment: center;
                     }
                     if r.unread: Count { x: parent.width - self.width - 14px; y: 30px; n: max(1, r.count); }
-                    // and where it stands: what waits in its text box, the answer's start, or what's happening
                     if r.draft != "": Text {
                         x: 84px;
                         y: 54px;
@@ -236,7 +217,7 @@ export component ChatList inherits Rectangle {
                         y: 54px;
                         width: parent.width - 84px - 14px;
                         height: 18px;
-                        text: r.preview == r.topic ? (r.topic == "New chat" ? "Nothing sent yet" : "No answer yet") : r.preview; // my question is the last word
+                        text: r.preview == r.topic ? (r.topic == "New chat" ? "Nothing sent yet" : "No answer yet") : r.preview;
                         font-size: 13px;
                         color: r.unread ? Ink.text2 : #9a9aa3;
                         overflow: elide;

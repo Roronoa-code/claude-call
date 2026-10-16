@@ -1,5 +1,3 @@
-//! The home screen: whether calls can reach this phone, how agents may reach you (dragged on Null's face, alive.rs),
-//! the chats, and setup while it is unfinished (settings.rs).
 use crate::{Chats, Home, HomeScreen, Toys, alive, android, cast, faces, live_gl, ring, service, settings, stage};
 use slint::{ComponentHandle, Model};
 use std::{
@@ -18,8 +16,6 @@ fn refresh(ui: &HomeScreen) {
         home.set_setup_text(line.into());
         home.set_mode(mode.into());
     }
-    // An agent's question waiting (the chat list's rows, inbox.rs): the line under the mode names it. Its words stay
-    // when it goes, so they fade out rather than vanish.
     let rows = ui.global::<Chats>().get_rows();
     let ask = rows.iter().find(|r| r.asks);
     home.set_ask_chat(ask.as_ref().map(|r| r.id.clone()).unwrap_or_default());
@@ -32,7 +28,6 @@ fn refresh(ui: &HomeScreen) {
     }
 }
 
-/// `s` in at most `n` characters, ending in "…" when cut.
 fn short(s: &str, n: usize) -> String {
     if s.chars().count() <= n {
         return s.to_string();
@@ -40,18 +35,12 @@ fn short(s: &str, n: usize) -> String {
     format!("{}…", s.chars().take(n - 1).collect::<String>().trim_end())
 }
 
-/// The system back swipe's steps not yet played, in order: (phase, progress).
 static BACK: std::sync::Mutex<Vec<(i32, f32)>> = std::sync::Mutex::new(Vec::new());
 
-/// The system back swipe, from Android's main thread (Shell.kt, shell.rs): phase 0 starts, 1 moves (progress 0..1),
-/// 2 is Back, 3 cancels. Played by the home screen's frame timer (home.slint back-gesture), not posted to the event
-/// loop: that proxy is the newest screen's, which after a call is the call's.
 pub fn back_gesture(phase: i32, progress: f32) {
     BACK.lock().unwrap().push((phase, progress));
 }
 
-/// The keyboard and the back swipe, as Android's main thread last said (android::kb, back_gesture), played on the
-/// screen; true while either moves. `swiping`: a back swipe started and hasn't ended (Back or cancel).
 fn follow(ui: &HomeScreen, swiping: &Cell<bool>) -> bool {
     let home = ui.global::<Home>();
     let mut moved = swiping.get();
@@ -67,8 +56,6 @@ fn follow(ui: &HomeScreen, swiping: &Cell<bool>) -> bool {
     moved
 }
 
-/// While the keyboard slides or a back swipe moves: follow() every 4 ms (Shell.kt leads the keyboard by one 120 Hz
-/// frame, which the 16 ms frame timer would lose), until all is still for 150 ms or the screen goes away.
 fn follow_fast(fast: &Rc<slint::Timer>, ui: &HomeScreen, swiping: &Rc<Cell<bool>>) {
     if fast.running() {
         return;
@@ -87,8 +74,6 @@ fn follow_fast(fast: &Rc<slint::Timer>, ui: &HomeScreen, swiping: &Rc<Cell<bool>
     });
 }
 
-/// The most device px per logical px the pair is drawn at: past it (a very dense screen) the GPU's work grows with
-/// the square for detail the eye can't see; the picture is scaled up to its place instead.
 const PAIR_SF: f32 = 2.75;
 
 pub fn run(app: android_activity::AndroidApp) {
@@ -98,7 +83,7 @@ pub fn run(app: android_activity::AndroidApp) {
         let ui = ui.as_weak();
         move |m| {
             if let Some(ui) = ui.upgrade() {
-                ui.global::<Home>().set_mode(m.clone()); // at once; the phone and PC follow
+                ui.global::<Home>().set_mode(m.clone());
             }
             android::with(|env, act| settings::choose(env, act, &m));
         }
@@ -106,10 +91,8 @@ pub fn run(app: android_activity::AndroidApp) {
     home.on_set_up(|| {
         android::with(settings::set_up);
     });
-    // The Call button: "Calling you…" until the call rings; a minute and a half with no call: "No answer from the PC"
-    // for a moment, then the button as it was.
     let requested_at = Rc::new(Cell::new(None::<Instant>));
-    let rings_at = Rc::new(Cell::new(0u64)); // ring::RINGS when the call was asked for
+    let rings_at = Rc::new(Cell::new(0u64));
     let no_answer = Rc::new(Cell::new(None::<Instant>));
     home.on_call({
         let (ui, requested_at, rings_at, no_answer) = (ui.as_weak(), requested_at.clone(), rings_at.clone(), no_answer.clone());
@@ -128,26 +111,22 @@ pub fn run(app: android_activity::AndroidApp) {
             }
         }
     });
-    // Back with nothing open: to the background, warm, as the launcher leaves it (finish() made the next open cold).
+    // finish() makes the next open cold; the launcher leaves the task warm in the background.
     home.on_leave(|| {
         android::with(|env, act| env.call_method(act, "moveTaskToBack", "(Z)Z", &[jni::objects::JValue::Bool(1)]).map(drop));
     });
-    // Something Back can close is open: the system back swipe comes here as it moves (Shell.kt backable).
     home.on_backable(|on| {
         android::with(|env, act| env.call_method(act, "backable", "(Z)V", &[jni::objects::JValue::Bool(on as u8)]).map(drop));
     });
     refresh(&ui);
     let mut chats = crate::inbox::wire(&ui);
 
-    // The vinyl Clawd and Null live on the home screen in 3D, drawn by the GPU (alive.rs, live_gl.rs): blinks,
-    // glances, Null thinking at its laptop, asleep in the quiet modes, a hop when tapped, and eyes on your finger.
     let start = Instant::now();
     let pair = Rc::new(std::cell::RefCell::new(alive::Pair::new(0x9e37_79b9)));
     ui.global::<Toys>().on_tapped({
         let pair = pair.clone();
         move |who| pair.borrow_mut().hop(who == "codex", start.elapsed().as_secs_f32())
     });
-    // A drag on Null rolls his face through the modes, a light tick at each; letting go keeps the one he shows.
     let hint = Rc::new(Cell::new((android::with(settings::hinted) == Some(false)).then_some(0.0f32)));
     ui.global::<Toys>().on_roll({
         let (pair, ui, hint) = (pair.clone(), ui.as_weak(), hint.clone());
@@ -168,11 +147,10 @@ pub fn run(app: android_activity::AndroidApp) {
             home.set_shown(-1);
             home.invoke_set_mode(settings::MODES[m].into());
             if phase == 1 && hint.get().is_some() {
-                hint.set(Some(-1.0)); // learnt: the hint goes
+                hint.set(Some(-1.0));
             }
         }
     });
-    // The chat thread's character too (faces.rs): slots 0 and 1 are Clawd and Null, 2 and 3 the chat's, small and big.
     let faces = Rc::new(std::cell::RefCell::new(faces::Faces::new()));
     ui.global::<Chats>().on_poke({
         let faces = faces.clone();
@@ -189,7 +167,6 @@ pub fn run(app: android_activity::AndroidApp) {
         t.set_clawd_below(below[0]);
         t.set_null_below(below[1]);
     }
-    // The pair's pictures are sized for at most PAIR_SF px per logical px (`r` of the screen's own).
     let screen_sf = app.config().density().map_or(1.0, |dpi| dpi as f32 / 160.0);
     let r = (PAIR_SF / screen_sf).min(1.0);
     let home_size = |i: usize, extra: f32| {
@@ -211,14 +188,14 @@ pub fn run(app: android_activity::AndroidApp) {
         }
     });
     let mut drawn = [0.0f32; 2];
-    let mut lit = [1.0f32; 2]; // PREVIEW: each one's light on a stage, easing to 1 or DIM as the Call button's pick changes
+    let mut lit = [1.0f32; 2];
     let mut last_now = 0.0f32;
     let mut shown = false;
     let swiping = Rc::new(Cell::new(false));
-    let fast = Rc::new(slint::Timer::default()); // follow_fast
+    let fast = Rc::new(slint::Timer::default());
     let mut last_refresh = Instant::now();
-    let mut warmed = false; // the chats' characters' shaders built ahead (live_gl.rs Scene::warm)
-    let mut voted = (0.0f32, Instant::now()); // the frame rate last asked of the display (0: no preference)
+    let mut warmed = false;
+    let mut voted = (0.0f32, Instant::now());
     let touched = Rc::new(Cell::new(Instant::now()));
     ui.global::<Toys>().on_point({
         let (pair, ui, touched) = (pair.clone(), ui.as_weak(), touched.clone());
@@ -230,14 +207,11 @@ pub fn run(app: android_activity::AndroidApp) {
         }
     });
     let timer = Rc::new(slint::Timer::default());
-    // Every frame: the toys' springs need it; the rest is cheap.
     timer.start(slint::TimerMode::Repeated, Duration::from_millis(16), {
         let ui = ui.as_weak();
         let tick = Rc::downgrade(&timer);
         move || {
             let Some(ui) = ui.upgrade() else { return };
-            // Away (another app in front, the screen off): nothing is drawn or polled; it only looks, ten times a
-            // second, for the app to come back.
             let away = !android::home_shown();
             if let Some(t) = tick.upgrade() {
                 let every = Duration::from_millis(if away { 100 } else { 16 });
@@ -246,9 +220,8 @@ pub fn run(app: android_activity::AndroidApp) {
                 }
             }
             if away {
-                shown = false; // all drawn afresh on the way back
-                // hidden mid-swipe (a call came up): the swipe is called off, so nothing comes back half pulled
-                BACK.lock().unwrap().clear(); // steps never played left nothing on screen
+                shown = false;
+                BACK.lock().unwrap().clear();
                 if swiping.replace(false) {
                     ui.invoke_back_gesture(3, 0.0);
                 }
@@ -259,7 +232,6 @@ pub fn run(app: android_activity::AndroidApp) {
                 follow_fast(&fast, &ui, &swiping);
             }
             chats.tick(&ui);
-            // Permissions granted in Settings, or a mode changed elsewhere, show up within a second.
             if last_refresh.elapsed() > Duration::from_secs(1) {
                 last_refresh = Instant::now();
                 refresh(&ui);
@@ -280,10 +252,9 @@ pub fn run(app: android_activity::AndroidApp) {
                 no_answer.set(None);
                 home.set_no_answer(false);
             }
-            let kb = home.get_kb(); // the keyboard, followed by home.slint itself
+            let kb = home.get_kb();
             let now = start.elapsed().as_secs_f32();
             let mut p = pair.borrow_mut();
-            // The one-time hint: a chevron by Null's feet and two small nudges of his face, then never again.
             if let Some(from) = hint.get() {
                 if from == 0.0 {
                     if now > 1.5 {
@@ -303,15 +274,14 @@ pub fn run(app: android_activity::AndroidApp) {
             p.tick(now, mode);
             let mut s = scene.borrow_mut();
             if s.failed && ui.global::<Toys>().get_live() {
-                ui.global::<Toys>().set_live(false); // still pictures instead
+                ui.global::<Toys>().set_live(false);
                 ui.global::<Chats>().set_live(false);
             }
-            // Each toy: a new frame at 60 fps while it moves, 20 while it only breathes, 10 asleep, none when hidden.
             let show = !s.failed && !ui.global::<Chats>().get_open() && kb == 0.0;
             let sf = ui.window().scale_factor() * r;
             let mut any = false;
             let codex = home.get_caller() == "codex";
-            let ease = 1.0 - (-(now - last_now) * 12.0).exp(); // about 250 ms, as the opacity it replaces
+            let ease = 1.0 - (-(now - last_now) * 12.0).exp();
             last_now = now;
             for (i, c) in [&p.clawd, &p.null].into_iter().enumerate() {
                 let want = if (i == 1) == codex { 1.0 } else { 0.5 };
@@ -330,7 +300,6 @@ pub fn run(app: android_activity::AndroidApp) {
             if !s.failed {
                 any |= faces.borrow_mut().tick(&ui, &mut s.slots[2..], now, ui.window().scale_factor());
             }
-            // The chats list at rest: the chats' characters' shaders are built now, unseen, one a frame.
             let chats_open = ui.global::<Chats>().get_open();
             if !warmed && chats_open && ui.global::<Chats>().get_current().is_empty() && !ui.window().has_active_animations() {
                 warmed = true;
@@ -340,8 +309,6 @@ pub fn run(app: android_activity::AndroidApp) {
             if any {
                 ui.window().request_redraw();
             }
-            // The home stage at rest (nothing moving, animating or touched for a moment): the display is told the
-            // screen changes only at the pair's breathing rate, so it can run slower; anything else lifts that.
             let rest = show
                 && hint.get().is_none()
                 && !p.clawd.moving() && !p.null.moving()

@@ -1,11 +1,3 @@
-// PREVIEW (branch preview/call-screen-2) direction 4, Camera: the framing tells the state, like a film. While it rings
-// the shot is wide: the whole cone of light, the caller small in it, the light swelling with each ring. Answer, and the
-// camera dollies in until the caller fills the frame (caller.rs `shot`); for your turn it eases back a little, a
-// little further while it works, wide again on hold and at the end. The words are a large lower third, left-aligned
-// over the dark floor, each fading in as it is said; yours take their place in cool italics. One calm row along the
-// bottom, in thumb reach: Mute, Quiet, the big red Hang up in the middle, Transcript, More (Speaker, Type, In 5 min rise
-// in a row above it). While it rings, Decline and Answer either side of the middle. There is no Done talking: your
-// turn ends by itself after a short silence (engine/hearing.rs).
 import { T, Icon, Icons, SwapText } from "parts.slint";
 import { Call } from "call_data.slint";
 import { Sheets } from "call_kit.slint";
@@ -20,11 +12,10 @@ export component CameraLook inherits Rectangle {
     property <length> H: root.height;
     property <length> field-top: H - Call.kb - Math.max(12px, Call.sab + 96px - Call.kb) - Call.field-h;
     property <bool> keys: Call.typing && Call.kb > 0;
-    // The camera (Call.face-k, eased by caller.rs): the feet sit lower in the frame the closer it is.
     property <float> k: Call.face-k;
     property <float> close: Math.max(0, Math.min(1, (root.k - 0.62) / (1.15 - 0.62)));
     property <length> fy0: H * (0.53 + 0.07 * root.close);
-    property <length> by: H - Call.sab - 96px; // the bottom row: Hang up is 64 px round, names under the icons
+    property <length> by: H - Call.sab - 96px;
     property <length> words-top0: H * 0.7;
     property <length> dy: keys ? Math.max(0px, root.fy0 + 24px - (field-top - 120px)) : 0px;
     property <length> fy: round((root.fy0 - root.dy) / 1phx) * 1phx;
@@ -33,11 +24,9 @@ export component CameraLook inherits Rectangle {
     SpotBack { width: W; height: H; fx: root.fx; fy: root.fy; k: root.k; drawn-k: 0.62; bw: 440px; bh: 1120px; above: 640px; source: @image-url("stage/spot-camera.png"); }
     SpotCaller { fx: root.fx; fy: root.fy; }
 
-    // ---- Header: a small slate, top left ----
     Text { x: 24px; y: Call.sat + 12px; height: 20px; text: Call.agent; font-size: 15px; font-weight: 600; color: T.fg; vertical-alignment: center; }
     SwapText { x: 24px; y: Call.sat + 33px; width: 240px; height: 18px; text: Call.time-text; key: Call.time-key; font-size: 12.5px; color: T.muted; }
 
-    // ---- The lower third ----
     property <length> words-top: keys ? field-top - 116px : root.words-top0;
     property <length> words-bottom: keys ? field-top - 12px : root.by - 18px;
     property <string> label: Call.notice != "" ? Call.notice.to-uppercase()
@@ -49,7 +38,7 @@ export component CameraLook inherits Rectangle {
         y: root.words-top;
         width: W - 48px;
         height: root.words-bottom - root.words-top;
-        opacity: root.more ? 0 : 1; // More's row rises where its foot is: it steps back while More is open
+        opacity: root.more ? 0 : 1;
         animate y, height { duration: 300ms; easing: T.out; }
         animate opacity { duration: 260ms; easing: T.out; }
         lmeasure := Text { text: root.label; font-size: 11px; font-weight: 600; letter-spacing: 1.6px; visible: false; }
@@ -97,10 +86,9 @@ export component CameraLook inherits Rectangle {
         }
     }
 
-    // ---- The bottom row: Mute, Quiet, Hang up, Transcript, More; More raises Speaker, Type and In 5 min above it ----
     property <bool> more <=> Call.more;
     property <length> step: Math.min(84px, (W - 32px) / 4.6);
-    property <length> mid: root.by + 32px; // the row's icons and Hang up share this middle line
+    property <length> mid: root.by + 32px;
     for i in 4: Glyph {
         property <int> at: i == 0 ? -2 : i == 1 ? -1 : i == 2 ? 1 : 2;
         x: W / 2 + self.at * root.step - self.width / 2;
@@ -110,7 +98,6 @@ export component CameraLook inherits Rectangle {
             : (root.more ? Icons.close : "M5 12h0.01 M12 12h0.01 M19 12h0.01");
         label: i == 0 ? (Call.muted ? "Muted" : "Mute") : i == 1 ? (Call.quiet ? "Quiet on" : "Quiet") : i == 2 ? "Transcript" : (root.more ? "Close" : "More");
         on: i == 0 ? Call.muted : i == 1 ? Call.quiet : i == 2 ? Call.caps-open : false;
-        // live once shown: a second tap on Answer (where Transcript appears) lands on nothing
         enabled: !root.incoming && !root.ended && self.opacity > 0.9;
         opacity: root.incoming || root.ended || root.keys ? 0 : 1;
         animate opacity { duration: 240ms; delay: root.incoming ? 0ms : 140ms + 50ms * Math.abs(self.at); easing: T.out; }
@@ -140,7 +127,6 @@ export component CameraLook inherits Rectangle {
         }
     }
 
-    // ---- Hang up in the middle; while it rings, Decline and Answer either side of it ----
     Pill {
         x: (root.incoming ? W / 2 - root.step : W / 2) - 32px;
         y: root.by;
@@ -149,7 +135,7 @@ export component CameraLook inherits Rectangle {
         icon: Icons.phone;
         turn: true;
         fill: Spot.red;
-        enabled: !root.ended && !root.keys; // hidden while typing: a tap there must not hang up
+        enabled: !root.ended && !root.keys;
         opacity: root.ended || root.keys ? 0 : 1;
         animate x { duration: 520ms; easing: T.spring; }
         animate opacity { duration: 260ms; easing: T.out; }
@@ -191,7 +177,7 @@ export component CameraLook inherits Rectangle {
         type-x: W / 2 - 22px;
         type-y: root.mid - 70px - 22px;
         fsize: 44px;
-        keep: H - (root.mid - 30px) - Call.sab; // the transcript stops above the row, so Transcript can shut it
+        keep: H - (root.mid - 30px) - Call.sab;
         lift: 96px;
     }
     changed phase => { if (root.ended) { root.more = false; } }

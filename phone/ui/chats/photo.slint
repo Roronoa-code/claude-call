@@ -1,7 +1,3 @@
-// A photo open full screen, over black. A tap closes it (after a moment, in case it is a double tap), and so does a
-// swipe down: the photo follows the finger and the black fades with it; let go past a fifth of the screen (or flick)
-// and it closes from there, else it settles back. A double tap zooms 2.5x at that point (again: back to whole),
-// pinching zooms (1x to 4x) and, zoomed in, a drag moves around it. Once zoomed it is decoded again, sharper.
 import { T, Icon, Icons } from "../parts.slint";
 import { Home } from "../home_parts.slint";
 import { Chats } from "../chat.slint";
@@ -10,7 +6,6 @@ export component PhotoView inherits Rectangle {
     property <float> k: Chats.viewing ? 1 : 0;
     animate k { duration: Chats.viewing ? 340ms : 220ms; easing: Chats.viewing ? T.out : T.close; }
     visible: k > 0.01;
-    // The photo's room, and the photo as it fits there (contain).
     property <length> w: root.width;
     property <length> h: root.height - Home.sat - Home.sab;
     property <length> cx: w / 2;
@@ -18,17 +13,14 @@ export component PhotoView inherits Rectangle {
     property <float> ratio: Chats.full.width > 0 ? Chats.full.height / Chats.full.width : 1;
     property <length> fw: min(w, h / ratio);
     property <length> fh: min(h, w * ratio);
-    // Zoom, how far it is moved (from the middle), and how far it is pulled down to close.
     property <float> zoom: 1;
     property <length> ox;
     property <length> oy;
     property <length> drop;
-    property <bool> free; // let go: these settle on the curve; held: they follow the fingers exactly
+    property <bool> free;
     animate zoom, ox, oy, drop { duration: free ? 300ms : 0ms; easing: T.out; }
-    // how far it may move at zoom s: none while it fits
     function bx(s: float) -> length { return max(0px, (fw * s - w) / 2); }
     function by(s: float) -> length { return max(0px, (fh * s - h) / 2); }
-    // Zoomed at the point (px, py) to s, that point staying where it is (then kept inside the edges).
     function zoom-at(px: length, py: length, s: float) {
         root.free = true;
         root.ox = clamp((px - cx) * (1 - s), -bx(s), bx(s));
@@ -47,7 +39,7 @@ export component PhotoView inherits Rectangle {
     property <bool> sharpen-soon;
     property <bool> sharp;
     Timer {
-        interval: 360ms; // once the zoom has settled: a decode never stalls a moving frame
+        interval: 360ms;
         running: root.sharpen-soon;
         triggered => {
             root.sharpen-soon = false;
@@ -59,7 +51,6 @@ export component PhotoView inherits Rectangle {
     }
     changed k => {
         if (self.k == 0) {
-            // closed: the next photo opens whole and in place
             self.free = false;
             self.zoom = 1;
             self.ox = 0;
@@ -85,17 +76,16 @@ export component PhotoView inherits Rectangle {
         transform-scale: root.zoom * (0.94 + 0.06 * root.k) * (1 - 0.12 * root.pulled);
         opacity: root.k;
     }
-    // Gestures: pinch (two fingers), and one finger for taps, a swipe down, or moving around a zoomed photo.
     property <float> z0;
     property <length> ox0;
     property <length> oy0;
     property <Point> g0;
-    property <bool> pinched; // this touch became a pinch: its taps and drags don't count
-    property <string> mode; // what the finger's drag does: "" not yet, "pan", "drop" or "none"
+    property <bool> pinched;
+    property <string> mode;
     property <length> last-y;
     property <duration> last-t;
-    property <float> speed; // px per ms, down
-    property <bool> tap; // a single tap waiting to see if a second one comes
+    property <float> speed;
+    property <bool> tap;
     Timer { interval: 300ms; running: root.tap; triggered => { root.close(); } }
     ScaleRotateGestureHandler {
         enabled: Chats.viewing;
@@ -110,7 +100,6 @@ export component PhotoView inherits Rectangle {
         }
         updated => {
             let s = clamp(root.z0 * self.scale, 0.85, 4.5);
-            // the point first under the fingers stays under them
             root.ox = self.center.x - root.cx - (root.g0.x - root.cx - root.ox0) * s / root.z0;
             root.oy = self.center.y - root.cy - (root.g0.y - root.cy - root.oy0) * s / root.z0;
             root.zoom = s;
@@ -127,9 +116,9 @@ export component PhotoView inherits Rectangle {
                     root.oy0 = root.oy;
                 } else if (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) {
                     if (root.mode == "drop") {
-                        let fresh = animation-tick() - root.last-t < 100ms; // a finger held still has no speed left
+                        let fresh = animation-tick() - root.last-t < 100ms;
                         if (e.kind == PointerEventKind.up && (root.drop > root.h * 0.2 || (fresh && root.speed > 0.9 && root.drop > 0px))) {
-                            root.close(); // from where it is: the photo fades on down there
+                            root.close();
                         } else {
                             root.free = true;
                             root.drop = 0;
@@ -177,7 +166,6 @@ export component PhotoView inherits Rectangle {
             }
         }
     }
-    // Close: 44px to see, 48px to touch.
     Rectangle {
         x: 12px;
         y: Home.sat + 8px;

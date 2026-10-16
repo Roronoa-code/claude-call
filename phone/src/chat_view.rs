@@ -1,16 +1,11 @@
-//! What the Chats screens show beyond the store itself (inbox.rs show): the open chat's pieces, a waiting question's
-//! answers and my last message for a list card, who matters now (the character at the top of the list, with one line on where it stands),
-//! and the list's groups.
 use crate::{
     ChatMsg, ChatRow,
     chats::{self, Media},
     attach::thumb,
 };
 
-/// How long the PC's photo and video links work (ntfy keeps a file 3 hours), with a margin.
 const LINK_FOR: i64 = (3 * 60 - 10) * 60_000;
 
-/// A waiting question's answers.
 pub fn choices(c: &chats::Chat, now: i64) -> Vec<slint::SharedString> {
     if chats::ask_state(c, now) != "waiting" {
         return vec![];
@@ -18,7 +13,6 @@ pub fn choices(c: &chats::Chat, now: i64) -> Vec<slint::SharedString> {
     c.lines.iter().find(|l| !l.me).map_or(vec![], |l| l.choices.iter().map(|s| s.into()).collect())
 }
 
-/// My last message in the chat (a card's title), or its title, or "New chat" (the list's preview of an empty one).
 pub fn topic(c: &chats::Chat) -> String {
     match c.lines.iter().rev().find(|l| l.me && !l.text.is_empty()) {
         Some(l) => l.text.clone(),
@@ -27,13 +21,11 @@ pub fn topic(c: &chats::Chat) -> String {
     }
 }
 
-/// Who matters now: a question waiting for Mani, then the chat being worked on, then the newest; and a short line on where it
-/// stands (never the reply itself): "Has a question for you", "Working on “…”", "Replied to “…”", "Done: …".
 pub fn hero(rows: &[ChatRow]) -> (ChatRow, String) {
     let pick = rows.iter().find(|r| r.asks).or_else(|| rows.iter().find(|r| r.busy)).or_else(|| rows.first());
     let Some(r) = pick else { return (ChatRow::default(), String::new()) };
     let asked = short(&r.topic, 44);
-    let mine = r.topic != r.name && r.topic != "New chat"; // a PC-started thread (Updates) has nothing of mine
+    let mine = r.topic != r.name && r.topic != "New chat";
     let line = if r.asks {
         "Has a question for you".to_string()
     } else if r.busy {
@@ -47,7 +39,6 @@ pub fn hero(rows: &[ChatRow]) -> (ChatRow, String) {
     } else if r.think == "Queued" {
         format!("Queued: \u{201c}{asked}\u{201d}")
     } else if r.mine_last {
-        // my message is the last word: not answered yet (sending, sent, or the PC hasn't picked it up)
         format!("Sent \u{201c}{asked}\u{201d}")
     } else {
         format!("Done: {asked}")
@@ -55,7 +46,6 @@ pub fn hero(rows: &[ChatRow]) -> (ChatRow, String) {
     (r.clone(), line)
 }
 
-/// `s` in at most `n` characters, ending in "…" when cut (at a word where it can).
 fn short(s: &str, n: usize) -> String {
     let s = s.split_whitespace().collect::<Vec<_>>().join(" ");
     if s.chars().count() <= n {
@@ -66,11 +56,9 @@ fn short(s: &str, n: usize) -> String {
     format!("{cut}\u{2026}")
 }
 
-/// The list in three groups, each headed by its first row: what needs Mani (a question, a new reply), what the PC is
-/// working on, and the rest; newest first within each.
 pub fn arrange(mut rows: Vec<ChatRow>) -> Vec<ChatRow> {
     let group = |r: &ChatRow| if r.asks || r.unread { 0 } else if r.busy { 1 } else { 2 };
-    rows.sort_by_key(group); // stable: newest first stays within each group
+    rows.sort_by_key(group);
     let mut last = None;
     for r in rows.iter_mut() {
         let g = group(r);
@@ -82,8 +70,6 @@ pub fn arrange(mut rows: Vec<ChatRow>) -> Vec<ChatRow> {
     rows
 }
 
-/// The bubble for a photo or video: its thumbnail once it is here, else a grey note. One of the PC's that couldn't be
-/// fetched can be tapped to fetch it again while its link still works (`at`: when it came).
 fn media_msg(me: bool, m: &Media, at: i64, now: i64) -> ChatMsg {
     let what = if m.video() { "video" } else { "photo" };
     let note = |text: String| ChatMsg { me, text: text.into(), kind: "note".into(), ..ChatMsg::default() };
@@ -91,7 +77,6 @@ fn media_msg(me: bool, m: &Media, at: i64, now: i64) -> ChatMsg {
         "loading" => note(format!("Downloading {what}…")),
         "ready" => {
             match thumb(m) {
-                // A video whose frame can't be read still gets its card (and plays).
                 None if !m.video() => note(format!("Couldn't show this {what}")),
                 t => {
                     let (pic, ratio) = t.unwrap_or_else(|| (slint::Image::default(), 9.0 / 16.0));
@@ -106,13 +91,6 @@ fn media_msg(me: bool, m: &Media, at: i64, now: i64) -> ChatMsg {
     }
 }
 
-/// The open chat as the thread lays it out: my messages as bubbles (a photo or video above its text; an earlier one
-/// that didn't go says so under it), the PC's as blocks of text (chats::blocks) then its files, each with the room
-/// above it (`gap`), its place in its message (`n`, for the arrival's stagger) and its message's id (`line`, for
-/// copying). The first block of an answer that is the newest line is the `anchor`. An agent's question (`ask`:
-/// chats::ask_state) offers its answers under it as "choice" buttons (`mark` "on": the one I sent), and says "Sending
-/// answer…" or "Expired" (a "tag") once nobody waits for it. An answer the PC failed or missed, to my last message,
-/// offers "Send again".
 pub fn thread(chat: &chats::Chat, ask: &str, now: i64) -> Vec<ChatMsg> {
     let lines: Vec<_> = chat.lines.iter().filter(|l| l.me || l.state != "partial").collect();
     let question = lines.iter().position(|l| !l.me).filter(|_| ask != "");
@@ -126,7 +104,6 @@ pub fn thread(chat: &chats::Chat, ask: &str, now: i64) -> Vec<ChatMsg> {
             if !l.text.is_empty() || l.media.is_empty() {
                 items.push(ChatMsg { me: true, text: chats::shown(l).into(), ..ChatMsg::default() });
             }
-            // my last message says how it is going in the status line; an earlier one that didn't go, here
             match chats::unsent(l, now) {
                 "" => {}
                 _ if Some(l.id.as_str()) == last_mine => {}
@@ -135,7 +112,6 @@ pub fn thread(chat: &chats::Chat, ask: &str, now: i64) -> Vec<ChatMsg> {
             }
         } else {
             if l.text.is_empty() && l.media.is_empty() {
-                // "Something went wrong.", "Stopped." and the like: a quiet line, not an answer
                 items.push(ChatMsg { text: chats::shown(l).into(), kind: "note".into(), ..ChatMsg::default() });
             }
             for b in chats::blocks(&l.text) {
@@ -173,15 +149,15 @@ pub fn thread(chat: &chats::Chat, ask: &str, now: i64) -> Vec<ChatMsg> {
             m.n = n as i32;
             m.gap = match (mine_before, n) {
                 (None, 0) => 0.0,
-                (Some(true), 0) if l.me => 8.0, // my messages in a row
-                (Some(_), 0) => 26.0, // the other side speaks, or the PC's next answer
+                (Some(true), 0) if l.me => 8.0,
+                (Some(_), 0) => 26.0,
                 _ => match (prev.as_str(), m.kind.as_str()) {
                     (_, "h") => 22.0,
                     ("h", _) => 8.0,
                     ("li", "li") | ("choice", "choice") => 8.0,
                     (_, "tag") => 10.0,
                     (_, "unsent") => 2.0,
-                    _ if l.me => 6.0, // my photo, then its text
+                    _ if l.me => 6.0,
                     _ => 14.0,
                 },
             };
@@ -192,13 +168,10 @@ pub fn thread(chat: &chats::Chat, ask: &str, now: i64) -> Vec<ChatMsg> {
     msgs
 }
 
-/// Inline markdown for the thread; text Slint's parser can't take shows as it is.
 fn styled(text: &str) -> slint::StyledText {
     slint::StyledText::from_markdown(&chats::inline(text)).unwrap_or_else(|_| slint::StyledText::from_plain_text(text))
 }
 
-/// A code block's text with a zero-width break after `_ . / : (` inside long words, so a line that has to wrap breaks
-/// there ("BOOT_ / COMPLETED") rather than mid-word.
 pub fn soft_breaks(code: &str) -> String {
     let mut out = String::with_capacity(code.len() + 16);
     for (i, word) in code.split(' ').enumerate() {

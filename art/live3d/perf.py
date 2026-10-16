@@ -1,12 +1,10 @@
-# Relative GPU cost of the cast shaders against the app's vinyl Clawd (live_gl.rs), at phone resolution (desktop GPU: only
-# the ratio means anything). Usage: python perf.py
 import re, time, json, os
 from render import program, render, SIZE, _ctx, VERT
 import render as R
 import moderngl
 src = open(os.path.join(R.HERE, 'clawd_cast.frag'), encoding='utf8').read().split('\n', 1)[1]
-alive = '#version 330\n#define MAT_ID 0\n' + src.replace('precision highp float;', '', 1)  # as live_gl.rs compiles it
-render('null', {}, 1)  # make the context
+alive = '#version 330\n#define MAT_ID 0\n' + src.replace('precision highp float;', '', 1)
+render('null', {}, 1)
 ctx = R._ctx
 cases = [('app vinyl Clawd', ctx.program(vertex_shader=VERT, fragment_shader=alive), (300, 250), {'uBody': (1, 0, 0, 0), 'uArms': (-0.5, -0.5, 0, 0), 'uEyes': (0, 0, 1, 0)})]
 for m, n in enumerate(['vinyl', 'cartoon', 'plush', 'chrome']):

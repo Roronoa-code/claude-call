@@ -1,18 +1,16 @@
-// List parts: a row that slides (or long-presses) open to Delete, with Undo after; the "Chat deleted · Undo" bar;
-// an unread count. The list draws the row's face as children.
 import { T, Icon } from "../parts.slint";
 import { Home } from "../home_parts.slint";
 import { Chats, Ink } from "../chat.slint";
 
 export component SlideRow inherits Rectangle {
     in property <string> id;
-    in property <length> face-h: 80px; // the row's height
-    in property <length> gap: 0px; // room under it, before the next
+    in property <length> face-h: 80px;
+    in property <length> gap: 0px;
     in property <length> radius: 20px;
     in property <brush> face-bg: Ink.bg;
-    in property <length> margin: 8px; // the list's side margin: what shows is clipped to the screen's edges
+    in property <length> margin: 8px;
     out property <bool> pressed: touch.pressed && !slid;
-    callback tapped(length); // its y on screen
+    callback tapped(length);
     property <length> reveal: 96px;
     property <bool> away: id == Chats.leaving;
     property <float> enter: id == Chats.returning ? 0 : 1;
@@ -79,7 +77,6 @@ export component SlideRow inherits Rectangle {
         x: -root.margin;
         width: root.width + 2 * root.margin;
         clip: true;
-        // Delete, under the row on the right; it comes up as the row slides off it.
         Rectangle {
             property <float> p: clamp(-root.dx / root.reveal, 0, 1);
             x: parent.width - self.width - root.margin;
@@ -102,7 +99,7 @@ export component SlideRow inherits Rectangle {
                 clicked => {
                     Chats.revealed = "";
                     Chats.leaving = root.id;
-                    Chats.tick(); // a delete committed
+                    Chats.tick();
                 }
             }
         }
@@ -123,9 +120,8 @@ export component SlideRow inherits Rectangle {
     }
 }
 
-// For a few seconds after a delete: "Chat deleted", and Undo.
 export component UndoBar inherits Rectangle {
-    in property <length> base; // where its lower edge rests (the caller sets x and width)
+    in property <length> base;
     property <float> k: Chats.deleted != "" ? 1 : 0;
     animate k { duration: Chats.deleted != "" ? 380ms : 240ms; easing: Chats.deleted != "" ? T.out : T.close; }
     visible: self.k > 0.01;
@@ -150,7 +146,6 @@ export component UndoBar inherits Rectangle {
         background: undo.pressed ? #ffffff14 : #ffffff00;
         animate background { duration: 140ms; easing: T.out; }
         Text { text: "Undo"; font-size: 15px; font-weight: 600; color: Ink.warm; }
-        // 44px to see, 48px to touch
         undo := TouchArea {
             y: -2px;
             height: 48px;
@@ -162,7 +157,6 @@ export component UndoBar inherits Rectangle {
     }
 }
 
-// A count of unread replies, in a warm pill.
 export component Count inherits Rectangle {
     in property <int> n;
     width: max(22px, num.preferred-width + 14px);

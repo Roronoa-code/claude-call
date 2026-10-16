@@ -1,5 +1,3 @@
-//! What the call has used so far, for the meter on the call screen: the agent's own transcript plus its helpers'
-//! (Sonnet / Opus subagents), priced per model at API rates.
 use serde_json::Value;
 use std::{
     collections::HashSet,
@@ -7,13 +5,12 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-/// $ per million tokens: input, output, cache write, cache read.
 fn price(model: &str) -> [f64; 4] {
     match model {
         m if m.contains("haiku") => [0.10, 0.50, 0.125, 0.01],
         m if m.contains("sonnet") => [2.0, 10.0, 2.5, 0.20],
         m if m.contains("fable") || m.contains("mythos") => [10.0, 50.0, 12.5, 0.25],
-        _ => [4.0, 20.0, 5.0, 0.20], // Opus, or unknown: priced high so the meter never under-reports
+        _ => [4.0, 20.0, 5.0, 0.20],
     }
 }
 
@@ -21,17 +18,15 @@ fn projects() -> Option<PathBuf> {
     std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(|h| Path::new(&h).join(".claude").join("projects"))
 }
 
-/// The agent's transcript: by session id when Claude Code passes it, else the transcript written in the last two
-/// minutes that holds the line just said (the call_user message).
 pub fn find(said: &str) -> Option<PathBuf> {
     let dirs: Vec<PathBuf> = std::fs::read_dir(projects()?).ok()?.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
-    // Up to the first character JSON would escape, so the needle matches the raw file.
+    // The JSONL is raw: the needle stops at the first character JSON would escape.
     let needle: String = said.chars().take_while(|c| !matches!(c, '"' | '\\') && !c.is_control()).take(40).collect();
     if needle.len() < 8 {
         return None;
     }
     let holds = |p: &PathBuf| std::fs::read_to_string(p).is_ok_and(|s| s.contains(&needle));
-    // The id is inherited by runs started from inside another session, so it must hold the line too.
+    // Runs started from inside another session inherit CLAUDE_CODE_SESSION_ID.
     if let Ok(id) = std::env::var("CLAUDE_CODE_SESSION_ID") {
         if let Some(p) = dirs.iter().map(|d| d.join(format!("{id}.jsonl"))).find(|p| holds(p)) {
             return Some(p);
@@ -45,7 +40,6 @@ pub fn find(said: &str) -> Option<PathBuf> {
         .find(|p| holds(p))
 }
 
-/// Dollars used since `since` (RFC 3339, the transcripts' own format) in the transcript and its subagents'.
 pub fn cost(main: &Path, since: &str) -> f64 {
     let mut files = vec![main.to_path_buf()];
     if let Ok(rd) = std::fs::read_dir(main.with_extension("").join("subagents")) {
@@ -77,7 +71,6 @@ fn line_cost(m: &Value) -> f64 {
     (n("input_tokens") * p[0] + n("output_tokens") * p[1] + n("cache_creation_input_tokens") * p[2] + n("cache_read_input_tokens") * p[3]) / 1e6
 }
 
-/// "$0.04", or "<$0.01" for a call that has barely started.
 pub fn label(dollars: f64) -> String {
     if dollars < 0.005 { "<$0.01".into() } else { format!("${dollars:.2}") }
 }

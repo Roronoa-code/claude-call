@@ -1,8 +1,3 @@
-//! Whoever is calling, alive on the call screen (cast.rs, drawn by live_gl.rs): the vinyl Clawd for Claude, Null for
-//! Codex, the Haiku, Sonnet and Opus Clawds for agents of those names. It moves with the call: hops while it rings
-//! and once more when the call connects, looks at you while it's your turn and nods as you finish a phrase, thinks
-//! while the agent works or the call is on hold, and talks with its mouth and arms driven by the real voice. It
-//! stands big over the caption, and small on the agent's bubble while the thread shows, easing between the two.
 use crate::{
     alive,
     cast::{Cast, State, Who},
@@ -11,13 +6,11 @@ use crate::{
 
 const CLOSEST_K: f32 = 1.15;
 const FLOOR: f32 = 82.0;
-const MOVE_S: f32 = 0.5; // the ease between the two
-const DOLLY_S: f32 = 1.3; // PREVIEW (Camera): a camera move between shots
-const RING_EVERY: f32 = 1.5; // a hop per ring
-const SHOW_AFTER: f32 = 0.6; // fades in once the call says who is calling, or after this long
+const MOVE_S: f32 = 0.5;
+const DOLLY_S: f32 = 1.3;
+const RING_EVERY: f32 = 1.5;
+const SHOW_AFTER: f32 = 0.6;
 
-/// PREVIEW (Camera): how close the camera is in each state: wide while it rings, close while the caller talks,
-/// further back for your turn and while it works, wider on hold and at the end.
 fn shot(phase: Option<Phase>) -> f32 {
     match phase {
         None | Some(Phase::Incoming) => 0.62,
@@ -29,7 +22,6 @@ fn shot(phase: Option<Phase>) -> f32 {
     }
 }
 
-/// Where it stands, in the call stage's logical px: the middle of its feet, and its size (k times home size).
 #[derive(Clone, Copy, PartialEq)]
 pub struct Place {
     pub x: f32,
@@ -40,17 +32,17 @@ pub struct Place {
 pub struct Caller {
     pub cast: Cast,
     seed: u64,
-    shown_at: Option<f32>, // when it began fading in
-    swap_at: Option<f32>,  // fading out to change who it is
+    shown_at: Option<f32>,
+    swap_at: Option<f32>,
     from: Place,
     to: Place,
     moved_at: f32,
-    dolly: bool, // PREVIEW (Camera): the current move is a camera move (slower, eased in and out)
+    dolly: bool,
     perched: bool,
     phase: Option<Phase>,
     next_ring: f32,
     next_nod: f32,
-    me: (f32, f32), // your voice: how loud lately, and when you last went quiet after speaking
+    me: (f32, f32),
 }
 
 fn place(phase: Option<Phase>) -> Place {
@@ -81,8 +73,6 @@ impl Caller {
         }
     }
 
-    /// The texture's size (logical px): the widest and tallest picture at its big size, with room above, and (the
-    /// preview directions) a record's floor below.
     pub fn size() -> (f32, f32) {
         let (w, h) = alive::solo_size(CLOSEST_K);
         (w, h + FLOOR * CLOSEST_K * alive::NULL_SOLO)
@@ -92,7 +82,6 @@ impl Caller {
         self.cast.hop(now);
     }
 
-    /// How visible it is, 0..1: it fades in once it knows who it is, and out and in again if that changes.
     pub fn fade(&self, now: f32) -> f32 {
         match (self.swap_at, self.shown_at) {
             (Some(at), _) => 1.0 - ((now - at) / 0.15).clamp(0.0, 1.0),
@@ -112,10 +101,8 @@ impl Caller {
         Place { x: mix(self.from.x, self.to.x), y: mix(self.from.y, self.to.y), k: mix(self.from.k, self.to.k) }
     }
 
-    /// Advances to `now` (seconds). `voice`: the agent's voice level as it plays; `me`: your mic level.
     pub fn tick(&mut self, now: f32, agent: &str, phase: Phase, perched: bool, voice: f32, me: f32) {
         let who = Who::named(agent);
-        // Who it is: shown once the call has said (or soon anyway); a change fades out, swaps, and fades back in.
         if self.shown_at.is_none() && (who != self.cast.who || now >= SHOW_AFTER) {
             self.swap(who, now);
             self.shown_at = Some(now);
@@ -133,7 +120,6 @@ impl Caller {
         }
 
         let was = self.phase.replace(phase);
-        // PREVIEW (Camera): a new state can be a new shot; the camera moves there from wherever it is
         if shot(Some(phase)) != self.to.k && self.shown_at.is_some() {
             self.from = self.place(now);
             self.to = place(Some(phase));
@@ -141,9 +127,8 @@ impl Caller {
         }
         let connected = matches!(phase, Phase::Talking | Phase::Listening | Phase::Hearing | Phase::Thinking | Phase::Hold);
         if connected && matches!(was, Some(Phase::Incoming | Phase::Connecting)) {
-            self.cast.hop(now); // a happy beat as the call connects
+            self.cast.hop(now);
         }
-        // Your voice: a nod a moment after you finish a phrase (not every time), the odd one while it's your turn.
         let loud = me > 0.2;
         if loud {
             self.me.0 = now;
@@ -190,9 +175,6 @@ impl Caller {
     }
 }
 
-/// PREVIEW (call screen direction 2, Close-up): the light on the caller tells the call's state, easing between
-/// moods: warm while it talks (brighter with its voice), cool while it's your turn, dimmer while it works, lilac on
-/// hold, out at the end. Offsets to the record stage's key light colour and ambient (the shaders add them to 1).
 pub struct Mood {
     now: [f32; 4],
     at: f32,
@@ -205,8 +187,6 @@ impl Mood {
 
     pub fn ease(&mut self, phase: Phase, voice: f32, now: f32) {
         let v = voice.clamp(0.0, 1.0);
-        // Round 2, in the spotlight: as home while it rings, a touch warmer and brighter with its voice, the light a
-        // little cooler for your turn, lower while it works, lower and lilac on hold, out at the end.
         let target = match phase {
             Phase::Incoming | Phase::Connecting => crate::stage::SPOT.key_col,
             Phase::Talking => [0.0, -0.1, -0.2, -0.42 + 0.14 * v],
@@ -215,7 +195,7 @@ impl Mood {
             Phase::Hold => [-0.32, -0.38, -0.12, -0.62],
             Phase::Ended => [-0.75, -0.75, -0.75, -0.85],
         };
-        let k = 1.0 - (-(now - self.at).clamp(0.0, 0.1) * 6.0).exp(); // about 400 ms
+        let k = 1.0 - (-(now - self.at).clamp(0.0, 0.1) * 6.0).exp();
         self.at = now;
         for (v, t) in self.now.iter_mut().zip(target) {
             *v += (t - *v) * k;

@@ -1,5 +1,3 @@
-//! The call as the states the design shows (incoming, connecting, talking, listening, hearing, thinking, hold,
-//! ended), built from the engine's events. The engine only ever changes the screen through these methods.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Phase {
     Incoming,
@@ -16,9 +14,9 @@ pub enum Phase {
 pub struct Msg {
     pub id: String,
     pub me: bool,
-    pub text: String,       // yours
-    pub parts: Vec<String>, // Claude's, sentence by sentence
-    pub spoken: (usize, usize), // how far it has been said: (sentence, words into it)
+    pub text: String,
+    pub parts: Vec<String>,
+    pub spoken: (usize, usize),
     pub cut: bool,
     pub live: bool,
 }
@@ -39,7 +37,7 @@ pub struct View {
     pub quiet: bool,
     pub can_finish: bool,
     pub call_start: f64,
-    pub usage: String, // what the call has used so far, from the PC ("$0.04")
+    pub usage: String,
     pub ended_at: f64,
     pub hold_start: f64,
     pub hold_label: String,
@@ -49,11 +47,8 @@ pub struct View {
     hold_after: bool,
     pub voice: Voice,
     pub mic_level: f32,
-    /// Who is calling: "Claude" or "Codex" (from the call server).
     pub agent: String,
-    /// Typed replies that didn't reach the PC, in order: they go back in the reply field (screen.rs), then this is emptied.
     pub unsent: String,
-    /// "Call back" was tapped and the PC hasn't answered yet (no second tap, "Calling you back…" shows).
     pub asking_back: bool,
 }
 
@@ -61,7 +56,6 @@ pub fn words(t: &str) -> Vec<&str> {
     t.split_whitespace().collect()
 }
 
-/// Claude's line, split into sentences: the big caption shows one sentence at a time.
 pub fn sentences(text: &str) -> Vec<String> {
     let mut out = vec![];
     let mut cur = String::new();
@@ -83,7 +77,6 @@ pub fn sentences(text: &str) -> Vec<String> {
     if out.is_empty() { vec![text.trim().to_string()] } else { out }
 }
 
-/// How far into the line `shown` (the text revealed in step with the real audio) has got: (sentence, words).
 fn spoken_at(parts: &[String], shown: &str) -> (usize, usize) {
     let mut n = words(shown).len();
     for (i, p) in parts.iter().enumerate() {
@@ -127,8 +120,6 @@ impl View {
         if self.hold_after { Phase::Hold } else { Phase::Listening }
     }
 
-    /// The engine's status line, as the design's states. "Claude is talking…" is left to `claude`, so the screen
-    /// only changes once Claude's voice is actually heard.
     pub fn status(&mut self, s: &str) {
         if self.phase == Phase::Ended {
             return;
@@ -138,11 +129,10 @@ impl View {
         } else if s.starts_with("Type your reply") {
             (self.phase, self.notice) = (self.idle_phase(), s.to_string());
         } else if s.starts_with("Hearing you") {
-            // Talking while on hold (steering a task) keeps the call on hold: only Claude's next line takes it off.
             self.voice = Voice::Me;
             (self.phase, self.transcribing, self.notice) = (Phase::Hearing, false, String::new());
             for m in self.msgs.iter_mut().filter(|m| m.live) {
-                m.cut = true; // hide unheard words before the first thread render
+                m.cut = true;
             }
         } else if s.starts_with("Got it") {
             self.voice = Voice::None;
@@ -166,7 +156,6 @@ impl View {
         self.call_start = now;
     }
 
-    /// A line of Claude's starts sounding.
     pub fn claude(&mut self, id: u64, text: &str) {
         self.hold_after = false;
         self.voice = Voice::Claude;
@@ -184,7 +173,6 @@ impl View {
         m.spoken = spoken_at(&m.parts, shown);
     }
 
-    /// It finished (`cut`: the user talked over it). A hold line, once said, puts the call on hold.
     pub fn spoken(&mut self, id: u64, cut: bool, hold: (bool, String), now: f64) {
         let id = id.to_string();
         if let Some(m) = self.msgs.iter_mut().find(|m| m.id == id) {
@@ -209,7 +197,6 @@ impl View {
         self.partial = text.to_string();
     }
 
-    /// The user's final words ('' = only noise: drop that bubble).
     pub fn heard(&mut self, id: &str, text: &str, typed: bool) {
         let clear = self.partial_id.as_deref().is_none_or(|p| p == id) || typed;
         if clear {
@@ -233,7 +220,6 @@ pub fn clock(ms: f64) -> String {
     format!("{}:{:02}", s / 60, s % 60)
 }
 
-/// The lit (already said) words of one of Claude's lines: all its parts, or just part `only`.
 pub fn lit(m: &Msg, only: Option<usize>) -> (String, String) {
     let (p, w) = m.spoken;
     let mut text = vec![];
@@ -252,8 +238,6 @@ pub fn lit(m: &Msg, only: Option<usize>) -> (String, String) {
     (text.join(" "), lit.join(" "))
 }
 
-/// PREVIEW (round 2): a line split so each word can fade in as it is said: the words said before the newest (with a
-/// space after them), the newest, and the rest still to come (with a space before them).
 pub fn split_lit(text: &str, lit: &str) -> (String, String, String) {
     let (t, l) = (words(text), words(lit));
     let n = l.len().min(t.len());

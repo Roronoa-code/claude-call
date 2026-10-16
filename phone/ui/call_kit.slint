@@ -1,40 +1,32 @@
-// PREVIEW (branch preview/call-screen): pieces every call screen direction shares (call_looks.slint): the caption
-// that crossfades line to line, the transcript and the reply field that grow out of their buttons, the caller on
-// its record, and the record's lights.
 import { T, Icon, Icons, Spoken, Morph } from "parts.slint";
 import { Call } from "call_data.slint";
 
-// The transcript (out of the Captions button) and the reply field (out of the Type button), over the whole screen.
 export component Sheets inherits Rectangle {
-    in property <length> caps-x; // the buttons' top left corners, and their size
+    in property <length> caps-x;
     in property <length> caps-y;
     in property <length> type-x;
     in property <length> type-y;
     in property <length> fsize: 58px;
-    in property <length> caps-size: self.fsize; // the Captions button, if not the same size
-    in property <length> keep: 268px; // room the transcript leaves at the bottom (the controls)
-    in property <length> lift: 188px; // how high the reply field sits over the bottom edge without a keyboard
+    in property <length> caps-size: self.fsize;
+    in property <length> keep: 268px;
+    in property <length> lift: 188px;
     in property <color> panel: #1c1d21;
     property <bool> in-call: Call.phase != "incoming";
-    // Pull down on the Transcript's header to close it, as a chat closes (chats/thread.slint): it follows the finger;
-    // past 30% of its height, or a quick flick down, it closes into its button from where it was let go; less springs
-    // back.
     property <length> pull;
     property <bool> held;
     property <length> from-y;
     property <length> last-y;
     property <duration> last-t;
-    property <float> speed; // px per ms, downwards
+    property <float> speed;
     animate pull {
         duration: root.held ? 0ms : Call.caps-open ? 460ms : 300ms;
         easing: Call.caps-open ? cubic-bezier(0.22, 0.9, 0.24, 1) : T.close;
     }
-    // dy: the finger's travel as the swipe handler sees it, inside the moving transcript
     function drag(local-dy: length) {
         let dy = local-dy + root.pull;
         if (!root.held) {
             root.held = true;
-            root.from-y = dy; // where the swipe was seen to begin: it moves from there, no jump
+            root.from-y = dy; // the swipe starts only after a minimum drag
             root.last-y = dy;
             root.last-t = animation-tick();
             root.speed = 0;
@@ -50,7 +42,7 @@ export component Sheets inherits Rectangle {
     }
     function let-go(may-close: bool) {
         if (!root.held) { return; }
-        let v = animation-tick() - root.last-t < 100ms ? root.speed : 0; // a finger held still has no speed left
+        let v = animation-tick() - root.last-t < 100ms ? root.speed : 0;
         let close = may-close && root.pull > 0px && (v > 0.9 || (root.pull > caps.height * 0.3 && v > -0.5));
         root.held = false;
         if (close) { Call.caps-open = false; }
@@ -117,8 +109,6 @@ export component Sheets inherits Rectangle {
             }
         }
     }
-    // The reply field: one line sits in the middle of 64px; more grow it upwards a line at a time, up to six, then
-    // the text scrolls inside (the chat's field, chats/field.slint). Enter starts a new line; Send sends.
     probe := Text { visible: false; text: "Ag"; font-size: 17px; }
     property <length> line: probe.preferred-height;
     property <length> pad: (64px - root.line) / 2;
@@ -131,7 +121,7 @@ export component Sheets inherits Rectangle {
         fy: root.type-y;
         fsize: root.fsize;
         tx: 16px;
-        ty: root.height - Call.kb - max(12px, Call.sab + root.lift - Call.kb) - root.area; // 12px above the keyboard
+        ty: root.height - Call.kb - max(12px, Call.sab + root.lift - Call.kb) - root.area;
         tw: root.width - 32px;
         th: root.area;
         radius: 32px;
@@ -153,7 +143,6 @@ export component Sheets inherits Rectangle {
                     height: parent.height - 2 * root.pad;
                     clip: true;
                     input := TextInput {
-                        // fits: at the foot of the box (as it grows the lines rise from it); longer: scrolled to the caret
                         y: max(parent.height - self.height, min(0px, window.scroll));
                         width: parent.width;
                         height: max(root.line, self.preferred-height);

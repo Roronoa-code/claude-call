@@ -1,12 +1,8 @@
-// One piece of a thread (inbox.rs thread: ChatMsg): my warm bubbles; the agent's turn on a soft card, joined across
-// its pieces (paragraphs, headings, lists, quotes, code, photos, an agent's question with its answers as buttons);
-// quiet lines. A photo always shows as a framed picture (a tall one from its top, never a tall empty box).
 import { T } from "../parts.slint";
 import { Chats, ChatMsg, Ink } from "../chat.slint";
 import { Home } from "../home_parts.slint";
 import "../fonts/JetBrainsMonoNL-Regular.ttf";
 
-// A word with a slow light passing through it while the PC works ("Thinking").
 export component Shimmer inherits Text {
     in property <color> base: #8a8c93;
     property <float> s: Math.mod(animation-tick() / 1900ms, 1) * 1.8 - 0.4;
@@ -15,8 +11,6 @@ export component Shimmer inherits Text {
     color: @linear-gradient(90deg, base 0%, base max(0, s - 0.3) * 100%, #f4f1ef max(0, min(1, s)) * 100%, base min(1, s + 0.3) * 100%, base 100%);
 }
 
-// A press held still for 450 ms (a move of more than 10px, or the thread taking the drag, cancels it): `held` with
-// where the finger is. `fired`: the press became a hold (its release is not a tap).
 component Hold inherits TouchArea {
     callback held(length, length);
     out property <bool> fired;
@@ -42,9 +36,9 @@ component Hold inherits TouchArea {
 
 export component Piece inherits Rectangle {
     in property <ChatMsg> m;
-    in property <bool> settled; // rows that arrive once the thread is up rise in
-    callback landed(length); // an answer's first piece arrived: its y, to keep in view (-1: follow the end)
-    callback tapped(); // a tap on it that isn't a long-press (the thread's own tap: the keyboard goes)
+    in property <bool> settled;
+    callback landed(length);
+    callback tapped();
     property <length> prose-size: 16px;
     property <color> card-bg: #18181b;
     property <bool> bubble: m.me && m.kind == "";
@@ -53,21 +47,17 @@ export component Piece inherits Rectangle {
     property <bool> media: m.kind == "image" || m.kind == "video";
     property <bool> quiet: m.kind == "note";
     property <bool> choice: m.kind == "choice";
-    property <bool> unsent: m.kind == "unsent"; // an earlier message of mine that didn't go
-    property <bool> again: m.kind == "again"; // "Send again"
-    property <bool> refetch: quiet && m.mark == "refetch"; // a photo to fetch again
-    // A long-press copies: my bubble, the agent's words, code, quiet lines. Words with several links keep the press for
-    // the links (StyledText takes every press on itself), so there the long-press works around them; with one link the
-    // long-press sits over the words and a tap opens that link.
+    property <bool> unsent: m.kind == "unsent";
+    property <bool> again: m.kind == "again";
+    property <bool> refetch: quiet && m.mark == "refetch";
+    // StyledText takes every press on itself.
     property <bool> copyable: bubble || (carded && (prose || code || (quiet && !refetch)));
-    // The agent's pieces sit on its card, the first and last with room above and below.
     property <bool> carded: !m.me;
     property <length> inset: carded ? 18px : 0px;
     property <length> pad-top: carded && (m.n == 0) ? 16px : 0px;
     property <length> pad-bottom: carded && m.last ? 16px : 0px;
     property <length> top: m.gap * 1px;
     property <length> inner: self.width - 2 * inset;
-    // A photo or video: whole if it is wide, at most 5:4 tall (cropped from its top), in a soft frame.
     property <float> ratio: min(max(m.ratio, 0.4), 1.25);
     property <length> media-w: min(inner * (m.me ? 0.74 : 0.86), 300px);
     property <length> bubble-w: min(inner * 0.8, said.preferred-width + 32px);
@@ -81,10 +71,8 @@ export component Piece inherits Rectangle {
         : media ? self.media-w * ratio
         : quiet ? hush.preferred-height + 19px : 0px;
     property <float> k: 0;
-    // a long answer's later pieces follow at most 6 steps behind its first, so none waits seconds to show
     animate k { duration: settled ? 460ms : 0ms; delay: settled ? min(m.n, 6) * 70ms : 0ms; easing: T.out; }
     init => {
-        // the newest answer's start stays in view as it lands; a message of mine goes back to following the end
         if (settled && m.anchor) {
             root.landed(self.y + self.top);
         } else if (settled && m.me) {
@@ -93,7 +81,6 @@ export component Piece inherits Rectangle {
         self.k = 1;
     }
     height: top + pad-top + h + pad-bottom;
-    // The long-press: where it was, and since when ("Copied" rises there and fades).
     property <length> copy-x;
     property <length> copy-y;
     property <duration> copy-t;
@@ -108,9 +95,7 @@ export component Piece inherits Rectangle {
     Timer { interval: 1100ms; running: root.copying; triggered => { root.copying = false; } }
     property <length> hold-x: bubble ? inset + inner - bubble-w : 0px;
     property <length> hold-w: bubble ? bubble-w : root.width;
-    // the choice's words, measured: a long one wraps and its button grows
     cwords := Text { visible: false; width: root.inner - 60px; text: choice ? m.text : ""; font-size: 16px; font-weight: 600; wrap: word-wrap; }
-    // The card behind the agent's turn, joined across its pieces.
     if carded: Rectangle {
         y: m.n == 0 ? root.top : 0px;
         height: root.height - self.y;
@@ -135,7 +120,6 @@ export component Piece inherits Rectangle {
         y: root.top + root.pad-top + (1 - root.k) * (m.me ? 6px : 12px);
         height: root.h;
         opacity: root.k;
-        // Mine: a warm bubble on the right, a little smaller as it leaves the field.
         if bubble: Rectangle {
             x: parent.width - self.width;
             width: bubble-w;
@@ -155,7 +139,6 @@ export component Piece inherits Rectangle {
             font-size: 16.5px;
             color: #fff8f5;
         }
-        // The PC's text: a paragraph, a heading, a list item (its number or dot hanging in the margin) or a quote.
         if m.kind == "li" && m.mark == "•": Rectangle {
             x: m.level * 22px + 5px;
             y: root.prose-size * 0.52;
@@ -177,7 +160,6 @@ export component Piece inherits Rectangle {
             link-color: Ink.warm;
             link-clicked(l) => { Chats.open-link(l); }
         }
-        // Code: a quiet card, its language above, in a monospace face; long lines wrap (nothing runs off the edge).
         Rectangle {
             visible: code;
             background: #0e0e10;
@@ -197,7 +179,6 @@ export component Piece inherits Rectangle {
                 color: #d6d6da;
             }
         }
-        // A quiet line: downloading, couldn't load, stopped.
         if quiet: Rectangle {
             x: m.me ? parent.width - self.width : 0px;
             width: min(parent.width, hush.preferred-width + 28px);
@@ -214,7 +195,6 @@ export component Piece inherits Rectangle {
             color: refetch ? #ec8a6f : Ink.muted;
             wrap: word-wrap;
         }
-        // "Couldn't load this photo · Tap to retry": the whole line (48px high) fetches it again.
         if refetch: TouchArea {
             y: (parent.height - self.height) / 2;
             height: max(48px, parent.height);
@@ -222,8 +202,6 @@ export component Piece inherits Rectangle {
             accessible-label: m.text;
             clicked => { Chats.refetch(m.path); }
         }
-        // An earlier message of mine that didn't go: "Not sent · Tap to retry" (or retrying by itself), under it on
-        // the right like the status line; its touch area 48px high.
         if unsent: Text {
             x: parent.width - self.width;
             width: self.preferred-width;
@@ -242,7 +220,6 @@ export component Piece inherits Rectangle {
                 clicked => { Chats.retry(m.line); }
             }
         }
-        // "Send again" under the PC's failed (or missed) answer to my last message: it goes as a new message.
         if again: Rectangle {
             x: 0px;
             width: again-text.preferred-width + 36px;
@@ -263,8 +240,6 @@ export component Piece inherits Rectangle {
                 clicked => { Chats.again(m.line); }
             }
         }
-        // An answer the agent offers: a full-width button, sent as my message when tapped. Once answered (or
-        // expired) they rest faded, the one I sent filled in with a tick.
         if choice: Rectangle {
             property <bool> live: Chats.ask == "waiting" && Chats.ready;
             property <bool> on: m.mark == "on";
@@ -309,9 +284,7 @@ export component Piece inherits Rectangle {
                 clicked => { Chats.choose(m.text); }
             }
         }
-        // A small grey word under a question: "Expired".
         if m.kind == "tag": Text { x: 2px; text: m.text; font-size: 12.5px; color: Ink.muted; vertical-alignment: center; }
-        // A photo or video in a soft frame, so even a dark screenshot reads as a picture.
         if media: Rectangle {
             x: m.me ? parent.width - self.width : 0px;
             width: media-w;
@@ -328,7 +301,6 @@ export component Piece inherits Rectangle {
                 clip: true;
                 background: #121214;
                 Image { width: parent.width; height: parent.height; source: m.pic; image-fit: cover; vertical-alignment: ImageVerticalAlignment.top; }
-                // a tall picture shown from its top: its cut edge fades out (the whole one opens on a tap)
                 if m.ratio > 1.26: Rectangle {
                     y: parent.height - self.height;
                     height: 56px;
@@ -354,7 +326,6 @@ export component Piece inherits Rectangle {
         height: root.height - root.top;
         held(x, y) => { root.hold(self.x + x, self.y + y); }
         clicked => {
-            // with the keyboard up (or the field holding the cursor) a tap puts it away, as anywhere on the thread
             if (!self.fired && m.link != "" && Home.kb == 0 && !Home.typing) {
                 Chats.open-link(m.link);
             } else if (!self.fired) {
@@ -362,7 +333,6 @@ export component Piece inherits Rectangle {
             }
         }
     }
-    // "Copied", just above the finger: it rises a little and fades.
     if root.copying: Rectangle {
         property <float> e: clamp((animation-tick() - root.copy-t) / 1100ms, 0, 1);
         property <float> rise: 1 - (1 - e) * (1 - e) * (1 - e);

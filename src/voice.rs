@@ -1,13 +1,9 @@
-//! Voice and hearing (the GPU server voice/voice_server.py), the ElevenLabs fallback voice, ringing through ntfy,
-//! and the user's contact mode.
 use crate::{cfg, dir, log, now_iso};
 use serde_json::{Value, json};
 use std::{sync::LazyLock, time::Duration};
 
 pub static HTTP: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
 
-// ---- GPU voice + hearing: the user's own voice cloned by Qwen3-TTS, and Whisper large. One instance is shared by
-// all sessions and exits itself after 30 idle minutes.
 const QWEN: &str = "http://127.0.0.1:47811";
 
 pub async fn qwen_up() -> bool {
@@ -17,7 +13,6 @@ pub async fn qwen_up() -> bool {
 
 static LOADING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
-/// Starts the GPU server if needed (40-70 s); false on machines without it (e.g. the laptop).
 pub async fn load_qwen() -> bool {
     let _one_at_a_time = LOADING.lock().await;
     if qwen_up().await {
@@ -48,7 +43,6 @@ pub async fn load_qwen() -> bool {
     false
 }
 
-/// Calls the GPU server; if it has exited (idle timeout), starts it again once.
 pub async fn gpu(route: &str, body: Vec<u8>, context: Option<&str>) -> Option<reqwest::Response> {
     for _ in 0..2 {
         if !load_qwen().await {
@@ -64,7 +58,7 @@ pub async fn gpu(route: &str, body: Vec<u8>, context: Option<&str>) -> Option<re
                 log(format!("gpu {route} {}", r.status()));
                 return None;
             }
-            Err(_) => {} // it exited between the health check and the call: start it again
+            Err(_) => {}
         }
     }
     None
@@ -74,8 +68,6 @@ fn f32_bytes(pcm: &[f32]) -> Vec<u8> {
     pcm.iter().flat_map(|x| x.to_le_bytes()).collect()
 }
 
-/// Speech-to-text, prompted with what Claude just said so names are heard right.
-/// ponytail: no CPU fallback (the old small-Whisper path); without the GPU server the user types instead.
 pub async fn hear(pcm: &[f32], context: &str) -> String {
     match gpu("/stt", f32_bytes(pcm), Some(context)).await {
         Some(r) => r.text().await.unwrap_or_default().trim().to_string(),
@@ -86,7 +78,6 @@ pub async fn hear(pcm: &[f32], context: &str) -> String {
     }
 }
 
-/// Live captions: GPU only and never starts it; None = skipped.
 pub async fn hear_quick(pcm: &[f32], context: &str) -> Option<String> {
     if !qwen_up().await {
         return None;
@@ -109,8 +100,6 @@ pub struct Audio {
     pub kind: &'static str,
 }
 
-/// ElevenLabs, for machines without a GPU (e.g. the laptop): the user's own ElevenLabs voice, as 24 kHz WAV.
-/// Needs ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID.
 async fn eleven(text: &str) -> Option<Audio> {
     let key = std::env::var("ELEVENLABS_API_KEY").ok()?;
     let voice = std::env::var("ELEVENLABS_VOICE_ID").ok()?;
@@ -130,7 +119,6 @@ async fn eleven(text: &str) -> Option<Audio> {
     Some(Audio { data: wav(&r.bytes().await.ok()?, 24_000), kind: "audio/wav" })
 }
 
-/// A whole-file line: the cloned voice if the GPU server is up, else ElevenLabs; None = the phone's own voice.
 pub async fn synth(text: &str) -> Option<Audio> {
     if qwen_up().await {
         if let Some(r) = gpu("/tts", text.as_bytes().to_vec(), None).await {
@@ -142,10 +130,9 @@ pub async fn synth(text: &str) -> Option<Audio> {
     eleven(text).await
 }
 
-// ---- Ringing: a generic alert on the private ntfy topic; the phone app rings on the title "Claude is calling". ----
 pub async fn ring(link: &str, reason: Option<&str>) {
     let agent = &cfg().agent;
-    // ponytail: message text is not sent through ntfy (public server); only a generic alert + private link.
+    // ntfy.sh is public: message text never goes through it, only a generic alert and a private link.
     let body = match reason {
         Some(r) => format!("{agent} needs you: {r}"),
         None => format!("{agent} needs to talk to you"),
@@ -165,9 +152,6 @@ pub async fn ring(link: &str, reason: Option<&str>) {
     }
 }
 
-// ---- Contact mode, shared by every agent (Discord Input MCP reads the same file):
-// "call" = calls only, "text" = Discord only, "both", "none" = don't contact, "wake" = asleep but ring until they pick
-// up (calls only), "sleep" = asleep: no contact, keep working on your own judgement.
 pub const MODES: [&str; 6] = ["call", "text", "both", "none", "wake", "sleep"];
 
 pub fn read_status() -> Value {
@@ -186,7 +170,7 @@ fn iso_ms(s: &str) -> u64 {
     humantime::parse_rfc3339_weak(s).ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_millis() as u64)
 }
 
-/// The last 12 hours of messages on the ntfy topic (what ntfy keeps), one JSON object per line.
+/// ntfy keeps the last 12 hours.
 async fn ntfy_recent() -> Option<String> {
     let r = HTTP
         .get(format!("https://ntfy.sh/{}/json?poll=1&since=12h", cfg().topic))
@@ -197,7 +181,6 @@ async fn ntfy_recent() -> Option<String> {
     r.text().await.ok()
 }
 
-/// The phone app's Call button publishes "Call request"; one from the last 5 minutes means the user asked for this call.
 fn call_requested_in(lines: &str, now_secs: u64) -> bool {
     lines
         .lines()
@@ -207,13 +190,12 @@ fn call_requested_in(lines: &str, now_secs: u64) -> bool {
 
 pub async fn call_requested() -> bool {
     if cfg().test_status {
-        return false; // tests never read the real topic
+        return false;
     }
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
     ntfy_recent().await.is_some_and(|t| call_requested_in(&t, now))
 }
 
-/// The phone app publishes its setting on the ntfy topic (title "Contact mode"); take it if it's newer than the file.
 pub async fn contact_mode() -> String {
     let file = read_status();
     let mode = file["mode"].as_str().unwrap_or("both").to_string();
@@ -232,7 +214,7 @@ pub async fn contact_mode() -> String {
     if let Some(latest) = poll.await {
         let new = latest["message"].as_str().unwrap_or("").trim();
         let at = latest["time"].as_u64().unwrap_or(0) * 1000;
-        // >= : ntfy times are whole seconds, so two changes in one second tie; the later message wins.
+        // ntfy times are whole seconds, so two changes in one second tie.
         if at >= iso_ms(file["updatedAt"].as_str().unwrap_or("")) && new != mode {
             let when = std::time::UNIX_EPOCH + Duration::from_millis(at);
             write_status(new, humantime::format_rfc3339_millis(when).to_string(), "phone app");
@@ -244,7 +226,6 @@ pub async fn contact_mode() -> String {
 
 pub async fn set_contact_mode(mode: &str) {
     write_status(mode, now_iso(), "claude");
-    // Publish too, so the phone app shows the new mode. Never from tests: they must not change the real phone.
     if !cfg().test_status {
         let _ = HTTP
             .post(format!("https://ntfy.sh/{}", cfg().topic))
@@ -256,7 +237,6 @@ pub async fn set_contact_mode(mode: &str) {
     }
 }
 
-/// 16-bit mono PCM as a WAV file (what the phone plays).
 fn wav(pcm: &[u8], rate: u32) -> Vec<u8> {
     let n = pcm.len() as u32;
     let mut w = Vec::with_capacity(44 + pcm.len());

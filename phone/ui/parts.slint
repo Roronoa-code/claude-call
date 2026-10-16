@@ -1,9 +1,4 @@
-// Building blocks of the call screen: colours, icons, crossfading text, Claude's spoken lines, the voice glow,
-// the thinking orb, round controls, and surfaces that grow out of their button.
-
-// The big caption. `lit` is the part already spoken (the start of `text`); key changes swap it with a crossfade.
 export struct Cap { key: int, label: string, text: string, lit: string, size: int, tone: string, orb: bool, said: string, fresh: string, rest: string }
-// A transcript row.
 export struct Msg { me: bool, text: string, lit: string, said: string, fresh: string, rest: string }
 
 export global T {
@@ -17,7 +12,6 @@ export global T {
     out property <color> btn: #26282d;
     out property <color> btn-on: #ececee;
     out property <color> unlit: #f2f2f347;
-    // Liquid: a spring-like ease for opening, a sine for closing, ease-out for the rest.
     out property <easing> spring: cubic-bezier(0.2, 1.1, 0.3, 1);
     out property <easing> out: cubic-bezier(0.16, 1, 0.3, 1);
     out property <easing> close: cubic-bezier(0.33, 0, 0.3, 1);
@@ -44,7 +38,7 @@ export global Icons {
     out property <string> captions: "M6 5h12a3 3 0 0 1 3 3v8a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3v-8a3 3 0 0 1 3 -3z M7 10h4 M13 10h4 M7 14h7 M16 14h1";
     out property <string> keyboard: "M5 6h14a2.5 2.5 0 0 1 2.5 2.5v7a2.5 2.5 0 0 1 -2.5 2.5h-14a2.5 2.5 0 0 1 -2.5 -2.5v-7a2.5 2.5 0 0 1 2.5 -2.5z M6.5 10h0.01 M10 10h0.01 M14 10h0.01 M17.5 10h0.01 M7.5 14h9";
     out property <string> check: "M5 12.5L10 17.5L19 7";
-    out property <string> alert: "M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0 M12 7.5v5 M12 16.3v0.01"; // something still to do
+    out property <string> alert: "M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0 M12 7.5v5 M12 16.3v0.01";
     out property <string> phone: "M5 4h3.2l1.6 4l-2 1.3a10 10 0 0 0 4.9 4.9l1.3 -2l4 1.6V17a2 2 0 0 1 -2 2A15 15 0 0 1 3 6a2 2 0 0 1 2 -2z";
     out property <string> send: "M5 12h13 M13 6l6 6l-6 6";
     out property <string> back: "M19 12H6 M11 6l-6 6l6 6";
@@ -57,14 +51,12 @@ export global Icons {
     out property <string> zzz: "M3 12h8l-8 8h8 M15 4h6l-6 6h6";
     out property <string> wide: "M4 8h16a2 2 0 0 1 2 2v4a2 2 0 0 1 -2 2h-16a2 2 0 0 1 -2 -2v-4a2 2 0 0 1 2 -2z M8 8v8 M12 8v8 M16 8v8";
     out property <string> grid: "M5 4h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1v-4a1 1 0 0 1 1 -1z M15 4h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1v-4a1 1 0 0 1 1 -1z M5 14h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1v-4a1 1 0 0 1 1 -1z M15 14h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1v-4a1 1 0 0 1 1 -1z";
-    out property <string> later: "M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0 M12 7.5v4.5l3 2"; // a clock: call back later
+    out property <string> later: "M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0 M12 7.5v4.5l3 2";
     out property <string> hash: "M5 9h14 M5 15h14 M10.5 4l-2 16 M15.5 4l-2 16";
-    out property <string> more: "M4.4 12a1.1 1.1 0 1 0 2.2 0a1.1 1.1 0 1 0 -2.2 0 M10.9 12a1.1 1.1 0 1 0 2.2 0a1.1 1.1 0 1 0 -2.2 0 M17.4 12a1.1 1.1 0 1 0 2.2 0a1.1 1.1 0 1 0 -2.2 0"; // three dots
-    out property <string> updown: "M8 9l4 -4l4 4 M8 15l4 4l4 -4"; // drag up or down
+    out property <string> more: "M4.4 12a1.1 1.1 0 1 0 2.2 0a1.1 1.1 0 1 0 -2.2 0 M10.9 12a1.1 1.1 0 1 0 2.2 0a1.1 1.1 0 1 0 -2.2 0 M17.4 12a1.1 1.1 0 1 0 2.2 0a1.1 1.1 0 1 0 -2.2 0";
+    out property <string> updown: "M8 9l4 -4l4 4 M8 15l4 4l4 -4";
 }
 
-// Text that changes crossfades in place: the old line rises out as the new one rises in.
-// Each of the two slots is below (waiting), shown, or above (gone); "above -> below" is instant.
 export component SwapText {
     in property <string> text;
     in property <length> font-size: 14px;
@@ -73,12 +65,11 @@ export component SwapText {
     in property <int> weight: 400;
     in property <TextWrap> wrap: no-wrap;
     in property <TextVerticalAlignment> valign: center;
-    in property <length> tracking; // letter spacing
-    // Set: only a new key swaps; other text changes (a ticking clock) just update the shown line.
+    in property <length> tracking;
     in property <string> key;
     property <string> a;
     property <string> b;
-    property <int> pa: 1; // 0 below, 1 shown, 2 above
+    property <int> pa: 1;
     property <int> pb: 0;
     property <string> shown-key;
     init => { a = text; shown-key = key; }
@@ -112,8 +103,6 @@ export component SwapText {
     }
 }
 
-// A line of Claude's: every word laid out from the start (so it never reflows), the spoken part lit.
-// Greedy word wrap of a prefix breaks exactly where the whole line does, so the lit copy lines up.
 export component Spoken inherits VerticalLayout {
     in property <string> text;
     in property <string> lit;
@@ -122,8 +111,7 @@ export component Spoken inherits VerticalLayout {
     in property <color> lit-color: T.fg;
     in property <color> dim-color: T.unlit;
     in property <bool> hide-unsaid: false;
-    in property <float> tracking: 0; // letter spacing, in em
-    // The whole line sits in the layout (so wrapping sets its height); the lit copy is drawn on top of it.
+    in property <float> tracking: 0;
     full := Text {
         text: root.text;
         wrap: word-wrap;
@@ -149,15 +137,12 @@ export component Spoken inherits VerticalLayout {
     }
 }
 
-// A surface that grows out of the button that opened it and goes back into it: it starts as exactly the button
-// (its shape and colour), springs open, and closes back without a bounce. The button's face fades as the contents
-// fade in.
 export component Morph {
     in property <bool> open;
-    in property <length> fx; // the button, in the morph's parent's coordinates
+    in property <length> fx;
     in property <length> fy;
     in property <length> fsize: 64px;
-    in property <length> fw: fsize; // ...a button that isn't round (a row): its own size and corners
+    in property <length> fw: fsize;
     in property <length> fh: fsize;
     in property <length> fradius: Math.min(fw, fh) / 2;
     in property <length> tx;
@@ -167,19 +152,13 @@ export component Morph {
     in property <length> radius: 24px;
     in property <string> face;
     in property <color> panel: T.btn;
-    in property <color> from: panel; // the button's colour, which the surface starts as
-    // A sheet's contents grow with it out of the button; false: they stay full size and the surface uncovers them,
-    // a window opening out of what was tapped (a row opening into a screen), which itself fades in over the row and
-    // out into it again.
+    in property <color> from: panel;
     in property <bool> zoom: true;
-    // One value from shut (0, exactly the button) to open (1), so shape, place and corners always move together
-    // and closing always lands back in the button, from wherever it was.
     property <float> k: open ? 1 : 0;
     animate k { duration: open ? 500ms : 300ms; easing: open ? T.spring : T.close; }
-    // The spring's overshoot settles in place: a full-width sheet pushed past its spot ran off the screen's edges.
     out property <float> g: Math.min(1, k);
     out property <bool> shown: open || k > 0.002;
-    visible: shown; // at once when opening, so its text field can take focus
+    visible: shown;
     x: fx + (tx - fx) * g;
     y: fy + (ty - fy) * g;
     width: fw + (tw - fw) * g;
@@ -193,15 +172,12 @@ export component Morph {
         background: root.panel.mix(root.from, root.g);
         opacity: root.zoom ? 1 : Math.min(1, root.g * 5);
         clip: true;
-        // The button's face fades as the contents fade in.
         Icon {
             d: root.face;
             x: (parent.width - self.width) / 2;
             y: (parent.height - self.height) / 2;
             opacity: Math.max(0, 1 - root.k * 4);
         }
-        // The contents are there from early on (no empty panel), small inside the growing surface and drawn back
-        // into the button as it closes; they fade out before it is button-sized again.
         Rectangle {
             x: root.tx - root.x;
             y: root.ty - root.y;
@@ -209,9 +185,8 @@ export component Morph {
             height: root.th;
             transform-origin: { x: root.fx + root.fw / 2 - root.tx, y: root.fy + root.fh / 2 - root.ty };
             transform-scale: root.zoom ? Math.min(root.width / root.tw, root.height / root.th) : 1;
-            // (a window's contents leave just before it does, so they never show over the row it fades into)
             opacity: Math.max(0, Math.min(1, root.zoom ? (root.g - 0.12) * 3 : (root.g - 0.2) * 5));
-            TouchArea { } // a tap on the surface stays on it (never reaches what is behind)
+            TouchArea { }
             @children
         }
     }

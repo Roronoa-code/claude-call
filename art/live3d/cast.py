@@ -1,6 +1,4 @@
-# Renders the cast from the motion timelines (motion/ -> cast-motion <dir>): for each character a pose sheet, a
-# side-by-side with its reference art, the 27 s story as a 30 fps MP4 and a contact strip, and a frame-to-frame
-# jump report. Usage: python cast.py [names...]   (default: all)
+# Usage: python cast.py [names...]   (default: all)
 import sys, os, json, subprocess
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from render import render, over, stage, OUT, SIZE, np, Image
@@ -8,7 +6,7 @@ from refs import ref
 from PIL import ImageDraw, ImageFont
 
 FFMPEG = r'B:\Tools\MediaTools\bin\ffmpeg.exe'
-SCALE = 2.75  # a phone's device pixels per logical pixel
+SCALE = 2.75
 TL = os.path.join(OUT, 'timelines')
 NAMES = ['null', 'haiku', 'sonnet', 'opus', 'clawd']
 try:

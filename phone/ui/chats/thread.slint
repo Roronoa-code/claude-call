@@ -1,6 +1,3 @@
-// A chat: the character stands beside the text box, by your thumb: it thinks while the PC works, talks as the
-// answer comes in, looks at you while its question waits, hops when tapped. The agent's turns sit on soft cards;
-// mine are warm bubbles. A new chat shows the character big in the middle until the first message.
 import { T, Icon, Icons } from "../parts.slint";
 import { Home } from "../home_parts.slint";
 import { Chats, ChatRow, Ink, IconButton, BackButton } from "../chat.slint";
@@ -11,36 +8,30 @@ import { Composer } from "field.slint";
 import { PhotoView } from "photo.slint";
 
 export component ChatThread inherits Rectangle {
-    in property <length> kb; // the keyboard over the window, frame by frame as it slides (home.slint)
-    callback pulled(length); // pulled down this far: the sheet follows the finger (chats/open.slint)
-    callback let-go(bool); // ...and let go: true closes the chat
+    in property <length> kb;
+    callback pulled(length);
+    callback let-go(bool);
     background: Ink.bg;
     property <length> bottom: self.height - max(root.kb, Home.sab) - 10px;
-    // the character's room beside the field (a new chat's stands big in the middle until the first message)
-    // No text box: the updates thread, or a question that has its answer (or expired): one plain line instead.
     property <bool> bare: Chats.readonly || Chats.ended != "";
     property <bool> ended: Chats.ended != "";
     changed ended => { if (self.ended) { field.blur(); } }
     property <length> pal: bare || Chats.empty ? 0px : 76px;
     animate pal { duration: 320ms; easing: T.out; }
-    // Pull down to close: on the header, or anywhere on the thread while it is at its top. With the keyboard up, a
-    // pull only puts it away (the field and the sheet never slide at once); the next one closes. Past 30% of the
-    // height, or a quick flick down, closes; less springs back. One light tick as it passes the point of closing.
     property <bool> pulling;
     property <bool> keys-only;
     property <length> from-y;
     property <length> last-y;
     property <duration> last-t;
-    property <float> speed; // px per ms, downwards
+    property <float> speed;
     property <bool> past;
-    property <length> shift; // how far the sheet (and so this thread, and the pull's own coordinates) has moved
-    // dy: the finger's travel as the swipe handler sees it, inside the moving sheet
+    property <length> shift;
     function drag(local-dy: length) {
         let dy = local-dy + root.shift;
         if (!root.pulling) {
             root.pulling = true;
             root.keys-only = root.kb > 0 || field.focused;
-            root.from-y = dy; // where Slint saw the swipe begin: the sheet moves from there, no jump
+            root.from-y = dy; // the swipe starts only after a minimum drag
             root.last-y = dy;
             root.last-t = animation-tick();
             root.speed = 0;
@@ -68,9 +59,9 @@ export component ChatThread inherits Rectangle {
         root.pulling = false;
         if (root.keys-only) { return; }
         let p = max(0px, dy - root.from-y);
-        let fresh = animation-tick() - root.last-t < 100ms; // a finger held still has no speed left
+        let fresh = animation-tick() - root.last-t < 100ms;
         let v = fresh ? root.speed : 0;
-        root.shift = 0; // the sheet goes back (or away): the next pull starts from where the finger is
+        root.shift = 0;
         root.let-go(p > 0px && (v > 0.9 || (p > root.height * 0.3 && v > -0.5)));
     }
     function cancel-pull() {
@@ -89,13 +80,11 @@ export component ChatThread inherits Rectangle {
         log := Log {
             y: Home.sat + 60px;
             width: parent.width;
-            // The thread ends at the field's foot, so the keyboard is never inside it: Slint's own scroll limits
-            // (which leave out what the keyboard covers) then match ours; it runs on under the field and its fade.
+            // Slint's scroll limits leave out what the keyboard covers.
             height: root.bare ? parent.height - self.y : field.y + field.height - self.y;
             side: 14px;
             pad-bottom: Chats.readonly ? Home.sab + 28px : root.ended ? parent.height - field.y + 10px : field.height + 18px;
-            tapped => { field.blur(); } // a tap on the thread puts the keyboard away (what is typed stays)
-            // my last message's receipt (Sending…, Sent, Delivered, Read), staying put while the PC thinks below it
+            tapped => { field.blur(); }
             if Chats.status != "": HorizontalLayout {
                 alignment: end;
                 padding-top: 6px;
@@ -109,7 +98,6 @@ export component ChatThread inherits Rectangle {
                         font-weight: Chats.action == "retry" ? 600 : 400;
                         vertical-alignment: center;
                     }
-                    // the whole row is 48px to touch
                     TouchArea {
                         y: -13px;
                         height: 48px;
@@ -129,14 +117,11 @@ export component ChatThread inherits Rectangle {
                 Shimmer { x: 6px; y: 22px + (1 - parent.k) * 6px; text: Chats.thinking; font-size: 14.5px; base: #8a8c93; }
             }
         }
-        // A new chat: its character big in the middle, inviting the first message.
         VerticalLayout {
             property <length> top: Home.sat + 60px;
             property <length> room: field.y - 8px - self.top;
             x: 24px;
             width: parent.width - 48px;
-            // centred in the room above the field, riding up with it as the keyboard comes (a lag let the field slide over
-        // it); it lifts a little as it goes
         property <length> lift: Chats.empty ? 0px : 16px;
         animate lift { duration: 320ms; easing: T.out; }
         y: self.top + max(0px, (self.room - self.preferred-height) / 2) - self.lift;
@@ -169,8 +154,6 @@ export component ChatThread inherits Rectangle {
             Text { text: "Your message goes to the PC."; font-size: 15px; color: Ink.muted; horizontal-alignment: center; }
         }
     }
-    // The header: back, the name (centred) and where things stand. A pull down here closes the chat from anywhere
-    // in the thread.
     SwipeGestureHandler {
         y: 0;
         height: Home.sat + 60px;
@@ -226,13 +209,9 @@ export component ChatThread inherits Rectangle {
         visible: !Chats.readonly;
         y: field.y - 30px;
         height: parent.height - self.y;
-        // opaque 55px down, as it always was with the keyboard down; with it up the thread never shows beside the field
         property <float> solid: 55px / max(55px, self.height);
         background: @linear-gradient(180deg, #0e0e1000 0%, #0e0e10 solid * 100%);
     }
-    // The character, standing by the field (it rides up with the keyboard). A tap: a hop.
-    // One character at a time: in a new chat it stands big in the middle; after the first message it appears here
-    // only once the big one has gone.
     if !root.bare: Rectangle {
         property <bool> stand: !Chats.empty;
         opacity: stand ? 1 : 0;
@@ -248,10 +227,10 @@ export component ChatThread inherits Rectangle {
             y: 0;
             width: parent.width;
             height: 74px;
-            visible: !Chats.flying; // on its way from the list (open.slint)
+            visible: !Chats.flying;
             face: Chats.face;
             pose: Chats.waiting ? "think" : "idle";
-            k: 0.26; // faces.rs SMALL_K
+            k: 0.26;
             live: Chats.live;
             source: Chats.face-live;
             lw: Chats.face-w;
@@ -266,8 +245,6 @@ export component ChatThread inherits Rectangle {
         width: parent.width - 20px - root.pal;
         y: root.bottom - self.height;
     }
-    // Scrolled up from the end: a round ↓ over the field's right end takes you back down (to the start of an answer
-    // that came in meanwhile, which also lights a warm dot on it).
     if !Chats.readonly: Rectangle {
         property <bool> show: log.far && !Chats.viewing;
         x: parent.width - 12px - 48px;
@@ -297,7 +274,6 @@ export component ChatThread inherits Rectangle {
             clicked => { log.to-latest(); }
         }
     }
-    // An answered or expired question: one plain line where the text box was.
     if root.ended: Text {
         x: 28px;
         y: field.y;
@@ -310,7 +286,6 @@ export component ChatThread inherits Rectangle {
         vertical-alignment: center;
         wrap: word-wrap;
     }
-    // A message that couldn't be kept to send: said just above the text box for a few seconds (what is typed stays).
     if !root.bare: Text {
         property <bool> on: Chats.trouble != "";
         x: field.x + 14px;

@@ -19,7 +19,6 @@ android {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Personal sideload build: signed with this PC's debug key so updates install over it.
             signingConfig = signingConfigs.getByName("debug")
         }
     }
@@ -30,7 +29,6 @@ android {
     }
 }
 
-// The call screen is the Rust library in phone/: built for the phone (arm64) before every app build.
 val rustLib = tasks.register<Exec>("rustLib") {
     workingDir = rootProject.file("..")
     // Slint finds the Android platform jar itself, but not with this SDK's "android-37.0" folder names.

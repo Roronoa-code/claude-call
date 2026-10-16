@@ -1,17 +1,8 @@
-//! The live cast's framing (where each character stands in its picture, for every screen that shows one), and the
-//! live Clawd and Null on the home screen: real 3D toys drawn by the GPU (live_gl.rs, shaders in art/live3d),
-//! not swapped sprites. Each is a Cast (cast.rs: springs, saccades, blinks, breathing, hops); this gives the pair
-//! their home life: they act out the contact mode (Null's face shows it, Clawd copies him a beat later; asleep in the
-//! sleep modes, where a tap wakes one for a while), a drag on Null rolls his face through the modes, Clawd is now and
-//! then lost in thought, and both watch a finger.
 use crate::cast::{Cast, Hold, Mat, State, Who};
 
-/// Each image's size in logical pixels; toys.slint draws them at exactly these sizes.
 pub const CLAWD_SIZE: (f32, f32) = (300.0, 250.0);
 pub const NULL_SIZE: (f32, f32) = (150.0, 230.0);
 
-/// A character's picture at home size (k = 1), in logical px: its size and its body's width. ui/actor.slint has the
-/// same picture sizes, and where the body stands in them.
 pub struct Frame {
     pub w: f32,
     pub h: f32,
@@ -24,50 +15,36 @@ pub fn frame(who: Who) -> Frame {
     }
 }
 
-/// Room above the picture for hops and Haiku's tufts. The shaders frame by height from the bottom, so drawing a
-/// taller view than `uRes` only adds sky; nothing moves or scales.
 pub const HEAD: f32 = 40.0;
 
-/// Null stands beside Clawd at home; alone (calls, chats) he is drawn this much larger, so his thin frame reads at
-/// a Clawd's size. actor.slint matches it.
 pub const NULL_SOLO: f32 = 1.2;
 
-/// `k` for `who` drawn alone.
 pub fn solo(who: Who, k: f32) -> f32 {
     if who == Who::Null { k * NULL_SOLO } else { k }
 }
 
-/// The texture (logical px) a character drawn alone at `k` needs: the larger of a Clawd's and a solo Null's.
 pub fn solo_size(k: f32) -> (f32, f32) {
     let (c, n) = (frame(Who::Clawd(Mat::Vinyl)), frame(Who::Null));
     (c.w.max(n.w * NULL_SOLO) * k, (c.h + HEAD).max((n.h + HEAD) * NULL_SOLO) * k)
 }
 
-/// For drawing `who` at `k` times home size on a screen of `sf` px per logical px: its uRes and the viewport (the
-/// picture plus HEAD above it), in px.
 pub fn view(who: Who, k: f32, sf: f32) -> ((i32, i32), (i32, i32)) {
     let f = frame(who);
     let px = |v: f32| (v * k * sf).round().max(1.0) as i32;
     ((px(f.w), px(f.h)), (px(f.w), px(f.h + HEAD)))
 }
 
-/// Whether a character last drawn at `last` needs a new frame at `now`: 60 fps while it moves, 20 while it only
-/// breathes, 10 asleep. The frames fall on one shared clock, so characters on the same screen are drawn (and the
-/// screen redrawn) together, not each on its own beat (which redrew the screen twice as often).
 pub fn due(c: &Cast, last: f32, now: f32) -> bool {
     let fps = if c.moving() { 60.0 } else if c.state() == State::Sleep { 10.0 } else { 20.0 };
-    // a hair early, so a 16 ms timer that ticks just before the line still makes this frame
     ((now + 0.004) * fps).floor() > ((last + 0.004) * fps).floor()
 }
 
-const WAKE_FOR: f32 = 8.0; // a tap in a quiet mode wakes him this long
+const WAKE_FOR: f32 = 8.0;
 
-/// Logical px of drag on Null per mode; his face rolls through them in settings::MODES order (call, text, both,
-/// none, wake, sleep), dragging up towards Calls only.
 pub const STEP: f32 = 48.0;
 const LAST: f32 = 5.0;
-const LATE: f32 = 0.22; // Clawd turns to see what Null shows a beat later
-const DWELL: f32 = 0.3; // a face held this long gets its full reaction (a cheer, Clawd talking)
+const LATE: f32 = 0.22;
+const DWELL: f32 = 0.3;
 
 fn nearest(p: f32) -> usize {
     p.round().clamp(0.0, LAST) as usize
@@ -77,17 +54,16 @@ pub struct Pair {
     pub clawd: Cast,
     pub null: Cast,
     awake_until: (f32, f32),
-    moment: f32, // Clawd's next idle moment starts
+    moment: f32,
     moment_end: f32,
     rng: u64,
-    /// The mode the pair act out (an index into settings::MODES): the stored one, or the one a drag shows.
     shown: usize,
     shown_at: f32,
-    acted: (usize, usize), // the mode each one last reacted to
-    copy: usize,           // the mode Clawd copies, a beat after Null shows it
+    acted: (usize, usize),
+    copy: usize,
     talk_until: f32,
-    dial: Option<(usize, f32)>, // a drag on Null: the mode it started from, and where it is now (a fractional mode)
-    roll: (f32, f32),           // the face's place (a fractional mode) and speed, springing to `shown` after a drag
+    dial: Option<(usize, f32)>,
+    roll: (f32, f32),
     last: f32,
 }
 
@@ -118,7 +94,6 @@ impl Pair {
         (self.rng % 10_000) as f32 / 10_000.0
     }
 
-    /// A tap on one of them (`codex` for Null): a hop, and awake for a while even in a quiet mode.
     pub fn hop(&mut self, codex: bool, now: f32) {
         if codex {
             self.awake_until.1 = now + WAKE_FOR;
@@ -129,18 +104,14 @@ impl Pair {
         }
     }
 
-    /// The finger, in logical pixels from Clawd's eyes, and how far right Null stands of him; `down` false when it
-    /// lifts. Both watch it.
     pub fn point(&mut self, x: f32, y: f32, null_dx: f32, down: bool, now: f32) {
         self.clawd.point(x, y, down, now);
         self.null.point(x - null_dx, y, down, now);
     }
 
-    /// A drag on Null, `dy` logical px from where it began (negative: up): the mode his face now shows.
     pub fn drag(&mut self, dy: f32) -> usize {
         let from = self.dial.map_or(self.shown.min(5), |d| d.0);
         let mut p = from as f32 + dy / STEP;
-        // past either end it gives a little, like rubber
         let give = |x: f32| 0.3 * (1.0 - (-x / 0.3).exp());
         if p < 0.0 {
             p = -give(-p);
@@ -152,7 +123,6 @@ impl Pair {
         nearest(p)
     }
 
-    /// The finger lifts (`keep`), or the drag is cancelled: the mode to keep. The face springs home.
     pub fn release(&mut self, keep: bool) -> usize {
         match self.dial.take() {
             Some((_, p)) if keep => nearest(p),
@@ -161,7 +131,6 @@ impl Pair {
         }
     }
 
-    /// A small nudge of Null's face, up and back, as a hint that it rolls: `t` seconds into it (it lasts 1.4 s).
     pub fn nudge(&mut self, t: f32) {
         if self.dial.is_none() && (0.0..1.4).contains(&t) && self.shown <= 5 {
             let k = (t / 1.4 * std::f32::consts::TAU).sin() * (1.0 - t / 1.4);
@@ -169,22 +138,19 @@ impl Pair {
         }
     }
 
-    /// Advances both to `now` (seconds), acting out `mode` (an index into settings::MODES) unless a drag shows another.
     pub fn tick(&mut self, now: f32, mode: usize) {
         let dt = (now - self.last).clamp(0.0, 0.05);
         self.last = now;
         let m = self.dial.map_or(mode.min(5), |d| nearest(d.1));
         if self.shown > 5 {
-            // opening the app: already in the mode, no reactions
             (self.shown, self.shown_at, self.acted, self.copy, self.roll) = (m, now - DWELL, (m, m), m, (m as f32, 0.0));
         }
         if m != self.shown {
             if self.dial.is_none() {
-                self.roll = (m as f32, 0.0); // changed elsewhere: the face changes in place
+                self.roll = (m as f32, 0.0);
             }
             (self.shown, self.shown_at) = (m, now);
         }
-        // after a drag the face springs home with a little overshoot
         if self.dial.is_none() {
             let (to, w) = (self.shown as f32, std::f32::consts::TAU * 2.2);
             self.roll.1 += (w * w * (to - self.roll.0) - 2.0 * 0.62 * w * self.roll.1) * dt;
@@ -204,7 +170,6 @@ impl Pair {
         self.null.tick(now);
     }
 
-    /// Null's face is the mode: a voice wave, typing dots, happy, heads down at the laptop, on watch, dark.
     fn act_null(&mut self, now: f32, settled: bool) {
         let m = self.shown;
         let awake = now < self.awake_until.1;
@@ -221,17 +186,16 @@ impl Pair {
         n.set_hold(hold);
         n.attend(m == 0 || m == 4);
         if n.state() != State::Happy && n.state() != state {
-            n.set_state(state); // a cheer runs its course first
+            n.set_state(state);
         }
         if settled && self.acted.1 != m {
             self.acted.1 = m;
             if m == 2 {
-                n.set_state(State::Happy); // a hop for Calls and messages
+                n.set_state(State::Happy);
             }
         }
     }
 
-    /// Clawd copies what Null shows, a beat later: talks to you, reads Null's laptop, cheers, turns to his work, sleeps.
     fn act_clawd(&mut self, now: f32, m: usize, settled: bool) {
         let fresh = settled && self.acted.0 != m && m == self.shown;
         if fresh {
@@ -258,9 +222,8 @@ impl Pair {
             c.set_state(state);
         }
         if fresh && m == 2 {
-            c.set_state(State::Happy); // a cheer, arms up
+            c.set_state(State::Happy);
         }
-        // Now and then, while just waiting for you, Clawd looks up, thinking.
         if (m == 0 || m == 2) && now >= self.moment && c.state() == State::Idle {
             c.set_state(State::Think);
             self.moment_end = now + 1.6 + self.rand() * 1.8;

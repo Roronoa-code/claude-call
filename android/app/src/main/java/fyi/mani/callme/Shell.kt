@@ -33,10 +33,6 @@ import android.window.BackEvent
 import android.window.OnBackAnimationCallback
 import android.window.OnBackInvokedDispatcher
 
-/**
- * The whole app is the Rust library (phone/ in the repo, libcallme_phone.so). Android must create these classes
- * itself, so each one only forwards to it (phone/src/shell.rs).
- */
 object Native {
     init { System.loadLibrary("callme_phone") }
     @JvmStatic external fun foreground(service: Service)
@@ -59,30 +55,18 @@ object Native {
     @JvmStatic external fun keyboard(dp: Float)
 }
 
-/**
- * Keeps Android's starting window (the app's dark background, themes.xml) on screen until Rust has drawn a frame
- * into the new surface (live_gl.rs). Without it the window counted as drawn while still empty, so a tap on the icon
- * showed the launcher until the GPU's first frame popped the app in.
- */
+/** Android counts the window as drawn while it is still empty, so the launcher would show until the GPU's first frame. */
 open class Shown : NativeActivity() {
-    // NativeActivity sets "keyboard: unspecified" here over the manifest's, which let Android raise the keyboard by
-    // itself on opening whenever Slint's always-focusable input view held the focus as the window got it (more often
-    // since the window now gets it only once drawn). Opening never shows it; a field tapped (or one that had it when
-    // the app was left) still does.
+    // NativeActivity sets "keyboard: unspecified" over the manifest's, which lets Android raise the keyboard by itself
+    // on opening whenever Slint's always-focusable input view holds the focus.
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN or WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         followKeyboard()
     }
     /**
-     * How far the keyboard reaches up from the bottom edge, in dp, sent to Rust (Native.keyboard) frame by frame as it
-     * slides, so the field rides on it. As an inset animation runs, Android first hands every view the insets it
-     * will end with; those are held back until it ends (Slint's own copy passes them on: a frame with the field
-     * already at the top). Rust draws on its own surface, about a frame after the keyboard's window moves (measured on
-     * the emulator: the field trailed by one frame), so while the keyboard rises the field is put where it will be a
-     * frame on, along its own curve: never under it. Going down it follows as it is (a frame early it went under the
-     * keyboard; a frame late only leaves a gap that closes). Edge to edge, as Android 15 and later make every app:
-     * without it older Android has no slide to follow, only where it ends up.
+     * During an inset animation Android first hands every view the insets it will end with, and Rust's own surface
+     * draws about a frame after the keyboard's window moves. Without edge to edge, older Android has no slide to follow.
      */
     private fun followKeyboard() {
         if (Build.VERSION.SDK_INT < 30) return
@@ -128,13 +112,11 @@ open class Shown : NativeActivity() {
         finish?.run()
         finish = drawingFinished
         waiting = true
-        surfaceRedrawNeeded(holder) // Rust draws now
-        window.decorView.postDelayed({ drawn() }, 3000) // never held by a frame that doesn't come
+        surfaceRedrawNeeded(holder)
+        window.decorView.postDelayed({ drawn() }, 3000)
     }
     fun drawn() = runOnUiThread { waiting = false; finish?.run(); finish = null }
 
-    // How often the screen's picture changes, told to the display so it can slow down while it rests (home.rs);
-    // 0: no preference. A touch lifts it at once.
     private var surface: Surface? = null
     private var fps = 0f
     override fun surfaceCreated(holder: SurfaceHolder) { super.surfaceCreated(holder); surface = holder.surface; fps = 0f }
@@ -147,11 +129,6 @@ open class Shown : NativeActivity() {
     }
     override fun onUserInteraction() { super.onUserInteraction(); rate(0f) }
 
-    /**
-     * Empties the text field's copy of the text on the keyboard's side (Slint's input view) and restarts the keyboard
-     * on it, as a text box does when the app sets its text: a message was just sent while the keyboard was still
-     * putting a word together, and that word must not come back in the empty field.
-     */
     fun clearField() = runOnUiThread {
         val v = currentFocus ?: return@runOnUiThread
         val f = runCatching { v.javaClass.getDeclaredField("mEditable").apply { isAccessible = true } }.getOrNull() ?: return@runOnUiThread
@@ -160,14 +137,8 @@ open class Shown : NativeActivity() {
     }
 }
 
-/** The home screen (phone/src/home.rs). */
 class MainActivity : Shown() {
-    /**
-     * While something is open that Back closes (home.slint backable), the system back swipe is followed as it moves
-     * (Android 14+): the open chat slides with the thumb and a cancelled swipe puts it back. With nothing open this
-     * is unregistered, so Back reaches Slint as a key and the app goes to the background (home.slint).
-     * Registered after Slint's own callback and before the keyboard's, so the keyboard still goes first.
-     */
+    /** Back-swipe progress needs Android 14+. Registered after Slint's callback and before the keyboard's, so the keyboard goes first. */
     private var back: Any? = null
     fun backable(on: Boolean) = runOnUiThread {
         if (Build.VERSION.SDK_INT < 34) return@runOnUiThread
@@ -195,7 +166,6 @@ class MainActivity : Shown() {
     override fun onActivityResult(code: Int, result: Int, data: Intent?) { super.onActivityResult(code, result, data); if (code == 7) Native.picked(this, data) }
 }
 
-/** The call screen (phone/src/screen.rs). */
 class CallActivity : Shown() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -211,7 +181,6 @@ class CallActivity : Shown() {
     override fun onDestroy() { Native.callClosed(this); super.onDestroy() }
 }
 
-/** Keeps the call listener running (phone/src/service.rs). */
 class ListenService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int { Native.foreground(this); return START_STICKY }
@@ -222,34 +191,25 @@ class DeclineReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) = Native.declined(context, intent)
 }
 
-/** After a reboot or an app update, which otherwise leave the listener stopped until the app is opened. */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) = Native.start(context)
 }
 
-/** Widget tile taps. Not exported, so only this app's own taps can change the mode. */
 class ModeTap : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) = Native.modeTapped(context, intent)
 }
 
-/** A chat notification's Reply or answer button (phone/src/chat_alert.rs). Not exported: only this app's own buttons. */
 class ChatAction : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) = Native.chatAction(context, intent)
 }
 
-/** The contact-mode widget (phone/src/widget.rs). */
 open class ModeWidget : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) = Native.widgets(context)
     override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager, id: Int, options: Bundle) = Native.widgets(context)
 }
 
-/** Same widget, offered at 4x2 in the picker. */
 class ModeWidgetWide : ModeWidget()
 
-/**
- * Lets the video player read a video sent in a chat, by the PC or from this phone (filesDir/media, phone/src/inbox.rs). Not exported: only
- * the one-time read grant on the link the app opens reaches a file, and only a plain name inside that folder.
- */
 class MediaProvider : ContentProvider() {
     private fun file(uri: Uri): File? {
         val dir = File(context!!.filesDir, "media")

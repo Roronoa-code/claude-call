@@ -1,13 +1,4 @@
-"""Builds the voice's moods: several reference takes per mood, which the voice server clones from (one picked per
-sentence, so the same mood never sounds the same twice).
-
-Takes come from two places:
-  - the user's own ElevenLabs sample lines (voice/lines, cut by pause and transcribed), joined per mood below;
-  - mood_lines.json, generated in the user's ElevenLabs voice (needs ELEVENLABS_API_KEY; the voice is found by name).
-Each take is transcribed with the local Whisper (voice server on :47811) so the clone gets its exact words.
-Generated takes are kept in voice/moods and never generated twice (they cost ElevenLabs credits).
-  python make_moods.py
-"""
+"""Usage: python make_moods.py (needs ELEVENLABS_API_KEY and the voice server on :47811)."""
 import difflib
 import hashlib
 import io
@@ -24,11 +15,10 @@ import soundfile as sf
 HERE = Path(__file__).parent
 LINES, MOODS_DIR = HERE / "lines", HERE / "moods"
 VOICE_NAME = "American woman"
-MODEL = "eleven_v4"  # performs the [bracketed] tags; the user's samples were made with it
+MODEL = "eleven_v4"  # performs the [bracketed] tags
 SR = 24000
 TAG = re.compile(r"\[[^\]]*\]")
-SETTINGS = {"stability": 0.5, "similarity_boost": 0.75, "speed": 1.0}  # as the user's own samples (sp100 s50 sb75)
-# The user's own sample lines, joined into one take per mood.
+SETTINGS = {"stability": 0.5, "similarity_boost": 0.75, "speed": 1.0}
 FROM_SAMPLES = {
     "normal": ["sample2-01d", "sample2-02", "sample3-00", "sample3-01d", "sample3-02", "sample3-06e", "sample3-06f"],
     "tired": ["sample2-00", "sample2-01b", "sample2-04e", "sample2-05b", "sample3-03", "sample3-06a"],
@@ -54,7 +44,7 @@ def hear(audio):
 
 
 def generated(mood, i, line, voice_id):
-    path = MOODS_DIR / f"{mood}-{i + 1}-{hashlib.sha1(line.encode()).hexdigest()[:6]}.wav"  # a changed line is made again
+    path = MOODS_DIR / f"{mood}-{i + 1}-{hashlib.sha1(line.encode()).hexdigest()[:6]}.wav"
     if not path.exists():
         pcm = api(f"/v1/text-to-speech/{voice_id}?output_format=pcm_24000", {"text": line, "model_id": MODEL, "voice_settings": SETTINGS}, raw=True)
         sf.write(path, np.frombuffer(pcm, dtype="<i2").astype(np.float32) / 32768, SR, subtype="PCM_16")
@@ -85,7 +75,7 @@ def main():
                     texts[path] = hear(sf.read(path, dtype="float32")[0])
                     said = " ".join(TAG.sub(" ", line).split())
                     match = difflib.SequenceMatcher(None, said.lower(), texts[path].lower()).ratio()
-                    if match < 0.85:  # the take skipped, added or misread words: check it by ear, or change the line
+                    if match < 0.85:
                         print(f"  CHECK {path.name} ({match:.2f}): heard {texts[path]!r}")
         sub = api("/v1/user/subscription")
         print(f"ElevenLabs credits left: {sub['character_limit'] - sub['character_count']}")

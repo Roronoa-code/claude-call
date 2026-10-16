@@ -1,13 +1,4 @@
-//! Shared tunnel gateway: ONE Cloudflare quick tunnel for every CallMe server on this PC (one per Claude/Codex session).
-//! trycloudflare rate-limits new tunnels (HTTP 429), so servers don't open their own: each registers {token, port}
-//! here, and public requests are passed to the server whose call token (?t=) they carry, streamed straight through.
-//! Started hidden and detached by the first server that needs it; exits after 2 h with no servers registered.
-//!   Control (127.0.0.1:47810, never reachable through the tunnel):
-//!     GET  /health             -> { url, bornAt, backends }   url is null while the tunnel is (re)starting;
-//!                                 bornAt = when it became reachable (servers wait ~45 s after that before ringing)
-//!     POST /register {token, port}   servers repeat it every minute; entries lapse after 3 minutes
-//!   Public (127.0.0.1:47809, what the tunnel points at): everything else.
-//! Log: gateway.log
+//! trycloudflare rate-limits new tunnels (HTTP 429).
 use crate::{call::PORT, cfg, dir, voice::HTTP};
 use axum::{body::Body, extract::Request, http::StatusCode, response::IntoResponse};
 use serde_json::{Value, json};
@@ -21,7 +12,6 @@ use tokio::{io::AsyncBufReadExt, process::Command, sync::mpsc};
 const CONTROL: &str = "http://127.0.0.1:47810";
 const TUNNEL_SETTLE_MS: u64 = 45_000;
 
-// ---- Server side: find (or start) the gateway and register with it. ----
 async fn gateway_info() -> Option<Value> {
     let r = HTTP.get(format!("{CONTROL}/health")).timeout(Duration::from_secs(2)).send().await.ok()?;
     r.status().is_success().then_some(())?;
@@ -38,7 +28,6 @@ pub async fn ensure_gateway() -> bool {
     if gateway_info().await.is_some() {
         return true;
     }
-    // Detached and hidden: no console window, and it outlives this session for the others.
     if let Ok(exe) = std::env::current_exe() {
         let mut cmd = std::process::Command::new(exe);
         cmd.arg("gateway").current_dir(dir()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
@@ -62,8 +51,7 @@ pub fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64
 }
 
-/// The public address of this call server. A new trycloudflare address takes ~30 s to resolve on the phone, and a
-/// too-early lookup gets cached as "not found", so calls only ring once the tunnel is TUNNEL_SETTLE_MS old.
+/// A new trycloudflare address takes ~30 s to resolve on the phone, and a too-early lookup is cached as "not found".
 pub async fn ensure_tunnel() -> Result<String, String> {
     if cfg().local {
         return Ok(format!("http://127.0.0.1:{}", PORT.get().unwrap()));
@@ -76,23 +64,22 @@ pub async fn ensure_tunnel() -> Result<String, String> {
                 let wait = (g["bornAt"].as_u64().unwrap_or(0) + TUNNEL_SETTLE_MS).saturating_sub(now_ms());
                 tokio::time::sleep(Duration::from_millis(wait)).await;
                 if gateway_info().await.is_some_and(|n| n["url"] == g["url"]) {
-                    return Ok(g["url"].as_str().unwrap().to_string()); // still the same tunnel after settling
+                    return Ok(g["url"].as_str().unwrap().to_string());
                 }
                 continue;
             }
         }
-        tokio::time::sleep(Duration::from_secs(2)).await; // the gateway is (re)opening its tunnel; it retries by itself
+        tokio::time::sleep(Duration::from_secs(2)).await;
     }
     Err("could not open a tunnel (trycloudflare busy or offline; see gateway.log); try again in a few minutes".into())
 }
 
-// ---- The gateway process. ----
 struct Backend {
     port: u16,
     seen: Instant,
 }
 static BACKENDS: LazyLock<Mutex<HashMap<String, Backend>>> = LazyLock::new(Default::default);
-static TUNNEL: Mutex<(Option<String>, u64)> = Mutex::new((None, 0)); // url, bornAt
+static TUNNEL: Mutex<(Option<String>, u64)> = Mutex::new((None, 0));
 static CHILD_PID: Mutex<Option<u32>> = Mutex::new(None);
 
 fn glog(msg: &str) {
@@ -104,13 +91,12 @@ fn kill_tunnel() {
         let mut cmd = std::process::Command::new("taskkill");
         cmd.args(["/F", "/PID", &pid.to_string()]);
         #[cfg(windows)]
-        std::os::windows::process::CommandExt::creation_flags(&mut cmd, 0x0800_0000); // CREATE_NO_WINDOW: the gateway has no console, so taskkill would open one
+        std::os::windows::process::CommandExt::creation_flags(&mut cmd, 0x0800_0000);
         let _ = cmd.output();
     }
 }
 
 pub async fn run() {
-    // Both ports first: if another gateway already has them, this one just exits (no second tunnel).
     let (Ok(control), Ok(public)) =
         (tokio::net::TcpListener::bind("127.0.0.1:47810").await, tokio::net::TcpListener::bind("127.0.0.1:47809").await)
     else {
@@ -119,7 +105,6 @@ pub async fn run() {
     let _ = std::fs::write(dir().join("gateway.log"), "");
     glog(&format!("gateway up, pid {}", std::process::id()));
     tokio::spawn(keep_tunnel());
-    // Forget servers that stopped checking in; leave (and free the tunnel) after a long time with none.
     tokio::spawn(async {
         let mut last_backend = Instant::now();
         loop {
@@ -173,10 +158,9 @@ async fn control_route(req: Request) -> axum::response::Response {
     }
 }
 
-/// Passes a public request to the server its call token belongs to, streamed both ways (the voice is never held back).
 async fn proxy(req: Request) -> axum::response::Response {
     if req.uri().path() == "/__gateway" {
-        return "ok".into_response(); // reachability probe
+        return "ok".into_response();
     }
     let token = req.uri().query().unwrap_or("").split('&').find_map(|kv| kv.strip_prefix("t=")).map(String::from);
     let port = {
@@ -207,7 +191,6 @@ async fn proxy(req: Request) -> axum::response::Response {
     }
 }
 
-/// The tunnel: started once and kept; restarted if it dies. Backs off when trycloudflare says 429.
 async fn keep_tunnel() {
     let mut wait = 0u64;
     loop {
@@ -218,7 +201,7 @@ async fn keep_tunnel() {
         match open_tunnel().await {
             Ok(mut child) => {
                 wait = 0;
-                let _ = child.wait().await; // runs until it dies
+                let _ = child.wait().await;
                 glog("tunnel died; restarting");
                 *TUNNEL.lock().unwrap() = (None, 0);
             }
@@ -257,7 +240,7 @@ async fn open_tunnel() -> Result<tokio::process::Child, String> {
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
     #[cfg(windows)]
-    cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    cmd.creation_flags(0x0800_0000);
     let mut child = cmd.spawn().map_err(|e| e.to_string())?;
     *CHILD_PID.lock().unwrap() = child.id();
     // Keep reading both outputs for the tunnel's whole life, or cloudflared blocks on a full pipe.
@@ -287,7 +270,6 @@ async fn open_tunnel() -> Result<tokio::process::Child, String> {
     })
     .await
     .map_err(|_| "tunnel did not start in 30s".to_string())??;
-    // A new quick tunnel takes a moment before its name resolves publicly.
     for _ in 0..40 {
         let probe = HTTP.get(format!("{found}/__gateway")).timeout(Duration::from_secs(5)).send().await;
         if probe.is_ok_and(|r| r.status().is_success()) {

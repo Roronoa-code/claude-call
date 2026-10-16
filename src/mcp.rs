@@ -1,4 +1,3 @@
-//! The MCP server on stdio (JSON-RPC, one message per line) and the call tools.
 use crate::call::{self, call, page_live, said_meanwhile, say, wait_for_reply};
 use crate::{cfg, gateway, log, usage, voice};
 use serde_json::{Value, json};
@@ -7,7 +6,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 const RING_FOR_MS: u64 = 75_000;
 const REPLY_WAIT_MS: u64 = 5 * 60_000;
-const WAKE_FOR_MS: u64 = 60 * 60_000; // wake mode keeps ringing for up to an hour
+const WAKE_FOR_MS: u64 = 60 * 60_000;
 
 fn instructions() -> String {
     let claude = cfg().agent == "Claude";
@@ -42,7 +41,6 @@ fn tools() -> Value {
     ])
 }
 
-/// What to tell the agent when the user hung up: maybe they asked to be called back.
 fn hung_up(plain: &str) -> String {
     match call().call_back {
         Some(at) => format!(
@@ -53,7 +51,6 @@ fn hung_up(plain: &str) -> String {
     }
 }
 
-/// The usage meter: from the first call on, adds up the agent's transcript (and helpers') every few seconds.
 fn start_meter(said: String) {
     static STARTED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
     if STARTED.set(()).is_err() {
@@ -79,13 +76,11 @@ fn start_meter(said: String) {
 
 async fn call_user(message: String, reason: Option<String>) -> Result<String, String> {
     start_meter(message.clone());
-    // The user asked to be called back: wait until then, and ring whatever the contact mode says.
     let back = call().call_back.take();
     if let Some(at) = back {
         tokio::time::sleep_until(at.into()).await;
     }
     let mode = voice::contact_mode().await;
-    // A recent Call request from the phone means the user asked for this call, whatever the mode says.
     if back.is_none() && !matches!(mode.as_str(), "call" | "both" | "wake") && !voice::call_requested().await {
         let next = match mode.as_str() {
             "text" => " Message them on Discord instead (ask_discord).",
@@ -94,11 +89,8 @@ async fn call_user(message: String, reason: Option<String>) -> Result<String, St
         };
         return Ok(format!("Not called: the user's contact mode is \"{mode}\" (calls not allowed).{next}"));
     }
-    // Wake: they are asleep and want to be woken, so keep ringing (a minute each time) until they pick up.
     let ring_for = if mode == "wake" { WAKE_FOR_MS } else { RING_FOR_MS };
-    // Get the voice, hearing and first line ready *before* ringing, so the user never waits after answering.
     let (base, _) = tokio::join!(gateway::ensure_tunnel(), voice::load_qwen());
-    // Unique per call: the phone app ignores links it has already answered or declined.
     let link = format!("{}/?t={}&call={}", base?, cfg().token, gateway::now_ms());
     log(format!("call link {link}"));
     {
@@ -109,7 +101,6 @@ async fn call_user(message: String, reason: Option<String>) -> Result<String, St
     say(message, false, false).await;
     let reply = wait_for_reply(ring_for + REPLY_WAIT_MS);
     if !page_live() {
-        // Ring (the phone app rings for a minute), then wait for them to pick up; in wake mode ring again each time.
         let started = Instant::now();
         let mut rang: Option<Instant> = None;
         while !call().answered && !call().declined && started.elapsed() < Duration::from_millis(ring_for) {
@@ -196,7 +187,7 @@ async fn tool(name: &str, args: &Value) -> Result<String, String> {
 }
 
 async fn respond(req: Value) -> Option<Value> {
-    let id = req.get("id")?.clone(); // notifications get no reply
+    let id = req.get("id")?.clone(); // JSON-RPC notifications get no reply
     let result = match req["method"].as_str().unwrap_or("") {
         "initialize" => json!({
             "protocolVersion": req["params"]["protocolVersion"].as_str().unwrap_or("2025-06-18"),
@@ -218,7 +209,6 @@ async fn respond(req: Value) -> Option<Value> {
     Some(json!({ "jsonrpc": "2.0", "id": id, "result": result }))
 }
 
-/// Serves MCP until the client closes stdin. Tool calls run concurrently (a call can last many minutes).
 pub async fn run() {
     let (out, mut rx) = tokio::sync::mpsc::unbounded_channel::<Value>();
     tokio::spawn(async move {

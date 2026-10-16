@@ -1,5 +1,3 @@
-//! The live call: Claude's voice in, the user's voice out (live captions, end of turn, talking over Claude),
-//! all against the PC's call server. The screen reads `View`.
 use crate::{
     android,
     audio::{self, Mic, Player},
@@ -18,20 +16,18 @@ mod hearing;
 mod speaking;
 
 
-const PREROLL_FRAMES: usize = 12; // ~500 ms kept from just before speech starts
-const SILENCE_MS: f64 = 1800.0; // end of turn after this much quiet...
-const EARLY_MS: f64 = 700.0; // ...or this much, when the live transcript reads as a finished sentence
-const PARTIAL_MS: f64 = 900.0; // live caption refresh while talking
-const PAUSE_MS: f64 = 250.0; // a pause this long asks for a fresh caption at once (for the early end of turn)
+const PREROLL_FRAMES: usize = 12;
+const SILENCE_MS: f64 = 1800.0;
+const EARLY_MS: f64 = 700.0;
+const PARTIAL_MS: f64 = 900.0;
+const PAUSE_MS: f64 = 250.0;
 const MAX_MS: f64 = 90_000.0;
-const LOST_MS: f64 = 30_000.0; // the call ends after this long without reaching the PC
-// Talking over Claude: the bar is relative to the measured echo of Claude's own voice, and quieter speech is
-// confirmed by real words from Whisper.
+const LOST_MS: f64 = 30_000.0;
 const BARGE_MIN: f32 = 0.006;
 const BARGE_ECHO: f32 = 3.0;
 const LOUD_MIN: f32 = 0.03;
 const LOUD_ECHO: f32 = 8.0;
-const MS_PER_CHAR: f64 = 60.0; // the cloned voice's pace, for captions until a line's length is known
+const MS_PER_CHAR: f64 = 60.0;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Mode {
@@ -48,7 +44,7 @@ struct Utt {
     raw: usize,
     sent16: usize,
     speech_end_raw: usize,
-    partial: Option<(String, usize)>, // text, how much audio it covers
+    partial: Option<(String, usize)>,
     inflight: bool,
     again: bool,
     last_ask: f64,
@@ -65,7 +61,7 @@ pub struct Line {
     pub start_at: f64,
     pub start_frame: Option<u64>,
     pub rate: u32,
-    pub dur: f64, // ms; 0 until the whole line has arrived
+    pub dur: f64,
     pub cut: bool,
 }
 
@@ -94,7 +90,7 @@ pub struct Inner {
     pub line: Option<Line>,
     pub player: Player,
     last_hold: (bool, String),
-    stats: (u32, f32, f32, f32, f32), // frames, sum, max, low, high (debug log)
+    stats: (u32, f32, f32, f32, f32),
     dq: Vec<String>,
 }
 
@@ -175,8 +171,6 @@ impl Engine {
                 return;
             }
             let Some(mut st) = self.get_state(v).await else {
-                // The PC side is gone (its session ended, or the PC is off): give up after a while instead of
-                // showing "Reconnecting…" forever.
                 if self.now() - *lost_since.get_or_insert(self.now()) > LOST_MS {
                     self.end();
                     return;
@@ -197,8 +191,6 @@ impl Engine {
             }
             let busy = |s: &Inner| s.mode == Mode::Talk || s.speech_pending > 0;
             if busy(&self.lock()) {
-                // The user is still talking (or their words are still on the way): hold the answer, but a hangup
-                // still ends the call at once.
                 let until = self.now() + MAX_MS;
                 loop {
                     let stop = { let s = self.lock(); s.ended || s.muted || !busy(&s) };
@@ -238,10 +230,9 @@ impl Engine {
             let mut guard = self.lock();
             let s = &mut *guard;
             if s.mode != Mode::Talk {
-                // (if they cut in, they are already being heard)
                 if let Some(b) = s.barge.take() {
                     let now = self.now();
-                    self.start_talking(s, b, false, now); // started talking as it ended
+                    self.start_talking(s, b, false, now);
                 } else {
                     self.listen(s);
                 }
@@ -260,7 +251,6 @@ impl Engine {
         s.last_hold = (st["hold"] == true, st["holdLabel"].as_str().unwrap_or("").to_string());
     }
 
-    /// Who is calling, before answering (the incoming screen shows their name and mascot).
     pub fn peek(self: &Arc<Self>) {
         let me = self.clone();
         RT.spawn(async move {
@@ -270,20 +260,17 @@ impl Engine {
         });
     }
 
-    /// The screen was closed: stop at once (the app tells the server).
     pub fn hang_up(&self) {
         if !self.lock().ended {
             self.end();
         }
     }
 
-    /// Hangs up and asks for a call back in `min` minutes (sent before the hang-up, so the PC knows why). The call
-    /// ends once the PC took the request; if it didn't, the call stays and says so (no call back is coming).
     pub fn call_back(self: &Arc<Self>, min: u32) {
         {
             let mut s = self.lock();
             if s.ended || s.view.asking_back {
-                return; // one request at a time: a second tap would ask twice
+                return;
             }
             s.view.asking_back = true;
             s.view.notice = "Calling you back…".into();
@@ -311,9 +298,9 @@ impl Engine {
         let now = self.now();
         s.view.status("Call ended");
         s.view.can_finish = false;
-        s.mic = None; // release the mic
+        s.mic = None;
         if let Some(l) = &mut s.line {
-            l.cut = true; // the line's player tasks stop fetching and never push again
+            l.cut = true;
         }
         self.line_stop.notify_waiters();
         s.player.close();
@@ -321,7 +308,6 @@ impl Engine {
         s.view.ended(now);
     }
 
-    /// Every second while debugging: the mic's levels, for tuning, in the PC's timing.log.
     async fn debug_log(self: Arc<Self>) {
         loop {
             tokio::time::sleep(Duration::from_secs(1)).await;
@@ -352,7 +338,6 @@ impl Engine {
         }
     }
 
-    // ---- The controls ----
     fn open_mic(self: &Arc<Self>) -> Option<Mic> {
         let me = self.clone();
         Mic::open(move |f| me.on_frame(f))
@@ -368,7 +353,7 @@ impl Engine {
             s.view.answered(now);
             s.view.status("Connected");
         }
-        android::route(false); // call audio (earpiece) from now on
+        android::route(false);
         android::call_began();
         let mic = self.open_mic();
         {
@@ -399,8 +384,6 @@ impl Engine {
         s.view.heard(&id, &text, true);
         s.view.status("Claude is thinking…");
         drop(s);
-        // Not sent again by itself (the PC would take a second copy as a second turn): if it didn't go, its bubble
-        // goes, the words go back in the reply field, and the call says so.
         let (me, url) = (self.clone(), self.api("reply"));
         RT.spawn(async move {
             let ok = HTTP.post(url).body(text.clone()).timeout(Duration::from_secs(15)).send().await.is_ok_and(|r| r.status().is_success());
@@ -416,7 +399,6 @@ impl Engine {
             s.view.msgs.retain(|m| m.id != bubble);
             s.view.status("Listening");
             s.view.notice = "Your reply didn't go. It's back in the box".into();
-            // added after any other reply that failed before the screen took it back, in the order they failed
             if !s.view.unsent.is_empty() {
                 s.view.unsent.push(' ');
             }
@@ -477,7 +459,7 @@ impl Engine {
         s.player.quiet(on);
     }
 
-    /// Called about once a second: puts the call audio back where it belongs if the system moved it.
+    /// The system sometimes moves the call audio.
     pub fn keep_route(&self) {
         let s = self.lock();
         if s.view.phase != crate::view::Phase::Incoming && !s.ended {
@@ -487,7 +469,6 @@ impl Engine {
         }
     }
 
-    /// Claude's voice level right now, 0..1 (from the samples about to play).
     pub fn claude_level(&self) -> f32 {
         let s = self.lock();
         if s.line.as_ref().is_none_or(|l| !l.started || l.cut) {

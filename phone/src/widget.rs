@@ -1,5 +1,3 @@
-//! The "Aura" home-screen widget: four tiles for the contact mode, the chosen one lit in its colour; the wide one
-//! also says what the mode means and when it changed. RemoteViews over the XML layouts in res/layout.
 use crate::{
     jx::{self, PKG, call, s},
     settings,
@@ -10,37 +8,31 @@ use jni::{
     objects::{JObject, JValue},
 };
 
-/// id, tile label, wide card's title (the home screen's names, home_parts.slint) and line. The tile labels are set
-/// in res/layout.
 const MODES: [(&str, &str, &str, &str); 4] = [
     ("call", "Calls", "Calls only", "Claude can call you"),
     ("text", "Texts", "Texts only", "Claude can message you"),
     ("both", "Both", "Calls and texts", "Claude can call or message you"),
     ("none", "Quiet", "Quiet for now", "Claude saves its questions"),
 ];
-/// The Sleep modes have no tile of their own (set in the app): the Quiet tile stands for them, lit and saying "Asleep"
-/// (read out as which one); the wide card says which is on, with the Quiet tile's art.
 const SLEEP: [(&str, &str, &str, &str); 2] = [
     ("wake", "Asleep", "Asleep, wake me", "Calls ring until you pick up"),
     ("sleep", "Asleep", "Asleep", "Claude decides and keeps working"),
 ];
 const WHITE: i32 = 0xFFFFFFFFu32 as i32;
-const DIM: i32 = 0x8CFFFFFFu32 as i32; // white at 55%
-const DIP: i32 = 1; // TypedValue.COMPLEX_UNIT_DIP
+const DIM: i32 = 0x8CFFFFFFu32 as i32;
+const DIP: i32 = 1;
 const SP: i32 = 2;
-// The preview's cards (412dp screen): 2x2 is 178x212, 4x2 is 380x212. One UI cells are taller, so the card keeps the
-// preview's shape (a touch wider keeps the tiles near square), is centred in the cell, and its contents scale with it.
+// One UI cells are taller than the preview's cards (412dp screen: 2x2 is 178x212, 4x2 is 380x212).
 const PREVIEW_H: f32 = 212.0;
 const COMPACT_ASPECT: f32 = 0.92;
 const WIDE_ASPECT: f32 = 2.0;
-const WIDE_MIN_WIDTH: f32 = 300.0; // below this the title no longer fits beside the tiles
+const WIDE_MIN_WIDTH: f32 = 300.0;
 
 pub fn component<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, class: &str) -> Result<JObject<'a>> {
     let c = s(env, &format!("{PKG}.{class}"))?;
     env.new_object("android/content/ComponentName", "(Landroid/content/Context;Ljava/lang/String;)V", &[JValue::Object(ctx), JValue::Object(&c)])
 }
 
-/// Redraws every placed widget, both sizes, from the settings.
 pub fn update_all(env: &mut JNIEnv, ctx: &JObject) -> Result<()> {
     let mgr = env.call_static_method("android/appwidget/AppWidgetManager", "getInstance", "(Landroid/content/Context;)Landroid/appwidget/AppWidgetManager;", &[JValue::Object(ctx)])?.l()?;
     for class in ["ModeWidget", "ModeWidgetWide"] {
@@ -62,12 +54,11 @@ fn size_f<'a>(env: &mut JNIEnv<'a>, w: f32, h: f32) -> Result<JObject<'a>> {
     env.new_object("android/util/SizeF", "(FF)V", &[JValue::Float(w), JValue::Float(h)])
 }
 
-/// One layout per size the launcher may show.
 fn views<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, opts: &JObject) -> Result<JObject<'a>> {
     if jx::sdk(env)? < 31 {
         return build(env, ctx, false, None);
     }
-    let key = s(env, "appWidgetSizes")?; // AppWidgetManager.OPTION_APPWIDGET_SIZES
+    let key = s(env, "appWidgetSizes")?;
     let sizes = env.call_method(opts, "getParcelableArrayList", "(Ljava/lang/String;)Ljava/util/ArrayList;", &[JValue::Object(&key)])?.l()?;
     let n = if sizes.is_null() { 0 } else { env.call_method(&sizes, "size", "()I", &[])?.i()? };
     let map = env.new_object("java/util/HashMap", "()V", &[])?;
@@ -76,7 +67,6 @@ fn views<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, opts: &JObject) -> Result<JObj
         Ok(())
     };
     if n == 0 {
-        // Not measured yet: a compact and a wide layout.
         let (a, b) = (size_f(env, 100.0, 100.0)?, size_f(env, WIDE_MIN_WIDTH, 100.0)?);
         let (va, vb) = (build(env, ctx, false, None)?, build(env, ctx, true, None)?);
         add(env, &a, &va)?;
@@ -113,7 +103,7 @@ fn build<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, wide: bool, size: Option<(f32,
     let layout = jx::res(env, ctx, "layout", if wide { "widget_mode_wide" } else { "widget_mode_compact" })?;
     let pkg = s(env, PKG)?;
     let v = env.new_object("android/widget/RemoteViews", "(Ljava/lang/String;I)V", &[JValue::Object(&pkg), JValue::Int(layout)])?;
-    let mut k = 1.0; // scale against the preview card
+    let mut k = 1.0;
     if let (Some((w, h)), true) = (size, new_api) {
         let card_h = h.min(w / if wide { WIDE_ASPECT } else { COMPACT_ASPECT });
         k = (card_h / PREVIEW_H).clamp(0.8, 1.4);
@@ -133,14 +123,13 @@ fn build<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, wide: bool, size: Option<(f32,
         let bg = if !on { tile_bg } else { res(env, "drawable", if wide { "widget_outline" } else { "widget_lit" })? };
         let set_bg = s(env, "setBackgroundResource")?;
         call(env, &v, "setInt", "(ILjava/lang/String;I)V", &[JValue::Int(tile), JValue::Object(&set_bg), JValue::Int(bg)])?;
-        // A white glyph at 55%, like the label (a tint was ignored on One UI).
+        // One UI ignores the tint.
         let alpha = s(env, "setImageAlpha")?;
         call(env, &v, "setInt", "(ILjava/lang/String;I)V", &[JValue::Int(icon), JValue::Object(&alpha), JValue::Int(if on { 255 } else { 140 })])?;
         call(env, &v, "setTextColor", "(II)V", &[JValue::Int(lbl), JValue::Int(if on { WHITE } else { DIM })])?;
         call(env, &v, "setTextViewTextSize", "(IIF)V", &[JValue::Int(lbl), JValue::Int(SP), JValue::Float(14.0 * k)])?;
         text(env, &v, "setTextViewText", lbl, label)?;
         text(env, &v, "setContentDescription", tile, &if on { format!("{spoken}, selected") } else { spoken.to_string() })?;
-        // asleep, the lit tile opens the app: a tap there must not quietly stop "wake me" (or sleep) by setting Quiet
         let tap = if sleep.is_some() {
             let home = jx::intent(env, ctx, "MainActivity")?;
             jx::pending(env, ctx, "getActivity", 21, &home)?
@@ -173,7 +162,7 @@ fn build<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, wide: bool, size: Option<(f32,
         call(env, &v, "setTextViewTextSize", "(IIF)V", &[JValue::Int(hero_since), JValue::Int(SP), JValue::Float(12.0 * k)])?;
         if new_api {
             layout_size(env, &v, hero_icon, Some(30.0 * k), Some(30.0 * k))?;
-            layout_size(env, &v, hero_title, None, Some(23.0 * k))?; // the title auto-sizes to this
+            layout_size(env, &v, hero_title, None, Some(23.0 * k))?;
         }
         let at = settings::mode_changed_at(env, ctx)?;
         call(env, &v, "setViewVisibility", "(II)V", &[JValue::Int(hero_since), JValue::Int(if at > 0 { 0 } else { 8 })])?;
@@ -181,7 +170,6 @@ fn build<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, wide: bool, size: Option<(f32,
             let t = since(env, ctx, at)?;
             text(env, &v, "setTextViewText", hero_since, &format!("Changed {t}"))?;
         }
-        // The card's left half opens the app; the tiles change the mode.
         let home = jx::intent(env, ctx, "MainActivity")?;
         let open = jx::pending(env, ctx, "getActivity", 20, &home)?;
         call(env, &v, "setOnClickPendingIntent", "(ILandroid/app/PendingIntent;)V", &[JValue::Int(hero), JValue::Object(&open)])?;
@@ -189,17 +177,14 @@ fn build<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, wide: bool, size: Option<(f32,
     Ok(v)
 }
 
-/// The calendar day (year, day of the year) of `at` moved by `by` days: a day of 23 or 25 hours (clocks changing)
-/// still counts as one.
 fn day(env: &mut JNIEnv, at: i64, by: i32) -> Result<(i32, i32)> {
     let c = env.call_static_method("java/util/Calendar", "getInstance", "()Ljava/util/Calendar;", &[])?.l()?;
     env.call_method(&c, "setTimeInMillis", "(J)V", &[JValue::Long(at)])?;
-    env.call_method(&c, "add", "(II)V", &[JValue::Int(5), JValue::Int(by)])?; // Calendar.DATE
+    env.call_method(&c, "add", "(II)V", &[JValue::Int(5), JValue::Int(by)])?;
     let get = |env: &mut JNIEnv, f: i32| env.call_method(&c, "get", "(I)I", &[JValue::Int(f)])?.i();
-    Ok((get(env, 1)?, get(env, 6)?)) // YEAR, DAY_OF_YEAR
+    Ok((get(env, 1)?, get(env, 6)?))
 }
 
-/// When the mode changed, short enough for the card: the time today, "yesterday", else the date ("14 Oct").
 fn since(env: &mut JNIEnv, ctx: &JObject, at: i64) -> Result<String> {
     let today = |env: &mut JNIEnv, t: i64| env.call_static_method("android/text/format/DateUtils", "isToday", "(J)Z", &[JValue::Long(t)])?.z();
     let pattern = if today(env, at)? {
@@ -219,7 +204,6 @@ fn since(env: &mut JNIEnv, ctx: &JObject, at: i64) -> Result<String> {
     Ok(jx::string(env, t)?.unwrap_or_default())
 }
 
-/// A tile tap: ModeTap (not exported, so only this app's own taps can change the mode).
 fn tap<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, mode: &str, n: i32) -> Result<JObject<'a>> {
     let i = jx::intent(env, ctx, "ModeTap")?;
     let u = s(env, &format!("callme://mode/{mode}"))?;
@@ -228,7 +212,6 @@ fn tap<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, mode: &str, n: i32) -> Result<JO
     jx::pending(env, ctx, "getBroadcast", 10 + n, &i)
 }
 
-/// ModeTap: the mode named by the tapped tile's link.
 pub fn tapped(env: &mut JNIEnv, ctx: &JObject, intent: &JObject) -> Result<()> {
     let uri = env.call_method(intent, "getData", "()Landroid/net/Uri;", &[])?.l()?;
     if uri.is_null() {

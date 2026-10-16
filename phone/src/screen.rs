@@ -1,5 +1,3 @@
-//! The call screen: draws the call (captions, the thread, controls) from the engine's view, ~30 times a second, and
-//! whoever is calling, alive in 3D (caller.rs, live_gl.rs), every frame it moves.
 use crate::{
     Call, Cap, CallScreen, Msg as UiMsg, alive, android,
     caller::Caller,
@@ -10,21 +8,18 @@ use crate::{
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use std::{cell::RefCell, rc::Rc, sync::Arc, time::Duration};
 
-const CLOSE_MS: f64 = 1100.0; // the screen fades out this long after the call ends...
-const FINISH_MS: f64 = 1200.0; // ...and closes here
+const CLOSE_MS: f64 = 1100.0;
+const FINISH_MS: f64 = 1200.0;
 
-/// What the thread keeps showing while it hides, so it can fade out instead of vanishing.
 #[derive(Default, Clone)]
 struct Held {
     me_text: Option<String>,
     claude: Option<Msg>,
 }
 
-/// The screen's state between frames.
 struct Frame {
     held: Held,
     cap: Option<Cap>,
-    // what the caller's character follows (caller.rs), from the last frame
     phase: Phase,
     agent: String,
     perched: bool,
@@ -40,11 +35,9 @@ fn hash(s: &str) -> i32 {
     s.bytes().fold(0x811c9dc5u32, |h, b| (h ^ b as u32).wrapping_mul(0x0100_0193)) as i32
 }
 
-/// The big caption: Claude talking, listening, on hold and the end of the call.
 fn caption(v: &View, now: f64) -> Cap {
     let last_claude = v.msgs.iter().rev().find(|m| !m.me);
     let part = |m: &Msg| m.spoken.0.min(m.parts.len().saturating_sub(1));
-    // Long sentences get a smaller caption so they always fit above the controls.
     let size = |m: &Msg| {
         let n = m.parts.get(part(m)).map_or(0, |p| view::words(p).len());
         if n > 30 { 2 } else if n > 18 { 1 } else { 0 }
@@ -80,7 +73,6 @@ fn caption(v: &View, now: f64) -> Cap {
         Phase::Incoming => plain("inc", "Calling now".into(), &format!("{} would like to talk.", v.agent), "", false),
         Phase::Connecting => plain("con", "Connecting".into(), "One moment…", "dim", false),
         Phase::Talking => match v.msgs.iter().find(|m| m.live).or(last_claude) {
-            // Until its first word is heard the label stays invisible (same size, so nothing shifts).
             Some(m) => spoken(m, if m.spoken == (0, 0) { "pre" } else { "" }),
             None => plain("turn", "Your turn".into(), &format!("Go ahead, {} is listening.", v.agent), "dim", false),
         },
@@ -96,13 +88,11 @@ fn caption(v: &View, now: f64) -> Cap {
 fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activity::AndroidApp) {
     let now = e.now();
     if !f.rate_set {
-        // Calls don't need 120 Hz: half the drawing work, a cooler phone.
         if let Some(w) = app.native_window() {
             android::set_frame_rate(w.ptr().as_ptr().cast(), 60.0);
             f.rate_set = true;
         }
     }
-    // PREVIEW: the directions wait (hidden) for the real bar sizes, so nothing jumps as they arrive
     if !ui.global::<Call>().get_placed() {
         if let Some((top, bottom)) = android::insets() {
             ui.global::<Call>().set_sat(top);
@@ -121,7 +111,6 @@ fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activi
     let claude_level = e.claude_level();
     let mut s = e.lock();
     e.line_progress(&mut s);
-    // a typed reply that didn't go: back in the field, before anything typed since
     let unsent = std::mem::take(&mut s.view.unsent);
     if !unsent.is_empty() {
         let now_typed = ui.global::<Call>().get_draft();
@@ -147,7 +136,6 @@ fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activi
         };
     }
     let bubble = if thread { last_claude } else { f.held.claude.clone() };
-    // The big caption is frozen while the thread shows, so it can fly back from where it was.
     if !thread || f.cap.is_none() {
         f.cap = Some(caption(v, now));
     }
@@ -158,7 +146,6 @@ fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activi
     };
     let level = if v.voice == Voice::Claude { claude_level } else { me_level };
     f.level += (level - f.level) * 0.35;
-    // Round 2 shows only what is out of the ordinary (a dropped line, a blocked or muted mic) as a notice.
     let notice = if !v.notice.is_empty() {
         v.notice.clone()
     } else if v.muted && v.phase == Phase::Listening {
@@ -166,7 +153,6 @@ fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activi
     } else {
         String::new()
     };
-    // The usage meter rides on the call clock: "On call · 2:31 · $0.04".
     let used = if v.usage.is_empty() { String::new() } else { format!(" · {}", v.usage) };
     let time = match v.phase {
         Phase::Incoming => "Calling you".to_string(),
@@ -194,14 +180,12 @@ fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activi
     let (speaker, quiet, ended_at) = (v.speaker, v.quiet, v.ended_at);
     drop(s);
 
-    // ---- The caller's character: big over the caption, small on the bubble while the thread shows ----
     f.perched = thread && bubble.is_some();
     (f.phase, f.me_level) = (phase, me_level);
     if f.agent != agent {
         f.agent = agent.clone();
     }
 
-    // ---- Everything else: set only what changed (an unchanged screen is never redrawn) ----
     let phase_name = format!("{phase:?}").to_lowercase();
     if ui.global::<Call>().get_phase() != phase_name.as_str() {
         ui.global::<Call>().set_phase(phase_name.into());
@@ -239,7 +223,6 @@ fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activi
         android::finish();
     }
 
-    // Levels and the clock only advance while something moves (the glow at rest is still).
     let moving = phase != Phase::Ended || f.level > 0.01;
     if moving {
         f.moving_until = now + 600.0;
@@ -259,13 +242,10 @@ fn set_if(cur: SharedString, new: String, set: impl FnOnce(SharedString)) {
     }
 }
 
-/// The call screen has something open over it that Back closes first (call.slint overlays).
 pub static OVERLAYS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-/// Back asked for what is open over the call to close; the call's frame timer does it (not the event loop proxy,
-/// which is the newest screen's: the home screen's, once it was opened during the call).
+/// Slint's event loop proxy is the newest screen's (the home screen's, once it was opened during the call).
 static CLOSE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// The keyboard and Back, as Android's main thread last said (android::kb, back); true while the keyboard moves.
 fn follow(ui: &CallScreen) -> bool {
     if CLOSE.swap(false, std::sync::atomic::Ordering::Relaxed) {
         ui.invoke_close_overlays();
@@ -277,8 +257,6 @@ fn follow(ui: &CallScreen) -> bool {
     moved
 }
 
-/// While the keyboard slides: follow() every 4 ms (Shell.kt leads it by one 120 Hz frame, which the 16 ms frame
-/// timer would lose), until it has been still for 150 ms.
 fn follow_fast(fast: &Rc<slint::Timer>, ui: &CallScreen) {
     if fast.running() {
         return;
@@ -296,7 +274,6 @@ fn follow_fast(fast: &Rc<slint::Timer>, ui: &CallScreen) {
     });
 }
 
-/// Back on the call screen (from Android's main thread): closes what is open over the call; false when nothing was.
 pub fn back() -> bool {
     if !OVERLAYS.swap(false, std::sync::atomic::Ordering::Relaxed) {
         return false;
@@ -306,7 +283,6 @@ pub fn back() -> bool {
 }
 
 pub fn run(app: android_activity::AndroidApp) {
-    // a Back meant for the last call must not close anything on this one
     OVERLAYS.store(false, std::sync::atomic::Ordering::Relaxed);
     CLOSE.store(false, std::sync::atomic::Ordering::Relaxed);
     app.set_window_flags(android_activity::WindowManagerFlags::KEEP_SCREEN_ON, android_activity::WindowManagerFlags::empty());
@@ -322,7 +298,6 @@ pub fn run(app: android_activity::AndroidApp) {
         let e = e.clone();
         move || e.answer()
     });
-    // Ends here; closing the screen tells the PC (service::call_closed).
     ui.global::<Call>().on_hang_up({
         let e = e.clone();
         move || e.hang_up()
@@ -343,9 +318,6 @@ pub fn run(app: android_activity::AndroidApp) {
         let e = e.clone();
         move || e.toggle_quiet()
     });
-    // what is on screen: the typed text with the keyboard's word still being put together, where the cursor is
-    // A second tap in the moment before the keyboard lets go of its word would send that word again: the same text
-    // within 1.5 s goes once.
     ui.global::<Call>().on_send({
         let e = e.clone();
         let last = RefCell::new((String::new(), None::<std::time::Instant>));
@@ -362,7 +334,6 @@ pub fn run(app: android_activity::AndroidApp) {
     ui.global::<Call>().on_clear_field(|| {
         android::with(|env, act| env.call_method(act, "clearField", "()V", &[]).map(drop));
     });
-    // Back closes the Transcript, the reply field or More before it leaves the call (service.rs call_back).
     ui.on_overlays(|on| OVERLAYS.store(on, std::sync::atomic::Ordering::Relaxed));
     let now = e.now();
     let frame = Rc::new(std::cell::RefCell::new(Frame {
@@ -393,9 +364,8 @@ pub fn run(app: android_activity::AndroidApp) {
             }
         }
     });
-    // The character, every frame: its springs and the voice's level need it; it is drawn only when due.
     let face_timer = slint::Timer::default();
-    let fast = Rc::new(slint::Timer::default()); // follow_fast
+    let fast = Rc::new(slint::Timer::default());
     face_timer.start(slint::TimerMode::Repeated, Duration::from_millis(16), {
         let (ui, e, f) = (ui.as_weak(), e.clone(), frame.clone());
         let mut drawn = -1.0f32;
@@ -416,7 +386,7 @@ pub fn run(app: android_activity::AndroidApp) {
             c.tick(now, &agent, phase, perched, voice, me);
             let mut s = scene.borrow_mut();
             if s.failed && ui.global::<Call>().get_face_gpu() {
-                ui.global::<Call>().set_face_gpu(false); // a still picture instead
+                ui.global::<Call>().set_face_gpu(false);
             }
             let p = c.place(now);
             let who = c.cast.who;
@@ -451,7 +421,6 @@ pub fn run(app: android_activity::AndroidApp) {
             }
         }
     });
-    // 30 frames a second is plenty for captions; properties that didn't change cost nothing.
     let timer = slint::Timer::default();
     timer.start(slint::TimerMode::Repeated, Duration::from_millis(33), {
         let (ui, e, f, app) = (ui.as_weak(), e.clone(), frame.clone(), app.clone());
@@ -462,7 +431,7 @@ pub fn run(app: android_activity::AndroidApp) {
         }
     });
     if answer {
-        e.answer(); // opened from "Answer" on the ringing notification
+        e.answer();
     }
     let _ = ui.run();
     e.hang_up();

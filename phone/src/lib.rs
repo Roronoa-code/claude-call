@@ -1,6 +1,3 @@
-//! The Claude Call phone app, in Rust: the home screen, the call screen and call audio (drawn with Slint), and
-//! the always-on call listener, ringing, settings and the widget. Kotlin keeps only the classes Android itself
-//! must create, as one-line shells that forward here (android/app/.../Shell.kt, shell.rs).
 #[cfg(target_os = "android")]
 mod android;
 #[cfg(target_os = "android")]
@@ -48,7 +45,6 @@ mod home;
 #[cfg(target_os = "android")]
 mod screen;
 
-/// One library for both screens: the activity that opened it says which.
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 fn android_main(app: android_activity::AndroidApp) {

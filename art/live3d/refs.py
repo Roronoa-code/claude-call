@@ -1,4 +1,3 @@
-# Where each character sits in its reference art, cropped to a box around it (pixels in the source image).
 import os
 from PIL import Image
 D = r'D:\Outputs\CallMe\design\characters'

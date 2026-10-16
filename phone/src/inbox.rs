@@ -1,5 +1,3 @@
-//! In-app chats on the phone: the store file, sending, filing what the PC sends (replies, and threads it starts), and
-//! the Chats models of the home screen. The rules themselves (signing, replies, notes, unread) are in chats.rs.
 use crate::{
     ChatMsg, ChatRow, Chats, HomeScreen, android, attach, chat_alert, chat_view,
     chats::{self, Store},
@@ -23,17 +21,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// A tapped notification asks the home screen to open this chat.
 pub static OPEN_CHAT: Mutex<Option<String>> = Mutex::new(None);
-/// The chat on screen right now.
 static VIEWING: Mutex<Option<String>> = Mutex::new(None);
-/// Moves on whenever the store changes, so the home screen redraws.
 static VERSION: AtomicU64 = AtomicU64::new(0);
 static PATH: OnceLock<PathBuf> = OnceLock::new();
-/// The store as last read from or written to its file (only this process writes it), so it is parsed once, not every
-/// second; one reader or writer at a time (the listener and the home screen both use it).
 static STORE: Mutex<Option<Store>> = Mutex::new(None);
-/// The home screen, to ask whether it is in front.
 static HOME: Mutex<Option<GlobalRef>> = Mutex::new(None);
 #[path = "inbox_send.rs"]
 mod send;
@@ -42,34 +34,25 @@ use send::fetch_media;
 #[path = "inbox_undo.rs"]
 mod undo;
 use undo::{delete, forget, undo, undo_timer};
-/// How long Undo stays.
 const UNDO_FOR: Duration = Duration::from_secs(5);
 thread_local! {
-    /// The open chat's lines, kept and changed in place: a new model would rebuild every row, and each would rise in
-    /// again as if it had just arrived.
+    /// A new Slint model rebuilds every row, and each would rise in again as if it had just arrived.
     static MSGS: std::rc::Rc<VecModel<ChatMsg>> = std::rc::Rc::new(VecModel::default());
-    /// The list's rows, kept in place the same way: a rebuilt row would cut short a row sliding out or opening back in.
     static ROWS: std::rc::Rc<VecModel<ChatRow>> = std::rc::Rc::new(VecModel::default());
-    /// Lets the deleted chats go for good (and their files) once Undo is over.
     static UNDO_TIMER: slint::Timer = slint::Timer::default();
-    /// The text box's latest text (chat, text), kept a moment after the last key and then saved with its chat.
     static PENDING: RefCell<Option<(String, String)>> = const { RefCell::new(None) };
     static DRAFT_TIMER: slint::Timer = slint::Timer::default();
-    /// The photo open full screen (it is decoded again, sharper, once zoomed).
     static FULL: RefCell<String> = const { RefCell::new(String::new()) };
 }
 
-/// The store changed: the home screen redraws.
 pub fn changed() {
     VERSION.fetch_add(1, Relaxed);
 }
 
-/// Where photos and videos are kept (filesDir/media), both the PC's and mine.
 pub fn media_dir() -> Option<PathBuf> {
     PATH.get().map(|p| p.with_file_name("media"))
 }
 
-/// Finds the store file (filesDir/chats.json). Also for a pick that comes back after Android closed the app (attach.rs).
 pub(crate) fn path(env: &mut JNIEnv, ctx: &JObject) -> Result<()> {
     if PATH.get().is_none() {
         let dir = env.call_method(ctx, "getFilesDir", "()Ljava/io/File;", &[])?.l()?;
@@ -79,11 +62,9 @@ pub(crate) fn path(env: &mut JNIEnv, ctx: &JObject) -> Result<()> {
     Ok(())
 }
 
-/// The stored chats, read from the file the first time (None while it can't be read: never saved over).
 fn store<'a>(cache: &'a mut Option<Store>) -> Option<&'a mut Store> {
     if cache.is_none() {
         let Some(s) = Store::load(PATH.get()?) else {
-            // said once: the listener looks every second
             static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
             if !SAID.swap(true, Relaxed) {
                 android::log("chats: chats.json unreadable; left as it is");
@@ -95,8 +76,6 @@ fn store<'a>(cache: &'a mut Option<Store>) -> Option<&'a mut Store> {
     cache.as_mut()
 }
 
-/// Runs `f` on the stored chats and saves them if it changed anything. None when that couldn't be saved: then nothing
-/// changed at all (what is typed or picked stays, and the caller says so).
 pub(crate) fn update<R>(f: impl FnOnce(&mut Store) -> R) -> Option<R> {
     let mut cache = STORE.lock().unwrap();
     let st = store(&mut cache)?;
@@ -112,14 +91,11 @@ pub(crate) fn update<R>(f: impl FnOnce(&mut Store) -> R) -> Option<R> {
     Some(r)
 }
 
-/// Reads the stored chats (nothing is saved).
 fn read<R>(f: impl FnOnce(&Store) -> R) -> Option<R> {
     let mut cache = STORE.lock().unwrap();
     store(&mut cache).map(|s| f(s))
 }
 
-/// How many chats need me, leaving out `read_now` (being read right now), and the one with the newest news (the
-/// notifications' summary says both).
 pub(crate) fn needing(read_now: &str) -> Option<(usize, Option<chats::Chat>)> {
     read(|s| {
         let need: Vec<_> = s.chats.iter().filter(|c| c.unread > 0 && c.deleted == 0 && c.id != read_now).collect();
@@ -127,31 +103,24 @@ pub(crate) fn needing(read_now: &str) -> Option<(usize, Option<chats::Chat>)> {
     })
 }
 
-/// A chat's draft as last saved (None: no such chat, or the store can't be read).
 pub(crate) fn saved_draft(chat: &str) -> Option<String> {
     read(|s| s.get(chat).map(|c| c.draft.clone())).flatten()
 }
 
 
-/// Whether the home screen is in front and focused (a chat open behind the lock screen is not being read).
 fn focused(env: &mut JNIEnv) -> bool {
     let home = HOME.lock().unwrap().clone();
     home.is_some_and(|h| env.call_method(&h, "hasWindowFocus", "()Z", &[]).and_then(|v| v.z()).unwrap_or(false))
 }
 
-/// The PC's reply arrived over ntfy: file it, and notify unless that chat is being looked at.
 pub fn reply_arrived(env: &mut JNIEnv, ctx: &JObject, body: &str) -> Result<()> {
     arrived(env, ctx, body, "reply", chats::reply_signed, Store::apply_reply)
 }
 
-/// A thread the PC started arrived ("Chat note": an agent's question, or an update): file it (the thread opens if it
-/// is new), and notify like a reply.
 pub fn note_arrived(env: &mut JNIEnv, ctx: &JObject, body: &str) -> Result<()> {
     arrived(env, ctx, body, "note", chats::note_signed, Store::apply_note)
 }
 
-/// The PC's read receipt for one of my messages ("Chat receipt": delivered or read): checked like a reply, then the
-/// status line under my last message moves on. Never notifies.
 pub fn receipt_arrived(env: &mut JNIEnv, ctx: &JObject, body: &str) -> Result<()> {
     arrived(env, ctx, body, "receipt", chats::receipt_signed, |s, v, _| {
         s.apply_receipt(v);
@@ -161,7 +130,6 @@ pub fn receipt_arrived(env: &mut JNIEnv, ctx: &JObject, body: &str) -> Result<()
 
 type Apply = fn(&mut Store, &Value, Option<&str>) -> Option<(String, String, String)>;
 
-/// Checks the PC's signature, files the message, fetches its files and notifies, unless that chat is being looked at.
 fn arrived(env: &mut JNIEnv, ctx: &JObject, body: &str, what: &str, signed: fn(&str, &Value) -> bool, apply: Apply) -> Result<()> {
     path(env, ctx)?;
     let Ok(v) = serde_json::from_str::<Value>(body) else { return Ok(()) };
@@ -178,18 +146,15 @@ fn arrived(env: &mut JNIEnv, ctx: &JObject, body: &str, what: &str, signed: fn(&
     chat_alert::notify(env, ctx, &chat, &name, &text)
 }
 
-/// Saves what was typed in a text box (kept a moment after the last key: keep_draft).
 fn save_draft() {
     let Some((chat, text)) = PENDING.with(|p| p.borrow_mut().take()) else { return };
     if update(|s| s.set_draft(&chat, &text)).is_none() {
-        // couldn't be saved: tried again next time (unless the box changed meanwhile)
         PENDING.with(|p| {
             p.borrow_mut().get_or_insert((chat, text));
         });
     }
 }
 
-/// The text box changed: saved with its chat a moment after the last key (and at once when the chat closes).
 fn keep_draft(chat: &str, text: &str) {
     if chat.is_empty() {
         return;
@@ -198,8 +163,6 @@ fn keep_draft(chat: &str, text: &str) {
     DRAFT_TIMER.with(|t| t.start(slint::TimerMode::SingleShot, Duration::from_millis(600), save_draft));
 }
 
-/// Redraws the Chats screen from the store: the list, the open chat's bubbles and status, and marks the open chat
-/// read when it is really in front.
 fn show(ui: &HomeScreen) {
     let c = ui.global::<Chats>();
     let cur = c.get_current().to_string();
@@ -220,14 +183,12 @@ fn show(ui: &HomeScreen) {
     let now = chats::now();
     let mut all: Vec<_> = st.chats.iter().filter(|c| c.deleted == 0).collect();
     all.sort_by_key(|c| -c.updated);
-    // The last line in one line, in plain words (as its notification says it).
     let preview = |c: &chats::Chat| {
         let last = c.lines.iter().rev().find(|l| l.me || l.state != "partial");
         chats::brief(&last.map_or("New chat".to_string(), chats::shown)).replace('\n', " ")
     };
     let rows: Vec<ChatRow> = all
         .iter()
-        // a thread the PC started shows once its first message is whole
         .filter(|c| c.kind.is_empty() || c.lines.iter().any(|l| l.me || l.state != "partial"))
         .map(|c| ChatRow {
             id: c.id.clone().into(),
@@ -253,7 +214,6 @@ fn show(ui: &HomeScreen) {
     let (hero, line) = chat_view::hero(&rows);
     let rows = chat_view::arrange(rows);
     ROWS.with(|model| {
-        // gone chats out; then row by row: the same chat changes in place, a chat that moved or came back goes in
         for i in (0..model.row_count()).rev() {
             if !rows.iter().any(|r| model.row_data(i).is_some_and(|m| m.id == r.id)) {
                 model.remove(i);
@@ -287,7 +247,6 @@ fn show(ui: &HomeScreen) {
             let ask = chats::ask_state(chat, now);
             let msgs = chat_view::thread(chat, ask, now);
             let name = chats::label(chat);
-            // "Opus" from "Claude · Opus"; a PC-started thread keeps its whole name ("Deploy · Notebook")
             let short = if chat.kind.is_empty() { name.rsplit(" · ").next().unwrap_or(&name) } else { &name }.to_string();
             c.set_hint(if ask == "waiting" { "Type your answer".into() } else { format!("Message {short}").into() });
             c.set_short(short.into());
@@ -296,7 +255,6 @@ fn show(ui: &HomeScreen) {
             c.set_empty(msgs.is_empty());
             c.set_waiting(chats::waiting(chat));
             c.set_replies(chat.lines.iter().filter(|l| !l.me && l.state != "partial").count() as i32);
-            // A PC-started thread is named after its task, so the line under the name says where it stands instead.
             c.set_title(match (chat.kind.as_str(), ask) {
                 ("", _) => chat.title.clone().into(),
                 (_, "waiting") => "Waiting for your answer".into(),
@@ -307,7 +265,6 @@ fn show(ui: &HomeScreen) {
             });
             c.set_ask(ask.into());
             c.set_readonly(chat.kind == "note");
-            // The PC takes only the first answer to a question: once one is on its way (or nobody waits), no text box.
             c.set_ended(chats::ended(ask).into());
             c.set_draft(chat.draft.clone().into());
             MSGS.with(|model| {
@@ -325,12 +282,10 @@ fn show(ui: &HomeScreen) {
             status(ui);
             attach::show(ui, &cur, chat.pick.as_ref());
         }
-        // The closed chat's lines stay: its screen is still on its way back into its row (home.slint).
         None => c.set_current("".into()),
     }
 }
 
-/// Just the small grey status line and the PC's word in the header (they change with time, not with the store).
 fn status(ui: &HomeScreen) {
     let c = ui.global::<Chats>();
     let cur = c.get_current().to_string();
@@ -342,11 +297,9 @@ fn status(ui: &HomeScreen) {
     };
     let (text, action) = line;
     if ask != c.get_ask().as_str() {
-        changed(); // a question just expired (or its answer was taken) while open: redraw
+        changed();
     }
-    // "Opus is thinking · 3 min" (the time from the header's "Thinking · 3 min")
     let thinking = if waiting { format!("{} is thinking{}", c.get_short(), think.strip_prefix("Thinking").unwrap_or("")) } else { String::new() };
-    // set only what changed (each set redraws)
     if c.get_status() != text {
         c.set_status(text.into());
     }
@@ -361,7 +314,6 @@ fn status(ui: &HomeScreen) {
     }
 }
 
-/// Whether chat is set up (the PC gave its key): read at the start and whenever the app comes back.
 fn ready(ui: &HomeScreen) {
     let c = ui.global::<Chats>();
     let ready = android::with(|env, act| settings::chat_key(env, act)).flatten().is_some();
@@ -370,8 +322,6 @@ fn ready(ui: &HomeScreen) {
     }
 }
 
-/// A chat was left (closed, or another opened over it): what was typed is saved, and a chat I opened and left empty
-/// goes quietly (no Undo: nothing was lost). The list is still covered by the closing chat, so nothing jumps.
 fn leave(chat: &str) {
     save_draft();
     if update(|s| s.drop_empty(chat)) == Some(true) {
@@ -379,7 +329,6 @@ fn leave(chat: &str) {
     }
 }
 
-/// Keeps the home screen's models in step with the store; called from the home timer.
 #[derive(Default)]
 pub struct Tracker {
     version: u64,
@@ -396,7 +345,7 @@ impl Tracker {
         if let Some(id) = OPEN_CHAT.lock().unwrap().take() {
             c.set_picker(false);
             c.set_open(true);
-            c.set_from_id("".into()); // opened from a notification: no card to carry a character from or back to
+            c.set_from_id("".into());
             c.set_current(id.into());
         }
         let (open, current) = (c.get_open(), c.get_current().to_string());
@@ -406,11 +355,10 @@ impl Tracker {
         let version = VERSION.load(Relaxed);
         let second = self.last.is_none_or(|t| t.elapsed() > Duration::from_secs(1));
         let focus = second && android::with(|env, _| Ok(focused(env))).unwrap_or(false);
-        let back = focus && !self.focus; // the app came back (or just started)
+        let back = focus && !self.focus;
         if back || self.last.is_none() {
             ready(ui);
         }
-        // the list's ages ("3 min") move on while it is in front
         let ages = open && current.is_empty() && self.rows.is_some_and(|t| t.elapsed() > Duration::from_secs(30));
         if version != self.version || open != self.open || current != self.current || back || ages {
             (self.version, self.open, self.current) = (version, open, current);
@@ -426,20 +374,16 @@ impl Tracker {
     }
 }
 
-/// Connects the Chats callbacks of the home screen.
 pub fn wire(ui: &HomeScreen) -> Tracker {
     android::with(|env, act| {
         path(env, act)?;
         *HOME.lock().unwrap() = Some(env.new_global_ref(act)?);
         Ok(())
     });
-    // deleted before: gone once their Undo is over (the screen may be made again a moment after a delete)
     forget(chats::now() - UNDO_FOR.as_millis() as i64);
     if read(|s| s.undoable().is_some()).unwrap_or(false) {
         undo_timer();
     }
-    // and chats left empty when it closed (they go when left, but the app may have been closed in one; not one the
-    // photo picker is open for: its pick lands there, attach.rs)
     update(|s| {
         let empty: Vec<String> = s.chats.iter().map(|c| c.id.clone()).collect();
         empty.iter().for_each(|id| {
@@ -453,7 +397,6 @@ pub fn wire(ui: &HomeScreen) -> Tracker {
     let tick = || {
         android::with(crate::ring::tick);
     };
-    // The message couldn't be kept to send: what is typed stays, and the thread says so for a moment.
     let trouble = |ui: &HomeScreen| ui.global::<Chats>().set_trouble("Not saved. Try again.".into());
     c.on_open_chat({
         let ui = ui.as_weak();
@@ -482,7 +425,6 @@ pub fn wire(ui: &HomeScreen) -> Tracker {
             let text = chats::composed(&draft, &word, at.max(0) as usize);
             let text = text.trim();
             let chat = current(&ui);
-            // the box shows a pick that failed: nothing left in the store behind it goes (attach.rs)
             let with_pick = !attach::failed(&chat);
             let picked = with_pick && read(|s| s.get(&chat).is_some_and(|c| c.pick.is_some())).unwrap_or(false);
             if text.is_empty() && !picked {
@@ -490,7 +432,6 @@ pub fn wire(ui: &HomeScreen) -> Tracker {
             }
             let ok = android::with(|env, act| post(env, act, &chat, |s| s.send(&chat, text, with_pick))).unwrap_or(false);
             if ok {
-                // what was typed went with it: an older keystroke must not bring it back
                 PENDING.with(|p| p.borrow_mut().take_if(|(c, _)| *c == chat));
                 tick();
             } else {
@@ -511,7 +452,6 @@ pub fn wire(ui: &HomeScreen) -> Tracker {
         }
     });
     c.on_tick(tick);
-    // A long-press on the thread: my message, a code block alone, or the PC's whole answer as plain text.
     c.on_copy({
         let ui = ui.as_weak();
         move |line, me, n| {
@@ -524,7 +464,6 @@ pub fn wire(ui: &HomeScreen) -> Tracker {
             });
         }
     });
-    // A tapped answer to an agent's question: its text, as an ordinary message (what is picked stays picked).
     c.on_choose({
         let ui = ui.as_weak();
         move |text| {
@@ -548,7 +487,6 @@ pub fn wire(ui: &HomeScreen) -> Tracker {
             show(&ui);
         }
     });
-    // "Send again" under the PC's failed answer: my message, as a new one.
     c.on_again({
         let ui = ui.as_weak();
         move |line| {
@@ -625,7 +563,6 @@ pub fn wire(ui: &HomeScreen) -> Tracker {
             }
         }
     });
-    // Zoomed in on the full-screen photo: decoded again at up to 4096 px, so it stays crisp (once it has settled).
     c.on_sharpen({
         let ui = ui.as_weak();
         move || {
@@ -636,6 +573,6 @@ pub fn wire(ui: &HomeScreen) -> Tracker {
             }
         }
     });
-    fetch_media(); // anything still loading when the app last stopped
-    Tracker { version: u64::MAX, ..Tracker::default() } // draws once at the start
+    fetch_media();
+    Tracker { version: u64::MAX, ..Tracker::default() }
 }

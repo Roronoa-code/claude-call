@@ -1,5 +1,4 @@
-//! Call audio through AAudio: Claude's voice out (16-bit mono, played as it arrives) and the microphone in
-//! (16 kHz mono float, 40 ms frames). Both use the voice-call path, so the earpiece and echo handling apply.
+//! Both streams use the voice-call path, so the earpiece and echo handling apply.
 use ndk::audio::{
     AudioCallbackResult, AudioContentType, AudioDirection, AudioFormat, AudioInputPreset, AudioPerformanceMode, AudioStream,
     AudioStreamBuilder, AudioUsage,
@@ -10,31 +9,30 @@ use std::{
 };
 
 pub const MIC_RATE: usize = 16_000;
-pub const FRAME: usize = 640; // 40 ms
+pub const FRAME: usize = 640;
 
-/// AAudio streams may be used from any thread (the engine moves between its worker threads).
-struct Stream(#[allow(dead_code)] AudioStream); // held open; closed on drop
+/// AAudio streams may be used from any thread.
+struct Stream(#[allow(dead_code)] AudioStream);
 unsafe impl Send for Stream {}
 
 #[derive(Default)]
 struct Buf {
     data: VecDeque<i16>,
-    played: u64,    // frames of the voice handed to the speaker since the stream opened (not the silence)
-    primed: bool,   // playing; until then it waits for a cushion of audio, so a late piece is no gap
-    cushion: usize, // ~250 ms
-    ending: bool,   // the whole line is here: play out what is left
-    gaps: u32,      // times it ran dry mid-line
-    paused: bool,   // a sudden sound while she talks: hold the voice until it is known to be words (or not)
-    quiet: bool,    // the user silenced her: keep playing through the line (captions keep time) but send zeros
-    peak: i16,      // loudest sample handed to the speaker since last asked (debug log)
+    played: u64,
+    primed: bool,
+    cushion: usize,
+    ending: bool,
+    gaps: u32,
+    paused: bool,
+    quiet: bool,
+    peak: i16,
 }
 
-/// Claude's voice. Samples are pushed as they arrive; `stop` silences at once.
 pub struct Player {
     buf: Arc<Mutex<Buf>>,
     stream: Option<Stream>,
-    rate: u32,     // the voice's own rate
-    out_rate: u32, // the rate the phone actually opened (it may not honour ours)
+    rate: u32,
+    out_rate: u32, // the phone may not honour the asked rate
 }
 
 impl Player {
@@ -62,7 +60,7 @@ impl Player {
             }
             b.played += n;
             if play && b.data.is_empty() && !b.ending {
-                b.primed = false; // ran dry before the line ended: build the cushion up again
+                b.primed = false;
                 b.gaps += 1;
             }
             AudioCallbackResult::Continue
@@ -93,8 +91,6 @@ impl Player {
         }
     }
 
-    /// Queues samples; returns the play position (frames since the stream opened) at which they start, and the
-    /// rate those frames play at.
     pub fn push(&mut self, rate: u32, samples: &[i16]) -> (u64, u32) {
         self.open(rate);
         let out = resample(samples, rate, self.out_rate);
@@ -104,13 +100,11 @@ impl Player {
         (at, self.out_rate)
     }
 
-    /// Frames played so far, and how many are still waiting.
     pub fn position(&self) -> (u64, usize) {
         let b = self.buf.lock().unwrap();
         (b.played, b.data.len())
     }
 
-    /// Loudness of the voice about to play, 0..1 (drives the glow and Clawd's dance).
     pub fn level(&self) -> f32 {
         let b = self.buf.lock().unwrap();
         let n = b.data.len().min(1200);
@@ -121,13 +115,11 @@ impl Player {
         ((sum / n as f32).sqrt() * 4.0).min(1.0)
     }
 
-    /// A new line starts: wait for its cushion again.
     pub fn begin_line(&self) {
         let mut b = self.buf.lock().unwrap();
         (b.primed, b.ending, b.gaps) = (false, false, 0);
     }
 
-    /// All of the line has arrived: play the rest without waiting. Returns how often it ran dry.
     pub fn end_line(&self) -> u32 {
         let mut b = self.buf.lock().unwrap();
         b.ending = true;
@@ -140,17 +132,14 @@ impl Player {
         (b.primed, b.paused) = (false, false);
     }
 
-    /// Holds the voice where it is (true) or carries on (false).
     pub fn pause(&self, on: bool) {
         self.buf.lock().unwrap().paused = on;
     }
 
-    /// Silences her voice (true) without losing her place, or lets it be heard again (false).
     pub fn quiet(&self, on: bool) {
         self.buf.lock().unwrap().quiet = on;
     }
 
-    /// The loudest sample sent to the speaker since the last call.
     pub fn take_peak(&self) -> i16 {
         std::mem::take(&mut self.buf.lock().unwrap().peak)
     }
@@ -166,7 +155,6 @@ impl Player {
     }
 }
 
-/// Linear resampling (only when the phone opened a stream at another rate than asked).
 fn resample<T: Copy + Into<f32>>(x: &[T], from: u32, to: u32) -> Vec<f32> {
     if from == to || from == 0 || to == 0 || x.is_empty() {
         return x.iter().map(|&s| s.into()).collect();
@@ -183,8 +171,6 @@ fn resample<T: Copy + Into<f32>>(x: &[T], from: u32, to: u32) -> Vec<f32> {
         .collect()
 }
 
-/// The microphone, on the phone-call path (echo cancelling and noise suppression on, earpiece or loudspeaker):
-/// calls `on_frame` with 40 ms frames.
 pub struct Mic {
     _stream: Stream,
 }
@@ -192,7 +178,6 @@ pub struct Mic {
 impl Mic {
     pub fn open(on_frame: impl Fn(Vec<f32>) + Send + 'static) -> Option<Mic> {
         let mut acc: Vec<f32> = Vec::with_capacity(FRAME * 2);
-        // The rate the phone really opened (set once it is open); anything else is resampled to 16 kHz.
         let rate = Arc::new(std::sync::atomic::AtomicU32::new(MIC_RATE as u32));
         let opened = rate.clone();
         let cb = Box::new(move |_: &AudioStream, data: *mut std::ffi::c_void, frames: i32| {
@@ -226,7 +211,6 @@ impl Mic {
     }
 }
 
-/// A WAV file (16-bit PCM, any rate, mono or stereo -> mono) as samples and its rate.
 pub fn wav(data: &[u8]) -> Option<(u32, Vec<i16>)> {
     if data.len() < 44 || &data[0..4] != b"RIFF" || &data[8..12] != b"WAVE" {
         return None;

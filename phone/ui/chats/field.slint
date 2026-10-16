@@ -1,8 +1,3 @@
-// The text box of a chat: + (attach), the field, and Send / Stop (44px, a 48px touch area). The field grows a line at
-// a time up to six, then scrolls inside; Enter starts a new line, Send sends. A word the keyboard is still composing
-// is sent with the message, where it stands, and looks like normal text. What is typed belongs to its chat: it is
-// there again when the chat opens (inbox.rs keeps it, even when the app is closed), and a chat opened in its place
-// brings its own. Near the length limit the box says how much is left; over it, Send rests.
 import { T, Icon, Icons } from "../parts.slint";
 import { Home } from "../home_parts.slint";
 import { Chats, Ink, IconButton } from "../chat.slint";
@@ -12,13 +7,12 @@ export component Composer inherits Rectangle {
     in property <length> radius: 28px;
     in property <color> go-color: Ink.me;
     property <string> draft;
-    property <string> chat; // whose text box this is
+    property <string> chat;
     init => {
         root.chat = Chats.current;
         root.draft = Chats.draft;
     }
     changed draft => { Chats.keep-draft(root.chat, root.draft); }
-    // Another chat opened in place of this one (a notification): its own text box, keyboard down.
     property <string> now-chat: Chats.current;
     changed now-chat => {
         if (self.now-chat != "" && self.now-chat != self.chat) {
@@ -27,17 +21,15 @@ export component Composer inherits Rectangle {
             self.draft = Chats.draft;
         }
     }
-    // how much more fits (negative: too long), shown from 200 before the limit
     property <int> left: Chats.room(root.draft + input.preedit-text);
     property <bool> near: left < 200;
     property <bool> picked-media: Chats.pick == "image" || Chats.pick == "video";
     property <bool> has-pick: Chats.pick != "" && Chats.ready;
-    property <bool> composing; // the keyboard is still putting a word together (not in draft yet)
+    property <bool> composing;
     property <bool> can-send: Chats.pick != "loading" && (draft != "" || composing || picked-media) && left >= 0;
     property <bool> can-stop: Chats.action == "stop" && !can-send;
     property <length> pick-h: has-pick ? (picked-media ? 76px : 48px) : 0px;
     animate pick-h { duration: 300ms; easing: T.out; }
-    // One line sits in the middle of 56px; more grow the box upwards, up to six, then the text scrolls inside it.
     property <length> line: probe.preferred-height;
     property <length> pad: (56px - line) / 2;
     property <length> area: max(56px, min(input.preferred-height, 6 * line) + 2 * pad);
@@ -60,7 +52,6 @@ export component Composer inherits Rectangle {
         horizontal-alignment: center;
         vertical-alignment: center;
     }
-    // The photo or video picked to send (a cross removes it), or how getting it is going.
     if root.has-pick: Rectangle {
         x: 10px;
         y: 10px;
@@ -127,7 +118,6 @@ export component Composer inherits Rectangle {
                 clip: true;
                 property <length> scroll: 0px;
                 input := TextInput {
-                    // fits: at the foot of the box (as it grows the lines rise from it); longer: scrolled to the caret
                     y: max(parent.height - self.height, min(0px, parent.scroll));
                     width: parent.width;
                     height: max(root.line, self.preferred-height);
@@ -135,21 +125,17 @@ export component Composer inherits Rectangle {
                     text <=> root.draft;
                     font-size: 16.5px;
                     color: Ink.text;
-                    // Slint draws the keyboard's word in progress as a selection, and Android draws the caret in
-                    // this colour (opaque). So the wash is invisible (alpha 0, same hue) while composing: the word
-                    // looks like normal text and the caret keeps its colour. A real selection still shows.
+                    // Slint draws the keyboard's word in progress as a selection, and Android draws the caret in this colour.
                     selection-background-color: self.preedit-text != "" ? #e3a48c00 : #e3a48c33;
                     selection-foreground-color: Ink.text;
                     single-line: false;
                     wrap: word-wrap;
                     changed preedit-text => {
                         root.composing = self.preedit-text != "";
-                        // The keyboard just committed its word: leave the caret at the end, nothing selected.
                         if (self.preedit-text == "" && self.anchor-position-byte-offset != self.cursor-position-byte-offset) {
                             self.set-selection-offsets(self.cursor-position-byte-offset, self.cursor-position-byte-offset);
                         }
                     }
-                    // A sent or emptied field keeps nothing selected.
                     changed text => { if (self.text == "") { self.set-selection-offsets(0, 0); } }
                     function send-all() {
                         if (root.can-send && Chats.send-composed(root.draft, self.preedit-text, self.cursor-position-byte-offset)) {
@@ -168,7 +154,7 @@ export component Composer inherits Rectangle {
                 }
                 Text {
                     visible: root.draft == "" && input.preedit-text == "";
-                    x: 2px; // just after the caret, never under it, and still when the field takes the cursor
+                    x: 2px;
                     text: Chats.hint;
                     font-size: 16.5px;
                     color: #6f7178;
@@ -180,8 +166,6 @@ export component Composer inherits Rectangle {
                 }
             }
         }
-        // Send (warm once there is something to send), or Stop while the PC works and nothing is typed. Near the
-        // limit, how much is left sits over it (the box is tall by then).
         Rectangle {
             width: 48px;
             if root.near: Text {

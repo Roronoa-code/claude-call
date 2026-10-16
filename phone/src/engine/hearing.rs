@@ -1,8 +1,5 @@
-//! The user's voice: when they start and stop talking, live captions while they talk, the end of their turn,
-//! and talking over Claude.
 use super::*;
 
-// ---- Text helpers ----
 fn words_of(t: &str) -> Vec<String> {
     t.to_lowercase()
         .split(|c: char| !(c.is_ascii_alphanumeric() || c == '\''))
@@ -11,13 +8,11 @@ fn words_of(t: &str) -> Vec<String> {
         .collect()
 }
 
-/// "mm-hmm", "uh-huh", "mhm", "hmm": not a real interruption.
 fn backchannel(t: &str) -> bool {
     let t = t.trim().to_lowercase();
     let t = t.strip_suffix(['.', '!']).unwrap_or(&t);
     let only = |s: &str, set: &str| !s.is_empty() && s.chars().all(|c| set.contains(c));
     let mhm = || {
-        // m+ -? h? m+
         let b = t.as_bytes();
         let mut i = 0;
         while i < b.len() && b[i] == b'm' {
@@ -38,7 +33,6 @@ fn backchannel(t: &str) -> bool {
     t == "uh-huh" || t == "uhhuh" || t == "mhm" || (t.starts_with('h') && t.len() >= 3 && only(&t[1..], "m")) || mhm()
 }
 
-/// Real words from the user: not Claude's own voice leaking back, not a "mm-hmm".
 fn real_words(text: &str, line: Option<&str>) -> bool {
     if text.trim().is_empty() || backchannel(text) {
         return false;
@@ -53,7 +47,6 @@ const CONT: [&str; 44] = [
     "it's", "in", "on", "at", "about",
 ];
 
-/// Does the live transcript read as a finished turn? ("Yes." / "Push it now." but not "I think that we should and")
 fn looks_complete(text: &str) -> bool {
     let s = text.trim();
     let core = s.trim_end_matches(['"', '\'', ')', ']']);
@@ -62,7 +55,7 @@ fn looks_complete(text: &str) -> bool {
     }
     let bare = s.trim_end_matches(['.', '!', '?', '"', '\'', ')', ']']);
     let last = bare.rsplit(|c: char| !(c.is_alphanumeric() || c == '\'')).next().unwrap_or("").to_lowercase();
-    let filler = |w: &str, a: char, b: char| w.len() >= 2 && w.starts_with(a) && w[1..].chars().all(|c| c == b); // um+, uh+
+    let filler = |w: &str, a: char, b: char| w.len() >= 2 && w.starts_with(a) && w[1..].chars().all(|c| c == b);
     !(CONT.contains(&last.as_str()) || filler(&last, 'u', 'm') || filler(&last, 'u', 'h'))
 }
 
@@ -79,7 +72,6 @@ impl Engine {
         id
     }
 
-    /// The audio not sent yet, as 16-bit PCM bytes, and where it starts.
     pub(super) fn take(u: &mut Utt) -> (usize, Vec<u8>) {
         let body: Vec<u8> = u.unsent.drain(..).flat_map(|x| ((x.clamp(-1.0, 1.0) * 32767.0) as i16).to_le_bytes()).collect();
         let off = u.sent16;
@@ -87,7 +79,6 @@ impl Engine {
         (off, body)
     }
 
-    /// Sends what's new and gets the transcript so far (one request at a time per utterance).
     pub(super) fn ask(self: &Arc<Self>, s: &mut Inner, id: u64, now: f64) {
         let Some(u) = s.utts.get_mut(&id) else { return };
         if u.closed {
@@ -154,7 +145,6 @@ impl Engine {
             Mode::Claude => self.barge_frame(s, f, rms, now),
             Mode::Idle => s.noise_floor = s.noise_floor * 0.95 + rms * 0.05,
             Mode::Listen => {
-                // Speech has to last 3 frames (120 ms): a knock or a breath doesn't start a turn.
                 if rms > (0.012f32).max(s.noise_floor * 3.0) {
                     s.speech_run += 1;
                     if s.speech_run >= 3 {
@@ -203,12 +193,9 @@ impl Engine {
         let low = BARGE_MIN.max(s.echo * BARGE_ECHO).max(s.noise_floor * 2.0);
         let high = LOUD_MIN.max(s.echo * LOUD_ECHO);
         (s.stats.3, s.stats.4) = (low, high);
-        // Learns how loud Claude's own voice comes back: falls fast, rises slowly (so the user's voice doesn't count).
         if s.barge.is_none() {
             s.echo = if rms < s.echo { s.echo * 0.9 + rms * 0.1 } else { s.echo * 0.99 + rms * 0.01 };
         }
-        // A clearly loud sound holds Claude's voice at once (not in a line's first moments, while the echo is still
-        // being learnt); only words stop her. A cough, typing or a bang just pauses her, and she carries on.
         s.loud_run = if rms > high { s.loud_run + 1 } else { 0 };
         if s.loud_run >= 4 && !s.player.paused() && s.line.as_ref().is_some_and(|l| l.started && now - l.start_at > 800.0) {
             s.player.pause(true);
@@ -254,7 +241,7 @@ impl Engine {
         s.player.stop();
         if let Some(l) = &mut s.line {
             l.cut = true;
-            self.post(format!("{}&seq={}", self.api("hush"), l.id), vec![]); // stop making the rest of the line
+            self.post(format!("{}&seq={}", self.api("hush"), l.id), vec![]);
         }
         self.line_stop.notify_waiters();
         let id = s.barge.take().unwrap_or_else(|| Self::new_utt(s, now));
@@ -304,7 +291,6 @@ impl Engine {
         s.view.mic_level = 0.0;
     }
 
-    /// The user's turn is over: send the rest of what they said and get the final transcript, in order.
     pub(super) fn finish(self: &Arc<Self>, s: &mut Inner, why: &str) {
         if s.mode != Mode::Talk {
             return;
@@ -332,7 +318,7 @@ impl Engine {
         let uid = u.id;
         RT.spawn(async move {
             let r: Option<Value> = {
-                let _in_order = me.speech_order.lock().await; // successive turns reach Claude in order
+                let _in_order = me.speech_order.lock().await;
                 if me.lock().ended {
                     None
                 } else {
@@ -364,7 +350,6 @@ impl Engine {
                     }
                 }
             }
-            // Keep hearing followups during agent thinking without replacing its thinking caption.
             if !s.muted && s.mic.is_some() && s.line.is_none() && s.mode == Mode::Idle && mine {
                 s.mode = Mode::Listen;
             }

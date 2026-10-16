@@ -1,23 +1,16 @@
-// A character of the live cast (cast.rs, drawn by the GPU in live_gl.rs) standing with the middle of its feet at the
-// bottom middle of this element, at k times its home size. While the GPU can't draw it (or for a list), its still
-// picture (ui/faces, made by art/live3d/stills.py) stands in the same place.
-
 export component Actor {
-    in property <string> face: "clawd"; // clawd, haiku, sonnet, opus or null
+    in property <string> face: "clawd";
     in property <float> k: 1;
-    // Null alone is drawn larger (alive.rs NULL_SOLO)
     property <float> s: root.k * (root.face == "null" ? 1.2 : 1);
     in property <bool> live;
-    in property <image> source; // the live texture...
-    in property <int> lw; // ...of which this many px from its bottom-left corner are drawn
+    in property <image> source;
+    in property <int> lw;
     in property <int> lh;
-    in property <int> th; // its height in px
-    // The picture's framing at k = 1, in logical px (alive.rs frame, with HEAD = 40 of room above).
+    in property <int> th;
     property <float> fw: root.face == "null" ? 150 : 300;
     property <float> fh: (root.face == "null" ? 230 : 250) + 40;
     property <float> cx: root.face == "null" ? 73 : 148;
     property <float> feet: (root.face == "null" ? 194.6 : 221.25) + 40;
-    // On whole device pixels, so the picture is never resampled between them.
     property <length> left: round((root.width / 2 - root.cx * root.s * 1px) / 1phx) * 1phx;
     property <length> top: round((root.height - root.feet * root.s * 1px) / 1phx) * 1phx;
     if root.live: Image {

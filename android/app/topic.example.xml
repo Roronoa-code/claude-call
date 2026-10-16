@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Copy to src/main/res/values/topic.xml and put your own private ntfy channel from ../../config.json -->
 <resources>
     <string name="ntfy_topic" translatable="false">claude-your-private-channel</string>
 </resources>

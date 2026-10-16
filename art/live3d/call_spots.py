@@ -1,14 +1,9 @@
-# PREVIEW (branch preview/call-screen-2): the home screen's spotlight drawn for each new call screen direction at its
-# caller's size (caller.rs LOOK_K), so it is never scaled: phone/ui/stage/spot-<look>.png. The Camera direction moves
-# between sizes, so its spot is drawn once for its widest shot (smallest k) at a higher scale and only ever enlarged.
-# The spot's geometry scales exactly with k round the feet line (stages.rays), so one picture serves every k.
 # Usage: python call_spots.py [name ...]
 import os, sys
 import numpy as np
 import stages as S
 from PIL import Image
 
-# name: (k drawn for, px per logical px, logical width, above and below the feet line)
 LOOKS = {
     'camera': (0.62, 2.4, 440, 640, 480),
 }

@@ -1,5 +1,3 @@
-//! The call: its state, Claude's voice for each line, and the web server the phone talks to (through the shared
-//! tunnel).
 use crate::speech::{UTTS, final_transcript, partial, take_audio};
 use crate::voice::{self, Audio};
 use crate::{cfg, debug_on, log, log_line};
@@ -23,13 +21,11 @@ use tokio::{
 
 pub static PORT: OnceLock<u16> = OnceLock::new();
 
-/// Claude's line being made while it plays (16-bit mono PCM).
 pub struct Stream {
     rate: u32,
     data: Mutex<Vec<u8>>,
-    progress: watch::Sender<(usize, bool)>, // bytes so far, done
+    progress: watch::Sender<(usize, bool)>,
 }
-/// Marks the stream done however its maker ends (finished, broke, or the line was replaced or talked over).
 struct DoneGuard(Arc<Stream>);
 impl Drop for DoneGuard {
     fn drop(&mut self) {
@@ -45,26 +41,24 @@ pub struct Call {
     pub say: String,
     end: bool,
     hold: bool,
-    /// How the current line is played: "stream" (sent while it is being made), "parts" (whole files), None = not decided.
     mode: Option<&'static str>,
     parts: Vec<String>,
-    audio: Vec<Option<Arc<Audio>>>, // None = that part failed: the phone says it with its own voice
+    audio: Vec<Option<Arc<Audio>>>,
     stream: Option<Arc<Stream>>,
     tts: Option<tokio::task::AbortHandle>,
     pub answered: bool,
     pub declined: bool,
-    pub call_back: Option<Instant>, // the user hung up asking to be called back then
+    pub call_back: Option<Instant>,
     last_seen: Option<Instant>,
     watchers: u32,
     waiter: Option<oneshot::Sender<Option<String>>>,
     pub pending: Vec<String>,
-    heard_at: Option<Instant>, // the user's audio last arrived (they are mid-sentence while it keeps coming)
-    turns_in_flight: u32,      // turns still being transcribed
-    usage: String,             // what the call has used so far, e.g. "$0.04" (usage.rs)
+    heard_at: Option<Instant>,
+    turns_in_flight: u32,
+    usage: String,
 }
 
 static CALL: LazyLock<Mutex<Call>> = LazyLock::new(Default::default);
-// The call page waits on /state until something changes (long poll), so a new line reaches it at once.
 static CHANGED: LazyLock<watch::Sender<u64>> = LazyLock::new(|| watch::channel(0).0);
 
 pub fn call() -> MutexGuard<'static, Call> {
@@ -75,7 +69,6 @@ fn changed(c: &mut Call) {
     CHANGED.send_replace(c.v);
 }
 
-// Latency marks for each reply turn, in timing.log: where the gap between "you stop" and "Claude speaks" goes.
 static TURN_START: Mutex<Option<Instant>> = Mutex::new(None);
 pub fn mark(what: &str, reset: bool) {
     let mut start = TURN_START.lock().unwrap();
@@ -93,16 +86,15 @@ fn fire(first: &mut Option<oneshot::Sender<()>>) {
     }
 }
 
-/// Starts saying a line; returns once its first sound is ready.
 pub async fn say(text: String, end: bool, hold: bool) {
     mark("Claude replied (thinking done), making voice", false);
     let seq = {
         let mut c = call();
         if let Some(t) = c.tts.take() {
-            t.abort(); // a newer line replaces one still being made
+            t.abort();
         }
         c.seq += 1;
-        let shown = crate::speech::without_tags(&text); // the [mood] tags only steer the voice
+        let shown = crate::speech::without_tags(&text);
         (c.say, c.end, c.hold, c.mode) = (shown.clone(), end, hold, None);
         (c.parts, c.audio, c.stream) = (vec![shown], vec![], None);
         changed(&mut c);
@@ -118,11 +110,9 @@ pub async fn say(text: String, end: bool, hold: bool) {
     if call().seq == seq {
         call().tts = Some(task.abort_handle());
     }
-    let _ = first_ready.await; // also returns if the line failed or was replaced
+    let _ = first_ready.await;
 }
 
-/// Main path: the cloned voice streamed as it is made (first sound ~0.2 s after the line is ready), one stream per
-/// line so the voice stays even. False if the GPU voice is unavailable.
 async fn stream_line(seq: u64, text: &str, first: &mut Option<oneshot::Sender<()>>) -> bool {
     let Some(mut r) = voice::gpu("/tts_stream", text.as_bytes().to_vec(), None).await else { return false };
     if call().seq != seq {
@@ -158,7 +148,6 @@ async fn stream_line(seq: u64, text: &str, first: &mut Option<oneshot::Sender<()
     true
 }
 
-/// Fallback: whole files, in two pieces: the first sentence (so playback starts fast), then the rest in one go.
 async fn speak_parts(seq: u64, text: &str, first: &mut Option<oneshot::Sender<()>>) {
     let mut sentences = vec![];
     let mut cur = String::new();
@@ -173,7 +162,7 @@ async fn speak_parts(seq: u64, text: &str, first: &mut Option<oneshot::Sender<()
     let sentences: Vec<String> = sentences.iter().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
     let mut n = 1;
     while n < sentences.len() && sentences[..n].join(" ").len() < 25 {
-        n += 1; // don't start on a tiny fragment
+        n += 1;
     }
     let parts: Vec<String> =
         [sentences[..n.min(sentences.len())].join(" "), sentences[n.min(sentences.len())..].join(" ")].into_iter().filter(|s| !s.is_empty()).collect();
@@ -187,7 +176,7 @@ async fn speak_parts(seq: u64, text: &str, first: &mut Option<oneshot::Sender<()
         {
             let mut c = call();
             if c.seq != seq {
-                return; // superseded by a newer line
+                return;
             }
             c.audio.push(a.map(Arc::new));
             changed(&mut c);
@@ -199,7 +188,6 @@ async fn speak_parts(seq: u64, text: &str, first: &mut Option<oneshot::Sender<()
     }
 }
 
-/// What the user says goes to whoever is waiting; if nobody is (e.g. while on hold), it is kept for the next turn.
 pub fn deliver(t: String) {
     let mut c = call();
     match c.waiter.take() {
@@ -213,9 +201,6 @@ pub fn deliver(t: String) {
     }
 }
 
-/// Just before Claude's line is said: waits while the user is still talking or their words are still being
-/// transcribed, then takes anything they said after Claude got their turn (e.g. a correction). Saying the stale answer
-/// and then the next one, talking over itself, is what made corrections a mess.
 pub async fn said_meanwhile() -> Option<String> {
     let talking = || {
         let c = call();
@@ -229,7 +214,6 @@ pub async fn said_meanwhile() -> Option<String> {
     (!c.pending.is_empty()).then(|| c.pending.drain(..).collect::<Vec<_>>().join(" / "))
 }
 
-/// Registers for the user's next reply now (so nothing said meanwhile is lost) and waits up to `ms`.
 pub fn wait_for_reply(ms: u64) -> impl Future<Output = Option<String>> {
     let ready = {
         let mut c = call();
@@ -263,16 +247,12 @@ pub fn set_usage(u: String) {
     }
 }
 
-/// Ends the wait of whoever is waiting for a reply (hung up / declined / no answer).
 pub fn cancel_reply() {
     if let Some(w) = call().waiter.take() {
         let _ = w.send(None);
     }
 }
 
-/// The agent's session closed during a call (a headless run that ended its turn): let the last line reach the phone,
-/// say goodbye if it never hung up, and stay up until the phone has hung up, instead of cutting the line off and
-/// leaving the phone waiting until it gives up on the PC.
 pub async fn finish() {
     if !call().answered || call().declined {
         return;
@@ -288,7 +268,6 @@ pub async fn finish() {
     }
 }
 
-/// Waits until the line being made is all made (the phone fetches it as it goes).
 async fn wait_line() {
     let stream = call().stream.clone();
     if let Some(st) = stream {
@@ -301,7 +280,6 @@ pub fn page_live() -> bool {
     c.watchers > 0 || c.last_seen.is_some_and(|t| t.elapsed() < Duration::from_secs(10))
 }
 
-// ---- The web server: the call page, Claude's voice, and the user's speech. ----
 pub async fn serve() -> u16 {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let port = listener.local_addr().unwrap().port();
@@ -317,7 +295,6 @@ pub async fn serve() -> u16 {
     port
 }
 
-/// Counts the page as watching while a /state poll is open, even if the phone drops the request.
 struct Watching;
 impl Watching {
     fn new() -> Self {
@@ -365,9 +342,7 @@ async fn handle(req: Request) -> Result<Response, String> {
                 "ready": c.audio.len(), "debug": debug_on(), "agent": cfg().agent, "usage": c.usage }))
         }
         "/stream" => {
-            // Claude's line as 16-bit PCM while it is being made, in rolling pieces: each request returns the audio made
-            // since byte `from` (waiting until there is some), with x-done: 1 on the last. Whole responses, because the
-            // quick tunnel holds back a streamed response until ~128 KB have built up. 409 = play the parts instead.
+            // The quick tunnel holds back a streamed response until ~128 KB have built up.
             let (seq, from) = (num("seq").unwrap_or(0), num("from").unwrap_or(0) as usize);
             let mut rx = CHANGED.subscribe();
             let st = loop {
@@ -423,7 +398,6 @@ async fn handle(req: Request) -> Result<Response, String> {
             }
         }
         "/hush" if post => {
-            // The user talked over Claude: stop making the rest of the line.
             let mut c = call();
             if num("seq") == Some(c.seq) {
                 if let Some(t) = c.tts.take() {
@@ -443,14 +417,13 @@ async fn handle(req: Request) -> Result<Response, String> {
                 c.call_back = Some(Instant::now() + Duration::from_secs(m * 60));
             }
             if let Some(t) = c.tts.take() {
-                t.abort(); // hung up mid-line: stop making the rest
+                t.abort();
             }
             drop(c);
             cancel_reply();
             no_content()
         }
         "/listen" if post => {
-            // A piece of what the user is saying; with partial=1, also returns the transcript so far (live captions).
             let (u, off, live) = (q("u").unwrap_or("").to_string(), num("off").unwrap_or(0) as usize, q("partial").is_some());
             let cell = take_audio(&u, off, &body(16_000 * 2 * 30).await?);
             call().heard_at = Some(Instant::now());
@@ -476,7 +449,6 @@ async fn handle(req: Request) -> Result<Response, String> {
             if ok {
                 deliver(if interrupted { format!("(interrupting you) {heard}") } else { heard.clone() });
             } else if interrupted {
-                // Cut off by a noise, not words: without this the agent would wait for a reply that never comes.
                 deliver("(you were cut off by a noise, not words: carry on from where you were)".into());
             }
             call().turns_in_flight -= 1;

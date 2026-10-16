@@ -1,6 +1,3 @@
-//! The few Android framework calls the call screen needs, made from Rust through JNI: the call link it was opened
-//! with, call audio routing (earpiece / loudspeaker), the screen switching off at the ear, the system bar and
-//! keyboard insets, and closing the screen.
 use jni::{
     JNIEnv, JavaVM,
     objects::{GlobalRef, JObject, JValue},
@@ -13,12 +10,9 @@ struct Ctx {
     activity: GlobalRef,
 }
 thread_local! {
-    /// This thread's screen. Each screen (home, call) runs on its own thread, and both can be open at once in the one
-    /// process the call listener keeps alive, so the activity is per thread, not per process.
     static CTX: OnceCell<Ctx> = const { OnceCell::new() };
 }
 static WAKE: Mutex<Option<GlobalRef>> = Mutex::new(None);
-/// The home screen is on screen (between onStart and onStop, Shell.kt): away, it draws and polls nothing.
 static HOME_SHOWN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 
 pub fn home_shown() -> bool {
@@ -29,9 +23,7 @@ pub fn set_home_shown(on: bool) {
     HOME_SHOWN.store(on, std::sync::atomic::Ordering::Relaxed);
 }
 
-/// How far the keyboard reaches up, in dp (f32 bits), as Shell.kt's followKeyboard last said on Android's main thread.
-/// Each screen's own frame timer reads it: Slint's event loop proxy is one per process (the newest screen's), so a
-/// post from the main thread could land in the other screen's loop.
+/// Slint's event loop proxy is one per process (the newest screen's), so each screen's frame timer reads this instead.
 static KB: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
 pub fn kb() -> f32 {
@@ -54,7 +46,6 @@ pub fn init(app: &android_activity::AndroidApp) {
     });
 }
 
-/// Runs `f` with a JNI env and this thread's activity; errors (and pending Java exceptions) are logged and dropped.
 pub fn with<R>(f: impl FnOnce(&mut JNIEnv, &JObject) -> jni::errors::Result<R>) -> Option<R> {
     CTX.with(|c| {
         let ctx = c.get()?;
@@ -75,7 +66,6 @@ unsafe extern "C" {
     fn ndk_sys_log(prio: i32, tag: *const std::ffi::c_char, text: *const std::ffi::c_char) -> i32;
 }
 
-/// The call link and whether the user already tapped Answer on the notification.
 pub fn intent() -> (Option<String>, bool) {
     with(|env, act| {
         let intent = env.call_method(act, "getIntent", "()Landroid/content/Intent;", &[])?.l()?;
@@ -87,8 +77,7 @@ pub fn intent() -> (Option<String>, bool) {
 const EARPIECE: i32 = 1;
 const SPEAKER: i32 = 2;
 
-/// Call audio from now on (MODE_IN_COMMUNICATION), on the earpiece or the loudspeaker; the screen switches off
-/// at the ear while on the earpiece. Safe to repeat: the system (or the mic opening) sometimes moves the route.
+/// Safe to repeat: the system (or the mic opening) sometimes moves the audio route.
 pub fn route(speaker: bool) {
     with(|env, act| {
         let am = service(env, act, "audio")?;
@@ -109,7 +98,6 @@ pub fn route(speaker: bool) {
                 }
             }
         }
-        // The proximity sensor turns the screen off at the ear (earpiece only).
         let mut wake = WAKE.lock().unwrap();
         if wake.is_none() {
             let pm = service(env, act, "power")?;
@@ -128,7 +116,6 @@ pub fn route(speaker: bool) {
     });
 }
 
-/// Back to normal audio, screen on; the mic and earpiece are free again.
 pub fn release() {
     with(|env, act| {
         if let Some(w) = WAKE.lock().unwrap().take() {
@@ -143,7 +130,6 @@ pub fn release() {
     });
 }
 
-/// The window's insets of 	ypes (WindowInsets.Type bits) as (top, bottom) in dp; None until the window is attached.
 fn window_insets(types: i32) -> Option<(f32, f32)> {
     with(|env, act| {
         let win = env.call_method(act, "getWindow", "()Landroid/view/Window;", &[])?.l()?;
@@ -160,12 +146,10 @@ fn window_insets(types: i32) -> Option<(f32, f32)> {
     .flatten()
 }
 
-/// Room for the status bar and the gesture bar, in dp.
 pub fn insets() -> Option<(f32, f32)> {
-    window_insets(1 | 2).map(|(top, bottom)| (top.max(36.0), bottom.max(24.0))) // statusBars() | navigationBars()
+    window_insets(1 | 2).map(|(top, bottom)| (top.max(36.0), bottom.max(24.0)))
 }
 
-/// The call connected: stop ringing, show the ongoing-call notification.
 pub fn call_began() {
     with(|env, act| crate::service::call_began(env, act));
 }
@@ -173,8 +157,7 @@ pub fn finish() {
     with(|env, act| env.call_method(act, "finish", "()V", &[]).map(drop));
 }
 
-/// Asks for 60 frames a second (a call doesn't need 120): half the drawing work. Looked up at run time because it
-/// lives in libandroid (Android 11+), not where the NDK bindings expect it.
+/// `ANativeWindow_setFrameRate` (libandroid, Android 11+) is missing from the ndk bindings, so it is looked up at run time.
 pub fn set_frame_rate(window: *mut std::ffi::c_void, fps: f32) -> bool {
     use std::ffi::{c_char, c_void};
     unsafe extern "C" {
@@ -192,7 +175,6 @@ pub fn set_frame_rate(window: *mut std::ffi::c_void, fps: f32) -> bool {
     }
 }
 
-/// The activity's class: which screen this is (the call screen or the home screen).
 pub fn activity_name() -> String {
     with(|env, act| {
         let class = env.call_method(act, "getClass", "()Ljava/lang/Class;", &[])?.l()?;

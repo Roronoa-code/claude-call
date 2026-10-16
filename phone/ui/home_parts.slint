@@ -1,30 +1,27 @@
-// The home screen's state (set from Rust), the contact modes and the bottom row's round buttons.
 import { T, Icon } from "parts.slint";
 
 export struct Mode { id: string, title: string }
 
 export global Home {
     in property <bool> ready: true;
-    in property <string> setup-text: "Finish setting up"; // the setup line: or which permission only Settings can give now
-    in property <string> ask-chat; // an agent's question waiting for an answer: its chat ("" none)
-    in property <string> ask-line; // ...and the line naming it, "Notebook sync has a question"
+    in property <string> setup-text: "Finish setting up";
+    in property <string> ask-chat;
+    in property <string> ask-line;
     in property <string> mode: "both";
     in property <length> sat: 36px;
     in property <length> sab: 24px;
-    // How far the keyboard reaches up from the bottom edge, frame by frame as it slides (Shell.kt followKeyboard).
     in property <length> kb;
-    in-out property <bool> typing; // a chat's field has the cursor
-    in-out property <string> caller: "claude"; // who the Call button asks for: claude or codex (tap Clawd or Null)
-    in property <bool> requested; // a call was just asked for; it rings within a minute or so
-    in property <bool> no-answer; // ...and none came: the button says so for a moment
+    in-out property <bool> typing;
+    in-out property <string> caller: "claude";
+    in property <bool> requested;
+    in property <bool> no-answer;
     callback set-mode(string);
     callback set-up();
     callback call(string);
-    callback leave(); // Back with nothing open: the app goes to the background, warm (not closed)
-    callback backable(bool); // something is open that Back closes: the system back swipe previews it (Shell.kt)
-    in property <int> shown: -1; // while Null is dragged: the mode his face shows (an index into modes), else -1
-    in property <bool> hint; // the one-time hint that Null can be dragged
-    // In the order Null's face rolls through them (settings.rs MODES), dragging up towards Calls only.
+    callback leave();
+    callback backable(bool);
+    in property <int> shown: -1;
+    in property <bool> hint;
     out property <[Mode]> modes: [
         { id: "call", title: "Calls only" },
         { id: "text", title: "Texts only" },
@@ -37,7 +34,6 @@ export global Home {
     out property <Mode> current: modes[shown >= 0 ? shown : index];
 }
 
-// A round button for the home screen's bottom row, with an optional dot (something new, or setup to finish).
 export component RoundIcon {
     in property <string> icon;
     in property <bool> dot;

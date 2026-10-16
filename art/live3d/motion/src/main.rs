@@ -1,6 +1,4 @@
-//! Dumps the cast's motion as uniform timelines (JSON) for the offline renderer: a 27 s life story per character at
-//! 30 fps, and one settled frame per pose for the pose sheets. Usage: cast-motion <out dir>
-#[allow(dead_code)] // moving() is for the app, not the dump
+#[allow(dead_code)]
 #[path = "../../../../phone/src/cast.rs"]
 mod cast;
 use cast::{Cast, Mat, State, Uniforms, Who};
@@ -11,7 +9,6 @@ fn json(u: &Uniforms) -> String {
     format!("{{{}}}", fields.join(","))
 }
 
-/// The story: idle with a tap and a finger to follow, thinking, talking, a happy hop, idle, falling asleep, woken by a tap.
 fn story(who: Who, seed: u64) -> String {
     let mut c = Cast::new(who, seed);
     let mut out = String::from("[");
@@ -33,7 +30,6 @@ fn story(who: Who, seed: u64) -> String {
             events[next].1(&mut c, now);
             next += 1;
         }
-        // 5.2 s to 7.2 s: a finger drags across in front of him, then lifts; the eyes track it, the body follows
         if (5.2..7.2).contains(&now) {
             let k = (now - 5.2) / 2.0;
             c.point(-170.0 + 340.0 * k, -30.0 + 60.0 * (k * 3.0).sin(), true, now);
@@ -51,7 +47,6 @@ fn story(who: Who, seed: u64) -> String {
     out + "]"
 }
 
-/// One frame per pose: idle, blink, think, talk, happy, sleep.
 fn poses(who: Who, seed: u64) -> String {
     let settle = |st: State, secs: f32, pick: &dyn Fn(&Cast, &Uniforms) -> bool| {
         let mut c = Cast::new(who, seed);
@@ -74,7 +69,6 @@ fn poses(who: Who, seed: u64) -> String {
     let calm = |u: &Uniforms| eyes(u)[2] > 0.99 && eyes(u)[0].abs() < 0.25 && eyes(u)[1].abs() < 0.2;
     let idle = settle(State::Idle, 2.0, &|_, u| calm(u));
     let blink = {
-        // the most closed frame of the first blink
         let mut c = Cast::new(who, seed);
         let (mut now, mut best, mut low) = (0.0, String::new(), 2.0f32);
         while now < 9.0 {

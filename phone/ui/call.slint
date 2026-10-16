@@ -1,13 +1,9 @@
-// The Claude Call screen (design D: "Your mix"), drawn natively. Rust drives the call state; this file only lays it
-// out and animates it. Nothing here runs a per-frame loop: when nothing changes, nothing is redrawn.
-
 import { T, Cap, Msg } from "parts.slint";
 import { Call } from "call_data.slint";
 import { CameraLook } from "call_camera.slint";
 export { Cap, Msg, Call }
 
 export component CallScreen inherits Window {
-    // The keyboard put away (Back, or swiped down) while typing: the reply field closes with it.
     property <length> kb: Call.kb;
     property <bool> had-kb;
     changed kb => {
@@ -18,7 +14,6 @@ export component CallScreen inherits Window {
             Call.typing = false;
         }
     }
-    // Back closes what is open over the call first (screen.rs back): the Transcript, the reply field, More.
     callback overlays(bool);
     property <bool> overlaid: Call.caps-open || Call.typing || Call.more;
     changed overlaid => { root.overlays(self.overlaid); }

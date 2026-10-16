@@ -1,5 +1,3 @@
-//! Claude's voice: each line played as it arrives (or part by part), with its words revealed in step with the
-//! real audio position.
 use super::*;
 
 impl Engine {
@@ -20,7 +18,6 @@ impl Engine {
         s.view.claude(id, &text);
     }
 
-    /// Where Claude's line has got to: the text revealed in step with the real audio position.
     pub fn line_progress(&self, s: &mut Inner) {
         let now = self.now();
         let Some(l) = &s.line else { return };
@@ -38,7 +35,7 @@ impl Engine {
         let total = if l.dur > 0.0 { l.dur } else { (len * MS_PER_CHAR).max(ms / 0.95) };
         let k = ((ms / total).min(1.0) * len).ceil() as usize;
         let chars: Vec<char> = l.text.chars().collect();
-        let end = (k..chars.len()).find(|&i| chars[i] == ' '); // to the end of the word
+        let end = (k..chars.len()).find(|&i| chars[i] == ' ');
         let shown: String = match end {
             Some(e) => chars[..e].iter().collect(),
             None => l.text.clone(),
@@ -47,7 +44,6 @@ impl Engine {
         s.view.playing(id, &text, &shown);
     }
 
-    /// Plays one line streamed as it is made; false if there is no stream for it (use the parts instead).
     pub(super) async fn stream_line(self: &Arc<Self>, seq: u64) -> bool {
         let url = format!("{}&seq={seq}", self.api("stream"));
         let (mut from, mut carry, mut total) = (0usize, None::<u8>, 0u64);
@@ -104,11 +100,10 @@ impl Engine {
         true
     }
 
-    /// Waits for the queued voice to finish playing (or the line to be cut).
     pub(super) async fn drain(&self) {
         let mut until = {
             let mut s = self.lock();
-            let gaps = s.player.end_line(); // everything is here: play out the rest
+            let gaps = s.player.end_line();
             if gaps > 0 {
                 let msg = format!("voice ran dry {gaps} times in this line");
                 self.dbg(&mut s, &msg);
@@ -120,7 +115,7 @@ impl Engine {
                 let s = self.lock();
                 let (_, waiting) = s.player.position();
                 if s.player.paused() {
-                    until += 20.0; // held for a sudden sound: that time doesn't count
+                    until += 20.0;
                 }
                 if waiting == 0 || s.line.as_ref().is_none_or(|l| l.cut) || self.now() > until {
                     return;
@@ -133,7 +128,6 @@ impl Engine {
         }
     }
 
-    /// Fallback: whole files, part by part (WAV); a part that failed is only shown, for about as long as it takes to say.
     pub(super) async fn play_parts(self: &Arc<Self>, seq: u64) {
         let Some(mut st) = self.get_state(-1).await else { return };
         let words = |t: &str| t.split_whitespace().count() as u64;
@@ -163,7 +157,7 @@ impl Engine {
                         let mut s = self.lock();
                         let s = &mut *s;
                         if s.line.as_ref().is_none_or(|l| l.cut) {
-                            return; // hung up or cut while it downloaded
+                            return;
                         }
                         let (at, out_rate) = s.player.push(rate, &samples);
                         if let Some(l) = &mut s.line {
@@ -176,7 +170,6 @@ impl Engine {
                     self.drain().await;
                 }
                 None => {
-                    // ponytail: no on-phone voice for a failed part; its caption shows for as long as it would take
                     self.lock_started();
                     tokio::time::sleep(Duration::from_millis(1000 + words(part) * 330)).await;
                 }
@@ -196,7 +189,7 @@ impl Engine {
         {
             let mut s = self.lock();
             if s.ended {
-                return; // hung up while the line was on its way
+                return;
             }
             s.line = Some(Line { id: seq, text, started: false, start_at: 0.0, start_frame: None, rate: 0, dur: 0.0, cut: false });
             s.player.begin_line();
@@ -205,13 +198,12 @@ impl Engine {
             s.loud_run = 0;
             s.view.status("Claude is talking…");
         }
-        // Ask for the stream straight away: the server holds it until the first sound is ready (409 = use parts).
         if !self.stream_line(seq).await && !self.cut() {
             self.play_parts(seq).await;
         }
         let mut s = self.lock();
         let s = &mut *s;
-        self.started(s); // a line that never sounded still gets shown
+        self.started(s);
         if let Some(l) = s.line.take() {
             if !l.cut {
                 s.view.playing(l.id, &l.text, &l.text);

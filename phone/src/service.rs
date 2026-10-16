@@ -1,5 +1,3 @@
-//! The always-on part (ListenService): its notification (waiting for calls, or the ongoing call), the call listener
-//! thread, and the call screen's life: answered, Back, Decline, closed.
 use crate::{
     jx::{self, s, service},
     net, ring, settings,
@@ -14,23 +12,19 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 
-/// The answered call: its link and when it started (ms).
 static ACTIVE: Mutex<Option<(String, i64)>> = Mutex::new(None);
-/// The open call screen, its link, and whether it was answered.
 static SCREEN: Mutex<Option<(GlobalRef, String, bool)>> = Mutex::new(None);
-/// Which listener generation is running (net::GEN says which one should be).
 static RUNNING: AtomicU64 = AtomicU64::new(u64::MAX);
 
-const SPECIAL_USE: i32 = 0x4000_0000; // ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+const SPECIAL_USE: i32 = 0x4000_0000;
 const MICROPHONE: i32 = 0x80;
-const READY_ID: i32 = 1; // "Ready for Claude's calls"
-const CALL_ID: i32 = 3; // the ongoing call (2 is the ringing)
+const READY_ID: i32 = 1;
+const CALL_ID: i32 = 3;
 
 pub fn active_link() -> Option<String> {
     ACTIVE.lock().unwrap().as_ref().map(|a| a.0.clone())
 }
 
-/// Starts (or refreshes) ListenService.
 pub fn start(env: &mut JNIEnv, ctx: &JObject) -> Result<()> {
     let i = jx::intent(env, ctx, "ListenService")?;
     env.call_method(ctx, "startForegroundService", "(Landroid/content/Intent;)Landroid/content/ComponentName;", &[JValue::Object(&i)])?;
@@ -47,9 +41,8 @@ fn end_action<'a>(env: &mut JNIEnv<'a>, end: &JObject) -> Result<JObject<'a>> {
     env.call_method(&ab, "build", "()Landroid/app/Notification$Action;", &[])?.l()
 }
 
-/// Android 16 QPR1+ shows an ongoing call as a Live Update; earlier versions don't have the call.
 fn can_promote(env: &mut JNIEnv) -> bool {
-    // Older Androids lack these fields: each miss leaves an exception, which must be cleared before the next JNI call.
+    // Older Androids lack these fields: each miss leaves a JNI exception that must be cleared.
     let mut field = |class: &str, name: &str| {
         let v = env.get_static_field(class, name, "I").and_then(|v| v.i());
         if env.exception_check().unwrap_or(false) {
@@ -64,7 +57,7 @@ fn can_promote(env: &mut JNIEnv) -> bool {
 
 fn notification<'a>(env: &mut JNIEnv<'a>, svc: &JObject) -> Result<(JObject<'a>, i32)> {
     let nm = service(env, svc, "notification")?;
-    ring::channel(env, &nm, "listening", "Waiting for calls", 1, false)?; // IMPORTANCE_MIN
+    ring::channel(env, &nm, "listening", "Waiting for calls", 1, false)?;
     let sdk = jx::sdk(env)?;
     let mut types = if sdk >= 34 { SPECIAL_USE } else { 0 };
     let active = ACTIVE.lock().unwrap().clone();
@@ -76,7 +69,7 @@ fn notification<'a>(env: &mut JNIEnv<'a>, svc: &JObject) -> Result<(JObject<'a>,
         jx::call(env, &b, "setContentIntent", "(Landroid/app/PendingIntent;)Landroid/app/Notification$Builder;", &[JValue::Object(&open)])?;
         return Ok((env.call_method(&b, "build", "()Landroid/app/Notification;", &[])?.l()?, types));
     };
-    ring::channel(env, &nm, "ongoing_calls", "Ongoing Claude call", 2, false)?; // IMPORTANCE_LOW
+    ring::channel(env, &nm, "ongoing_calls", "Ongoing Claude call", 2, false)?;
     let open = ring::call_screen(env, svc, &link, true, 4)?;
     let end = ring::hang_up(env, svc, &link, 5)?;
     let b = ring::builder(env, svc, "ongoing_calls")?;
@@ -105,7 +98,7 @@ fn notification<'a>(env: &mut JNIEnv<'a>, svc: &JObject) -> Result<(JObject<'a>,
     }
     let mut n = env.call_method(&b, "build", "()Landroid/app/Notification;", &[])?.l()?;
     if promote && !env.call_method(&n, "hasPromotableCharacteristics", "()Z", &[])?.z()? {
-        // Some Samsung builds leave CallStyle out of their Live Update styles: plain text and an End button instead.
+        // Some Samsung builds leave CallStyle out of their Live Update styles.
         let big = env.new_object("android/app/Notification$BigTextStyle", "()V", &[])?;
         let t = s(env, "Tap to return to the call")?;
         env.call_method(&big, "bigText", "(Ljava/lang/CharSequence;)Landroid/app/Notification$BigTextStyle;", &[JValue::Object(&t)])?;
@@ -115,17 +108,14 @@ fn notification<'a>(env: &mut JNIEnv<'a>, svc: &JObject) -> Result<(JObject<'a>,
         jx::call(env, &b, "setActions", "([Landroid/app/Notification$Action;)Landroid/app/Notification$Builder;", &[JValue::Object(&actions)])?;
         n = env.call_method(&b, "build", "()Landroid/app/Notification;", &[])?.l()?;
     }
-    // Only an answered call asks for the microphone; setup and boot stay listener-only.
     if sdk >= 30 && jx::granted(env, svc, "android.permission.RECORD_AUDIO")? {
         types |= MICROPHONE;
     }
     Ok((n, types))
 }
 
-/// ListenService.onStartCommand: the notification, and the listener if it isn't running.
 pub fn foreground(env: &mut JNIEnv, svc: &JObject) -> Result<()> {
-    // The ongoing call has its own notification id: Android 16 keeps a promoted call card when the same id is
-    // updated to the plain "ready" one, so the call card is removed by id instead.
+    // Android 16 keeps a promoted call card when the same id is updated to a plain notification.
     let (n, types) = notification(env, svc)?;
     let (id, other) = if active_link().is_some() { (CALL_ID, READY_ID) } else { (READY_ID, CALL_ID) };
     env.call_method(svc, "startForeground", "(ILandroid/app/Notification;I)V", &[JValue::Int(id), JValue::Object(&n), JValue::Int(types)])?;
@@ -166,11 +156,10 @@ pub fn call_ended(env: &mut JNIEnv, ctx: &JObject, link: &str) -> Result<()> {
     start(env, ctx)
 }
 
-/// The call screen opened (or was brought back): the test ring says it worked; Answer stops the ringing.
 pub fn call_opened(env: &mut JNIEnv, act: &JObject, intent: &JObject) -> Result<()> {
     let link = jx::extra(env, intent, "link")?.unwrap_or_default();
     if link == ring::TEST_LINK {
-        let (t, len) = (s(env, "✓ Test call worked")?, 1); // Toast.LENGTH_LONG
+        let (t, len) = (s(env, "✓ Test call worked")?, 1);
         let sig = "(Landroid/content/Context;Ljava/lang/CharSequence;I)Landroid/widget/Toast;";
         let toast = env.call_static_method("android/widget/Toast", "makeText", sig, &[JValue::Object(act), JValue::Object(&t), JValue::Int(len)])?.l()?;
         env.call_method(&toast, "show", "()V", &[])?;
@@ -189,7 +178,6 @@ pub fn call_opened(env: &mut JNIEnv, act: &JObject, intent: &JObject) -> Result<
     Ok(())
 }
 
-/// A touch on the call screen quiets its own ringing, not another call's.
 pub fn screen_touched(env: &mut JNIEnv, act: &JObject) -> Result<()> {
     let link = SCREEN.lock().unwrap().as_ref().map(|s| s.1.clone());
     match link {
@@ -198,7 +186,6 @@ pub fn screen_touched(env: &mut JNIEnv, act: &JObject) -> Result<()> {
     }
 }
 
-/// The call connected (from the call screen's engine): quiet, and the ongoing-call notification.
 pub fn call_began(env: &mut JNIEnv, act: &JObject) -> Result<()> {
     let link = {
         let mut sc = SCREEN.lock().unwrap();
@@ -216,8 +203,6 @@ pub fn call_began(env: &mut JNIEnv, act: &JObject) -> Result<()> {
     }
 }
 
-/// Back: closes the Transcript, the reply field or More first; then a live call keeps going (the notification brings
-/// it back); before answering, Back closes it.
 pub fn call_back(env: &mut JNIEnv, act: &JObject) -> Result<()> {
     if crate::screen::back() {
         return Ok(());
@@ -231,7 +216,6 @@ pub fn call_back(env: &mut JNIEnv, act: &JObject) -> Result<()> {
     Ok(())
 }
 
-/// The call screen closed: that hangs up.
 pub fn call_closed(env: &mut JNIEnv, act: &JObject) -> Result<()> {
     let link = {
         let mut sc = SCREEN.lock().unwrap();
@@ -250,7 +234,6 @@ pub fn call_closed(env: &mut JNIEnv, act: &JObject) -> Result<()> {
     Ok(())
 }
 
-/// Decline / End call from a notification: close the call screen if it's open (that hangs up), else hang up here.
 pub fn declined(env: &mut JNIEnv, ctx: &JObject, intent: &JObject) -> Result<()> {
     let Some(link) = jx::extra(env, intent, "link")? else { return Ok(()) };
     ring::stop(env, ctx, &link, true)?;
@@ -266,8 +249,7 @@ pub fn declined(env: &mut JNIEnv, ctx: &JObject, intent: &JObject) -> Result<()>
     Ok(())
 }
 
-/// The active call, unless its screen is already closing: the home screen comes back before the call screen is gone,
-/// and bringing the call back then reopened it and replayed the goodbye.
+/// Android resumes the home screen before the call screen is gone.
 fn live_link(env: &mut JNIEnv) -> Result<Option<String>> {
     let Some(link) = active_link() else { return Ok(None) };
     let screen = SCREEN.lock().unwrap().as_ref().filter(|s| s.1 == link).map(|s| s.0.clone());
@@ -279,9 +261,7 @@ fn live_link(env: &mut JNIEnv) -> Result<Option<String>> {
     Ok(Some(link))
 }
 
-/// The home screen opened: during a call the app icon brings the call back instead.
 pub fn home_opened(env: &mut JNIEnv, act: &JObject) -> Result<()> {
-    // A chat notification was tapped: the home screen opens that chat ("": the chat list, from the summary).
     let intent = env.call_method(act, "getIntent", "()Landroid/content/Intent;", &[])?.l()?;
     if let Some(chat) = jx::extra(env, &intent, "chat")? {
         *crate::inbox::OPEN_CHAT.lock().unwrap() = Some(chat);
@@ -295,9 +275,6 @@ pub fn home_opened(env: &mut JNIEnv, act: &JObject) -> Result<()> {
     Ok(())
 }
 
-/// The home screen came to the front (the app icon brings an open one back without a new intent): during a call that
-/// means the call; otherwise listen (chats work while call permissions are still missing), pick up a mode changed
-/// elsewhere, and bring the widget's "Changed" day up to date.
 pub fn home_resumed(env: &mut JNIEnv, act: &JObject) -> Result<()> {
     if live_link(env)?.is_some() {
         return home_opened(env, act);
@@ -315,7 +292,6 @@ pub fn home_resumed(env: &mut JNIEnv, act: &JObject) -> Result<()> {
     Ok(())
 }
 
-/// After the permission dialog: listen, and on to the rest of setup.
 pub fn permissions_answered(env: &mut JNIEnv, act: &JObject) -> Result<()> {
     settings::answered(env, act)?;
     start(env, act)?;

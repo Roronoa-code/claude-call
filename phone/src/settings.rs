@@ -1,5 +1,3 @@
-//! The app's settings (SharedPreferences "callme"): the private channel and the contact mode, which is shared with
-//! the PC agents over ntfy; and what setup still needs the user's OK.
 use crate::jx::{self, granted, s, service, PKG};
 use jni::{
     JNIEnv,
@@ -7,7 +5,6 @@ use jni::{
     objects::{JObject, JValue},
 };
 
-/// The contact modes; "wake" and "sleep" are the two Sleep modes (ring until picked up / do not disturb).
 pub const MODES: [&str; 6] = ["call", "text", "both", "none", "wake", "sleep"];
 
 fn prefs<'a>(env: &mut JNIEnv<'a>, ctx: &JObject) -> Result<JObject<'a>> {
@@ -21,7 +18,6 @@ fn get(env: &mut JNIEnv, ctx: &JObject, key: &str) -> Result<Option<String>> {
     jx::string(env, v)
 }
 
-/// Writes string and long values in one edit.
 fn put(env: &mut JNIEnv, ctx: &JObject, text: &[(&str, &str)], long: &[(&str, i64)]) -> Result<()> {
     let p = prefs(env, ctx)?;
     let e = env.call_method(&p, "edit", "()Landroid/content/SharedPreferences$Editor;", &[])?.l()?;
@@ -37,7 +33,7 @@ fn put(env: &mut JNIEnv, ctx: &JObject, text: &[(&str, &str)], long: &[(&str, i6
     Ok(())
 }
 
-/// The private ntfy channel; the default comes from res/values/topic.xml (kept out of git: it is effectively a password).
+/// The topic name works as a password (topic.xml is kept out of git).
 pub fn topic(env: &mut JNIEnv, ctx: &JObject) -> Result<String> {
     if let Some(t) = get(env, ctx, "topic")? {
         return Ok(t);
@@ -47,7 +43,6 @@ pub fn topic(env: &mut JNIEnv, ctx: &JObject) -> Result<String> {
     Ok(jx::string(env, t)?.unwrap_or_default())
 }
 
-/// The key chat messages are signed with, from res/values/topic.xml; None until the PC has set it up.
 pub fn chat_key(env: &mut JNIEnv, ctx: &JObject) -> Result<Option<String>> {
     let id = jx::res(env, ctx, "string", "chat_key")?;
     if id == 0 {
@@ -57,7 +52,6 @@ pub fn chat_key(env: &mut JNIEnv, ctx: &JObject) -> Result<Option<String>> {
     Ok(jx::string(env, k)?.map(|k| k.trim().to_string()).filter(|k| !k.is_empty()))
 }
 
-/// The time (seconds) of the last ntfy message seen, so the listener catches up from there after being off.
 pub fn cursor(env: &mut JNIEnv, ctx: &JObject) -> Result<i64> {
     let (p, k) = (prefs(env, ctx)?, s(env, "ntfyCursor")?);
     env.call_method(&p, "getLong", "(Ljava/lang/String;J)J", &[JValue::Object(&k), JValue::Long(0)])?.j()
@@ -79,7 +73,6 @@ pub fn mode_changed_at(env: &mut JNIEnv, ctx: &JObject) -> Result<i64> {
     env.call_method(&p, "getLong", "(Ljava/lang/String;J)J", &[JValue::Object(&k), JValue::Long(0)])?.j()
 }
 
-/// Chosen on this phone (home screen or widget): store it, tell the PC agents, redraw the widgets.
 pub fn choose(env: &mut JNIEnv, ctx: &JObject, m: &str) -> Result<()> {
     if !MODES.contains(&m) || mode(env, ctx)? == m {
         return Ok(());
@@ -89,7 +82,6 @@ pub fn choose(env: &mut JNIEnv, ctx: &JObject, m: &str) -> Result<()> {
     crate::widget::update_all(env, ctx)
 }
 
-/// Set elsewhere (Claude, Discord), arrived over ntfy: stored unless a newer change was made here.
 pub fn received(env: &mut JNIEnv, ctx: &JObject, m: &str, at: i64) -> Result<()> {
     if !MODES.contains(&m) || at < mode_changed_at(env, ctx)? - 2_000 {
         return Ok(());
@@ -98,7 +90,6 @@ pub fn received(env: &mut JNIEnv, ctx: &JObject, m: &str, at: i64) -> Result<()>
     crate::widget::update_all(env, ctx)
 }
 
-/// A yes/no kept in the settings ("1" or unset).
 pub fn flag(env: &mut JNIEnv, ctx: &JObject, key: &str) -> Result<bool> {
     Ok(get(env, ctx, key)?.as_deref() == Some("1"))
 }
@@ -107,7 +98,6 @@ pub fn set_flag(env: &mut JNIEnv, ctx: &JObject, key: &str, on: bool) -> Result<
     put(env, ctx, &[(key, if on { "1" } else { "" })], &[])
 }
 
-/// A time kept in the settings (ms; 0: never).
 pub fn stamp(env: &mut JNIEnv, ctx: &JObject, key: &str) -> Result<i64> {
     let (p, k) = (prefs(env, ctx)?, s(env, key)?);
     env.call_method(&p, "getLong", "(Ljava/lang/String;J)J", &[JValue::Object(&k), JValue::Long(0)])?.j()
@@ -117,7 +107,6 @@ pub fn set_stamp(env: &mut JNIEnv, ctx: &JObject, key: &str, ms: i64) -> Result<
     put(env, ctx, &[], &[(key, ms)])
 }
 
-/// When this app was last installed or updated (ms).
 pub fn updated_at(env: &mut JNIEnv, ctx: &JObject) -> Result<i64> {
     let pm = env.call_method(ctx, "getPackageManager", "()Landroid/content/pm/PackageManager;", &[])?.l()?;
     let pkg = s(env, PKG)?;
@@ -126,7 +115,6 @@ pub fn updated_at(env: &mut JNIEnv, ctx: &JObject) -> Result<i64> {
     env.get_field(&info, "lastUpdateTime", "J")?.j()
 }
 
-/// Whether the home screen's one-time hint (drag Null to change the mode) has played.
 pub fn hinted(env: &mut JNIEnv, ctx: &JObject) -> Result<bool> {
     Ok(get(env, ctx, "faceHint")?.is_some())
 }
@@ -135,7 +123,6 @@ pub fn set_hinted(env: &mut JNIEnv, ctx: &JObject) -> Result<()> {
     put(env, ctx, &[("faceHint", "1")], &[])
 }
 
-/// What still needs the user's OK, comma-separated ("" = all set).
 pub fn missing(env: &mut JNIEnv, ctx: &JObject) -> Result<String> {
     let mut m = vec![];
     if !granted(env, ctx, "android.permission.POST_NOTIFICATIONS")? {
@@ -155,12 +142,9 @@ pub fn missing(env: &mut JNIEnv, ctx: &JObject) -> Result<String> {
     Ok(m.join(", "))
 }
 
-/// The permissions setup asks for in Android's own dialog, by the names `missing` gives them.
 const ASKED: [(&str, &str); 2] = [("Notifications", "android.permission.POST_NOTIFICATIONS"), ("Microphone", "android.permission.RECORD_AUDIO")];
 
-/// Those of them still missing that Android will no longer ask for (refused twice, or "Don't ask again"): only its
-/// Settings page for the app can give them now. Before the first refusal Android answers the same, so it counts only
-/// once one was refused (answered).
+/// Android also reports no rationale before the first refusal.
 fn blocked(env: &mut JNIEnv, act: &JObject, m: &str) -> Result<Vec<&'static str>> {
     let mut out = vec![];
     if get(env, act, "permsAsked")?.is_none() {
@@ -175,7 +159,6 @@ fn blocked(env: &mut JNIEnv, act: &JObject, m: &str) -> Result<Vec<&'static str>
     Ok(out)
 }
 
-/// The home screen's setup line: what a tap on it does.
 pub fn setup_line(env: &mut JNIEnv, act: &JObject) -> Result<String> {
     let m = missing(env, act)?;
     Ok(match blocked(env, act, &m)?.as_slice() {
@@ -187,8 +170,6 @@ pub fn setup_line(env: &mut JNIEnv, act: &JObject) -> Result<String> {
     .into())
 }
 
-/// Walks through whatever is still missing, one screen at a time: Android's permission dialog (or, once it won't ask
-/// again, the app's page in Settings), then the system screens.
 pub fn set_up(env: &mut JNIEnv, act: &JObject) -> Result<()> {
     let m = missing(env, act)?;
     if !blocked(env, act, &m)?.is_empty() {
@@ -208,8 +189,6 @@ pub fn set_up(env: &mut JNIEnv, act: &JObject) -> Result<()> {
     set_up_rest(env, act)
 }
 
-/// The permission dialog was answered: a real refusal (Android would explain next time) is noted, so a later "no"
-/// for good sends setup to Settings. Backing out of the dialog is no refusal: the next tap asks again.
 pub fn answered(env: &mut JNIEnv, act: &JObject) -> Result<()> {
     let m = missing(env, act)?;
     for (name, p) in ASKED {
@@ -221,8 +200,6 @@ pub fn answered(env: &mut JNIEnv, act: &JObject) -> Result<()> {
     Ok(())
 }
 
-/// After the permission dialog, whatever was answered: on to the system screens still needed. Never the dialog
-/// again from here: a refusal brought it straight back, round and round.
 pub fn set_up_rest(env: &mut JNIEnv, act: &JObject) -> Result<()> {
     let m = missing(env, act)?;
     let action = if m.contains("Full-screen calls") {

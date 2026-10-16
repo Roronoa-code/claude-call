@@ -1,12 +1,8 @@
-// The cast on the Chats screens: a character's picture (sharp posed stills from art/live3d/stills4.py, or the live
-// texture while it moves), framed like actor.slint, full-body.
-
-// The posed still of `face` in `pose` (idle, think, happy).
 export component Pic inherits Image {
     in property <string> face;
     in property <string> pose: "idle";
     image-fit: fill;
-    accessible-role: none; // a character is decoration: TalkBack skips it
+    accessible-role: none;
     source: face == "null" ? (pose == "think" ? @image-url("faces/null-think.png") : pose == "happy" ? @image-url("faces/null-happy.png") : @image-url("faces/null-idle.png"))
         : face == "haiku" ? (pose == "think" ? @image-url("faces/haiku-think.png") : pose == "happy" ? @image-url("faces/haiku-happy.png") : @image-url("faces/haiku-idle.png"))
         : face == "sonnet" ? (pose == "think" ? @image-url("faces/sonnet-think.png") : pose == "happy" ? @image-url("faces/sonnet-happy.png") : @image-url("faces/sonnet-idle.png"))
@@ -14,8 +10,6 @@ export component Pic inherits Image {
         : (pose == "think" ? @image-url("faces/clawd-think.png") : pose == "happy" ? @image-url("faces/clawd-happy.png") : @image-url("faces/clawd-idle.png"));
 }
 
-// The picture at scale s (k times home size, Null's solo size already in), its top-left at (left, top): the still,
-// or the live texture (lw x lh px of it) while `live`.
 component Picture {
     in property <string> face;
     in property <string> pose;
@@ -52,7 +46,6 @@ component Picture {
     }
 }
 
-// Full-body, the middle of its feet at the bottom middle of this element, at k times home size.
 export component Figure {
     in property <string> face: "clawd";
     in property <string> pose: "idle";
@@ -84,8 +77,6 @@ export component Figure {
     @children
 }
 
-// A soft floor under a standing character: a dim warm pool, no beam. Drawn as a round pool squashed to this box's
-// height, fully transparent well inside its edges, so no edge of it ever shows.
 export component Floor inherits Rectangle {
     Rectangle {
         y: (parent.height - self.height) / 2;

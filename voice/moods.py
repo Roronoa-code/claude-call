@@ -1,14 +1,9 @@
-"""Mood tags in a spoken line: "[bored] Cute. [excited] We did it!" is said in those moods, a piece at a time.
-
-A tag holds until the next one; each line starts in the normal voice. Tags that aren't moods (e.g. [laughs]) are dropped.
-"""
 import re
 
 TAG = re.compile(r"\[([A-Za-z][\w ]*)\]")
 
 
 def pieces(text: str, moods) -> list[tuple[str, str]]:
-    """(mood, words) pieces of a line, in order; "" is the normal voice."""
     out, mood, pos = [], "", 0
     for m in TAG.finditer(text):
         out.append((mood, text[pos:m.start()]))

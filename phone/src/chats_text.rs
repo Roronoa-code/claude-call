@@ -1,10 +1,5 @@
-//! The PC's answers as the thread and notifications show them: markdown split into blocks, made safe for Slint,
-//! as plain text to copy, and in plain words for a notification (chats.rs).
 use super::{Chat, shown};
 
-/// One piece of the PC's answer as the thread lays it out: kind "p" (a paragraph), "h" (a heading), "li" (a list
-/// item: `mark` "1." or "•", `level` 0 or 1 for a nested one), "quote", or "code" (`mark` its language, if given).
-/// `text` keeps its inline markdown (bold, `code`, links); a code block's is its lines exactly.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Block {
     pub kind: &'static str,
@@ -13,11 +8,8 @@ pub struct Block {
     pub level: u8,
 }
 
-/// Splits an answer's markdown into blocks, line by line: ``` fences, # headings, - * + and 1. 1) lists, > quotes;
-/// a blank line ends a paragraph, a rule (---) is dropped, and anything else is text. An unclosed fence runs to the end.
 pub fn blocks(text: &str) -> Vec<Block> {
     let b = |kind, text: &str, mark: &str, level| Block { kind, text: text.into(), mark: mark.into(), level };
-    // an open fence: its language and lines so far
     let (mut out, mut code, mut open): (Vec<Block>, Option<(&str, Vec<&str>)>, bool) = (vec![], None, false);
     let fence = |(lang, lines): (&str, Vec<&str>)| b("code", &lines.join("
 "), lang, 0);
@@ -57,7 +49,6 @@ pub fn blocks(text: &str) -> Vec<Block> {
                 None => ("p", t.trim_end()),
             };
             match out.last_mut() {
-                // a line run on from the one before (a soft break): same paragraph, item or quote
                 Some(last) if open && (last.kind == kind || last.kind == "li" && kind == "p") => {
                     last.text.push('\n');
                     last.text.push_str(t);
@@ -71,14 +62,11 @@ pub fn blocks(text: &str) -> Vec<Block> {
     out
 }
 
-/// Inline markdown made safe for Slint's parser: a "<" outside `code` is written as an entity, so `Vec<u8>` or
-/// "a < b" stay text instead of being read as HTML (which fails the whole block).
+/// Slint's markdown reads a "<" outside `code` as HTML, which fails the whole block.
 pub fn inline(text: &str) -> String {
     text.split('`').enumerate().map(|(i, part)| if i % 2 == 0 { links(&part.replace('<', "&lt;")) } else { part.to_string() }).collect::<Vec<_>>().join("`")
 }
 
-/// A bare web address (at the start, after a space or "(", not already in a markdown link) as a link: <https://…>.
-/// Punctuation that ends a sentence stays outside it.
 fn links(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
@@ -90,7 +78,7 @@ fn links(text: &str) -> String {
         let mut back = out.chars().rev();
         let bare = match (back.next(), back.next()) {
             (None, _) => true,
-            (Some('('), b) => b != Some(']'), // "(see https://…)", not a markdown link's "](https://…)"
+            (Some('('), b) => b != Some(']'),
             (Some(c), _) => c.is_whitespace(),
         };
         if bare && url.len() > 8 {
@@ -107,8 +95,6 @@ fn links(text: &str) -> String {
     out
 }
 
-/// What the field shows: its text with the keyboard's word in progress put in where the cursor is (`at`, a byte
-/// offset into `draft`).
 pub fn composed(draft: &str, word: &str, at: usize) -> String {
     let mut at = at.min(draft.len());
     while !draft.is_char_boundary(at) {
@@ -117,12 +103,9 @@ pub fn composed(draft: &str, word: &str, at: usize) -> String {
     format!("{}{word}{}", &draft[..at], &draft[at..])
 }
 
-/// An answer's text as plain text to copy: blocks one per paragraph, list items with their marks, code exactly as
-/// written, links as "text (address)", no bold or code marks.
 pub fn plain(text: &str) -> String {
     let flat = |t: &str| {
         let t = t.replace("**", "").replace('`', "");
-        // [text](address) -> text (address)
         let mut out = String::new();
         let mut rest = t.as_str();
         while let Some(open) = rest.find('[') {
@@ -145,8 +128,6 @@ pub fn plain(text: &str) -> String {
     parts.join("\n\n")
 }
 
-/// What a long-press on a piece of the thread copies: my message's text; a code block of the PC's alone (piece `n`
-/// of its message, exactly as written); anything else of the PC's: its whole message as plain text.
 pub fn copy_text(c: &Chat, line: &str, me: bool, n: usize) -> Option<String> {
     let l = c.lines.iter().find(|l| l.me == me && l.id == line)?;
     let text = match blocks(&l.text).get(n) {
@@ -158,29 +139,22 @@ pub fn copy_text(c: &Chat, line: &str, me: bool, n: usize) -> Option<String> {
     (!text.is_empty()).then_some(text)
 }
 
-/// Whether a block's text has a link in it (its long-press then stays off the words, so the link still opens).
 pub fn has_link(text: &str) -> bool {
     let t = inline(text);
     t.contains("<http") || t.contains("](")
 }
 
-/// A block's one link address ("" with none, or with more than one): then a tap anywhere on its words opens it, and a
-/// long-press copies it like any other.
 pub fn only_link(text: &str) -> String {
     let t = inline(text);
-    // a bare address runs to its ">" (it may hold brackets: a(b)/c); a markdown one to its ")"
     let bare = t.match_indices("<http").map(|(i, _)| &t[i + 1..]).map(|s| &s[..s.find('>').unwrap_or(s.len())]);
     let named = t.match_indices("](").map(|(i, _)| &t[i + 2..]).map(|s| &s[..s.find(')').unwrap_or(s.len())]);
     let mut all = bare.chain(named);
     match (all.next(), all.next()) {
-        // only a web address opens (open-link takes nothing else): a stray "](" leaves the words as they were
         (Some(l), None) if l.starts_with("https://") || l.starts_with("http://") => l.to_string(),
         _ => String::new(),
     }
 }
 
-/// What a notification (and the chat list's preview) says for a message: plain words, one line per block, no markdown marks (`**`, backticks,
-/// a link's address), a code block as "(code)".
 pub fn brief(text: &str) -> String {
     let mut out: Vec<String> = vec![];
     for b in blocks(text) {
@@ -198,7 +172,6 @@ pub fn brief(text: &str) -> String {
     out.join("\n")
 }
 
-/// "[words](address)" as just the words.
 fn unlinked(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;

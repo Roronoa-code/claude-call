@@ -1,21 +1,11 @@
-//! Sending my messages (and trying again by themselves), and fetching the PC's photos and videos (inbox.rs).
 use super::*;
 
-/// Photo and video links being fetched right now, so each is fetched once.
 static FETCHING: Mutex<Vec<String>> = Mutex::new(Vec::new());
-/// My messages being sent right now (never tried again by themselves meanwhile).
 static SENDING: Mutex<Vec<String>> = Mutex::new(Vec::new());
-/// My messages the PC was asked about again (an answer missing a part, a question's answer it hasn't taken), and when
-/// (a steady clock: a wall clock set back would hold these up).
 static ASKED: Mutex<Vec<(String, Instant)>> = Mutex::new(Vec::new());
-/// How many of my messages are waiting to be tried again (when it changes, the thread redraws their lines).
 static WAITING: AtomicU64 = AtomicU64::new(0);
-/// When my messages were last looked at for trying again (a steady clock). The home screen and the listener both ask
-/// every second; one at a time, at most once a second, so one message is never sent twice at once.
 static AUTO_AT: Mutex<Option<Instant>> = Mutex::new(None);
 
-/// Adds or retries a message of mine (`f` says which) and sends it in the background. True once it is kept (saved)
-/// to send.
 pub(crate) fn post(env: &mut JNIEnv, ctx: &JObject, chat: &str, f: impl FnOnce(&mut Store) -> Option<String>) -> Result<bool> {
     let Some(key) = settings::chat_key(env, ctx)? else { return Ok(false) };
     let topic = settings::topic(env, ctx)?;
@@ -34,7 +24,6 @@ pub(crate) fn post(env: &mut JNIEnv, ctx: &JObject, chat: &str, f: impl FnOnce(&
     Ok(true)
 }
 
-/// Uploads my message's photo or video first (a retry uploads it again), then posts the signed message.
 async fn deliver(topic: &str, key: &str, chat: &str, msg: &str) -> bool {
     if let Some(m) = read(|s| s.to_upload(chat, msg)).flatten() {
         let Some(bytes) = std::fs::read(&m.path).ok() else { return false };
@@ -48,8 +37,6 @@ async fn deliver(topic: &str, key: &str, chat: &str, msg: &str) -> bool {
     net::publish_chat(topic, body).await
 }
 
-/// Fetches every photo and video still loading, in the background, right away (ntfy keeps them only 3 hours). Each
-/// is kept only if its size and sha256 are what the PC signed for, as filesDir/media/<sha256>.<ext>.
 pub(super) fn fetch_media() {
     let Some(path) = PATH.get() else { return };
     let dir = path.with_file_name("media");
@@ -74,7 +61,6 @@ pub(super) fn fetch_media() {
             if saved.is_none() {
                 android::log("chats: a photo or video couldn't be fetched");
             }
-            // its chat was deleted while it came: the file goes too (Undo fetches it again)
             let unused = update(|s| {
                 s.media_done(&m.url, saved.as_deref());
                 saved.as_ref().is_some_and(|p| !s.uses(p))
@@ -89,7 +75,6 @@ pub(super) fn fetch_media() {
 }
 
 pub fn auto(env: &mut JNIEnv, ctx: &JObject) -> Result<()> {
-    // the other caller is at it already (held to the end: one at a time, and the UI thread never waits on it)
     let Ok(mut last) = AUTO_AT.try_lock() else { return Ok(()) };
     if last.is_some_and(|t| t.elapsed() < Duration::from_millis(900)) {
         return Ok(());
@@ -99,7 +84,6 @@ pub fn auto(env: &mut JNIEnv, ctx: &JObject) -> Result<()> {
     path(env, ctx)?;
     let Some((due, stalled, waiting)) = read(|s| {
         let waiting = s.chats.iter().flat_map(|c| &c.lines).filter(|l| chats::unsent(l, now) == "waiting").count() as u64;
-        // a part missing: asked again each minute; an answer not taken: less and less often (a minute, up to half an hour)
         let parts = s.stalled(now).into_iter().map(|(c, m)| (c, m, 60_000));
         let taken = s.unanswered(now).into_iter().map(|(c, m, since)| (c, m, ((now - since) / 4).clamp(60_000, 30 * 60_000)));
         (s.due(now), parts.chain(taken).collect::<Vec<_>>(), waiting)
@@ -107,7 +91,7 @@ pub fn auto(env: &mut JNIEnv, ctx: &JObject) -> Result<()> {
         return Ok(());
     };
     if WAITING.swap(waiting, Relaxed) != waiting {
-        changed(); // one started or stopped waiting: its line under it changes
+        changed();
     }
     let busy = SENDING.lock().unwrap().clone();
     let due: Vec<_> = due.into_iter().filter(|(_, m)| !busy.contains(m)).collect();
@@ -132,7 +116,6 @@ pub fn auto(env: &mut JNIEnv, ctx: &JObject) -> Result<()> {
     let Some(key) = settings::chat_key(env, ctx)? else { return Ok(()) };
     let topic = settings::topic(env, ctx)?;
     for (chat, msg, _) in stalled {
-        // the very message it answered, unchanged: the PC knows it and only replays its answer
         if let Some(Some(body)) = read(|s| s.body(&chat, &msg, &key)) {
             let topic = topic.clone();
             net::RT.spawn(async move { net::publish_chat(&topic, body).await });

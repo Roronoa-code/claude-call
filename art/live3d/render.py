@@ -1,5 +1,3 @@
-# Offline renderer for the cast shaders (moderngl, desktop GL 3.3): the same GLSL ES source the phone compiles,
-# with only the version line swapped. Used by the sheet, side-by-side and video scripts in this folder.
 import sys
 sys.path.insert(0, 'B:/Tools/pylibs')
 import os, json, moderngl, numpy as np
@@ -8,7 +6,6 @@ from PIL import Image
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = r'D:\Outputs\CallMe\design\live3d\cast'
 VERT = '#version 330\nvoid main() { vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2)); gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }'
-# Each shader's image size in logical pixels (what Slint would draw), as alive.rs's W and H.
 SIZE = {'clawd_cast': (300, 250), 'null': (150, 230)}
 
 _ctx = None
@@ -30,7 +27,6 @@ _fbos = {}
 
 
 def render(name, uniforms, scale=2.75):
-    """RGBA float image (premultiplied colour is NOT used: straight colour plus alpha), top row first."""
     prog = program(name)
     w, h = (round(v * scale) for v in SIZE[name])
     key = (w, h)
@@ -50,7 +46,6 @@ def render(name, uniforms, scale=2.75):
 
 
 def stage(w, h, scale):
-    """The home screen's stage behind the toys: near-black with a warm glow and a faint violet ring."""
     y, x = np.mgrid[0:h, 0:w].astype(np.float32)
     r = np.hypot(x - w / 2, y - h * 0.6) / (220 * scale)
     bg = np.array([0x11, 0x12, 0x14], np.float32) / 255
