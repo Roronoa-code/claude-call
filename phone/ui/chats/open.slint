@@ -50,13 +50,14 @@ export component Sheet inherits Rectangle {
         self.to(max(0, 1 - p / self.height));
     }
     // Let go: closed (Chats.back runs the close on from here), or back up.
+    // (Back can come with no pull before it: a key, or a swipe Android gave no progress for.)
     public function let-go(close: bool) {
         Chats.held = false;
-        if (!self.held) { return; }
+        let was = self.held;
         self.held = false;
         if (close && open) {
             Chats.back();
-        } else {
+        } else if (was) {
             self.back = true;
             self.to(1);
         }

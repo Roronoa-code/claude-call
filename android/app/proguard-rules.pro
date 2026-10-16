@@ -2,3 +2,5 @@
 -keep class fyi.mani.callme.Native { *; }
 # ...and what Rust reads or calls on the activities (live_gl.rs, home.rs, inbox.rs: Shown in Shell.kt).
 -keep class fyi.mani.callme.Shown { public *; }
+# ...and the home screen's back swipe switch (home.rs backable).
+-keep class fyi.mani.callme.MainActivity { public void backable(boolean); }
