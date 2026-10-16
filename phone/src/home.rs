@@ -1,7 +1,7 @@
 //! The home screen: whether calls can reach this phone, how agents may reach you (dragged on Null's face, alive.rs),
 //! the chats, and setup while it is unfinished (settings.rs).
 use crate::{Chats, Home, HomeScreen, Toys, alive, android, cast, faces, live_gl, ring, service, settings, stage};
-use slint::ComponentHandle;
+use slint::{ComponentHandle, Model};
 use std::{
     cell::Cell,
     rc::Rc,
@@ -13,23 +13,39 @@ use std::{
 fn refresh(ui: &HomeScreen, fake: usize, first: bool) {
     let home = ui.global::<Home>();
     let read = android::with(|env, act| {
-        Ok((settings::missing(env, act)?, settings::mode(env, act)?))
+        Ok((settings::missing(env, act)?, settings::setup_line(env, act)?, settings::mode(env, act)?))
     });
-    if let Some((missing, mode)) = read {
+    if let Some((missing, line, mode)) = read {
         let missing = if fake == 2 { "Notifications, Microphone".to_string() } else { missing };
         if fake == 2 {
             ui.global::<Chats>().set_unread(true); // and a chat with something new
         }
         home.set_ready(missing.is_empty());
-        home.set_missing(format!("Still needed: {missing}").into());
+        home.set_setup_text(line.into());
         if fake == 0 || first {
             home.set_mode(mode.into());
         }
+    }
+    // An agent's question waiting (the chat list's rows, inbox.rs): the line under the mode names it. Its words stay
+    // when it goes, so they fade out rather than vanish.
+    let rows = ui.global::<Chats>().get_rows();
+    let ask = rows.iter().find(|r| r.asks);
+    home.set_ask_chat(ask.as_ref().map(|r| r.id.clone()).unwrap_or_default());
+    if let Some(r) = ask {
+        home.set_ask_line(format!("{} has a question", short(&r.name, 26)).into());
     }
     if let Some((top, bottom)) = android::insets() {
         home.set_sat(top);
         home.set_sab(bottom);
     }
+}
+
+/// `s` in at most `n` characters, ending in "…" when cut.
+fn short(s: &str, n: usize) -> String {
+    if s.chars().count() <= n {
+        return s.to_string();
+    }
+    format!("{}…", s.chars().take(n - 1).collect::<String>().trim_end())
 }
 
 thread_local! {
@@ -77,11 +93,19 @@ pub fn run(app: android_activity::AndroidApp) {
     home.on_set_up(|| {
         android::with(settings::set_up);
     });
-    // The Call button: "Calling you…" until the call rings (or a minute and a half passes).
+    // The Call button: "Calling you…" until the call rings; a minute and a half with no call: "No answer from the PC"
+    // for a moment, then the button as it was.
     let requested_at = Rc::new(Cell::new(None::<Instant>));
+    let rings_at = Rc::new(Cell::new(0u64)); // ring::RINGS when the call was asked for
+    let no_answer = Rc::new(Cell::new(None::<Instant>));
     home.on_call({
-        let (ui, requested_at) = (ui.as_weak(), requested_at.clone());
+        let (ui, requested_at, rings_at, no_answer) = (ui.as_weak(), requested_at.clone(), rings_at.clone(), no_answer.clone());
         move |agent| {
+            rings_at.set(ring::RINGS.load(std::sync::atomic::Ordering::Relaxed));
+            no_answer.set(None);
+            if let Some(ui) = ui.upgrade() {
+                ui.global::<Home>().set_no_answer(false);
+            }
             if fake > 0 {
                 requested_at.set(Some(Instant::now()));
                 if let Some(ui) = ui.upgrade() {
@@ -229,9 +253,20 @@ pub fn run(app: android_activity::AndroidApp) {
                 refresh(&ui, fake, false);
             }
             let wait = Duration::from_secs(if fake > 0 { 6 } else { 90 });
-            if requested_at.get().is_some_and(|t| t.elapsed() > wait || service::active_link().is_some()) {
-                requested_at.set(None);
-                home.set_requested(false);
+            if let Some(t) = requested_at.get() {
+                let rang = ring::RINGS.load(std::sync::atomic::Ordering::Relaxed) != rings_at.get() || service::active_link().is_some();
+                if rang || t.elapsed() > wait {
+                    requested_at.set(None);
+                    home.set_requested(false);
+                    if !rang {
+                        no_answer.set(Some(Instant::now()));
+                        home.set_no_answer(true);
+                    }
+                }
+            }
+            if no_answer.get().is_some_and(|t| t.elapsed() > Duration::from_secs(4)) {
+                no_answer.set(None);
+                home.set_no_answer(false);
             }
             let kb = home.get_kb(); // the keyboard, followed by home.slint itself
             let now = start.elapsed().as_secs_f32();

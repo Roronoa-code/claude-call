@@ -127,18 +127,64 @@ pub fn missing(env: &mut JNIEnv, ctx: &JObject) -> Result<String> {
     Ok(m.join(", "))
 }
 
-/// Walks through whatever is still missing, one system screen at a time.
+/// The permissions setup asks for in Android's own dialog, by the names `missing` gives them.
+const ASKED: [(&str, &str); 2] = [("Notifications", "android.permission.POST_NOTIFICATIONS"), ("Microphone", "android.permission.RECORD_AUDIO")];
+
+/// Those of them still missing that Android will no longer ask for (refused twice, or "Don't ask again"): only its
+/// Settings page for the app can give them now. Before the first ask Android answers the same, so it counts only once
+/// setup has asked.
+fn blocked(env: &mut JNIEnv, act: &JObject, m: &str) -> Result<Vec<&'static str>> {
+    let mut out = vec![];
+    if get(env, act, "permsAsked")?.is_none() {
+        return Ok(out);
+    }
+    for (name, p) in ASKED {
+        let p = s(env, p)?;
+        if m.contains(name) && !env.call_method(act, "shouldShowRequestPermissionRationale", "(Ljava/lang/String;)Z", &[JValue::Object(&p)])?.z()? {
+            out.push(name);
+        }
+    }
+    Ok(out)
+}
+
+/// The home screen's setup line: what a tap on it does.
+pub fn setup_line(env: &mut JNIEnv, act: &JObject) -> Result<String> {
+    let m = missing(env, act)?;
+    Ok(match blocked(env, act, &m)?.as_slice() {
+        [] => "Finish setting up",
+        ["Notifications"] => "Allow notifications in Settings",
+        ["Microphone"] => "Allow the microphone in Settings",
+        _ => "Allow notifications and the microphone in Settings",
+    }
+    .into())
+}
+
+/// Walks through whatever is still missing, one screen at a time: Android's permission dialog (or, once it won't ask
+/// again, the app's page in Settings), then the system screens.
 pub fn set_up(env: &mut JNIEnv, act: &JObject) -> Result<()> {
     let m = missing(env, act)?;
-    if m.contains("Notifications") || m.contains("Microphone") {
-        let perms = env.new_object_array(2, "java/lang/String", JObject::null())?;
-        for (i, p) in ["android.permission.POST_NOTIFICATIONS", "android.permission.RECORD_AUDIO"].iter().enumerate() {
+    if !blocked(env, act, &m)?.is_empty() {
+        let i = jx::view_intent(env, "android.settings.APPLICATION_DETAILS_SETTINGS", &format!("package:{PKG}"))?;
+        return jx::start_activity(env, act, &i);
+    }
+    let ask: Vec<&str> = ASKED.iter().filter(|(name, _)| m.contains(name)).map(|(_, p)| *p).collect();
+    if !ask.is_empty() {
+        put(env, act, &[("permsAsked", "1")], &[])?;
+        let perms = env.new_object_array(ask.len() as i32, "java/lang/String", JObject::null())?;
+        for (i, p) in ask.iter().enumerate() {
             let p = s(env, p)?;
             env.set_object_array_element(&perms, i as i32, p)?;
         }
         env.call_method(act, "requestPermissions", "([Ljava/lang/String;I)V", &[JValue::Object(&perms), JValue::Int(1)])?;
         return Ok(());
     }
+    set_up_rest(env, act)
+}
+
+/// After the permission dialog, whatever was answered: on to the system screens still needed. Never the dialog
+/// again from here: a refusal brought it straight back, round and round.
+pub fn set_up_rest(env: &mut JNIEnv, act: &JObject) -> Result<()> {
+    let m = missing(env, act)?;
     let action = if m.contains("Full-screen calls") {
         "android.settings.MANAGE_APP_USE_FULL_SCREEN_INTENT"
     } else if m.contains("Battery") {
@@ -149,4 +195,3 @@ pub fn set_up(env: &mut JNIEnv, act: &JObject) -> Result<()> {
     let i = jx::view_intent(env, action, &format!("package:{PKG}"))?;
     jx::start_activity(env, act, &i)
 }
-

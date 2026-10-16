@@ -1,6 +1,7 @@
 // The home screen ("stage"): Clawd and Null in the spotlight, one line under them naming the contact mode, and a row
 // along the bottom: Chats (the in-app chats with the agents) and Call (asks the agent picked by tapping Clawd or Null
-// to phone you); while setup is unfinished, a quiet amber line under the mode opens it. The mode is changed on Null
+// to phone you); while setup is unfinished, a quiet amber line under the mode opens it; once it is done, the same
+// place names an agent's question while it waits, and opens it. The mode is changed on Null
 // himself: drag up or down on him and his LED face rolls through the six modes; letting go keeps the one he shows.
 import { T, Icon, Icons, Morph, SwapText } from "parts.slint";
 import { Home, RoundIcon } from "home_parts.slint";
@@ -99,7 +100,7 @@ export component HomeScreen inherits Window {
             height: 30px;
             opacity: root.rest;
             Text {
-                text: "Finish setting up";
+                text: Home.setup-text;
                 font-size: 14px;
                 font-weight: 600;
                 color: #e8a33d;
@@ -107,6 +108,39 @@ export component HomeScreen inherits Window {
                 vertical-alignment: center;
             }
             TouchArea { y: -9px; height: 48px; clicked => { Home.set-up(); } }
+        }
+    }
+    // An agent's question waiting (setup done): its chat named in warm words where the setup line was; a tap opens it
+    // as a notification does. Over the stage, not in it, so the pair never moves when one comes or goes.
+    property <bool> asking: Home.ready && Home.ask-chat != "" && root.kb == 0;
+    Rectangle {
+        x: 24px;
+        y: stage.y + stage.height;
+        width: parent.width - 48px;
+        height: 30px;
+        opacity: root.asking ? root.rest : 0;
+        animate opacity { duration: 260ms; easing: T.out; }
+        Text {
+            width: parent.width;
+            height: parent.height;
+            text: Home.ask-line;
+            font-size: 14px;
+            font-weight: 600;
+            color: T.accent;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+        TouchArea {
+            y: -9px;
+            height: 48px;
+            enabled: root.asking;
+            clicked => {
+                Chats.picker = false;
+                Chats.from-id = ""; // no card to carry a character from
+                Chats.open = true;
+                Chats.current = Home.ask-chat;
+            }
         }
     }
     // The one-time hint by Null's feet: his face rolls up or down.
@@ -141,7 +175,7 @@ export component HomeScreen inherits Window {
             x: 52px + 16px;
             width: parent.width - self.x;
             border-radius: self.height / 2;
-            background: Home.requested ? T.btn : call.pressed ? #c4664a : T.accent;
+            background: Home.requested || Home.no-answer ? T.btn : call.pressed ? #c4664a : T.accent;
             animate background { duration: 250ms; easing: T.out; }
             transform-origin: { x: self.width / 2, y: self.height / 2 };
             transform-scale: call.pressed && !Home.requested ? 0.96 : 1;
@@ -150,10 +184,10 @@ export component HomeScreen inherits Window {
                 x: 0;
                 width: parent.width;
                 height: parent.height;
-                text: Home.requested ? "Calling you…" : Home.caller == "codex" ? "Call Codex" : "Call Claude";
+                text: Home.requested ? "Calling you…" : Home.no-answer ? "No answer from the PC" : Home.caller == "codex" ? "Call Codex" : "Call Claude";
                 font-size: 16px;
                 weight: 600;
-                color: Home.requested ? T.fg2 : #ffffff;
+                color: Home.requested || Home.no-answer ? T.fg2 : #ffffff;
                 align: center;
             }
             call := TouchArea { clicked => { if (!Home.requested) { Home.call(Home.caller); } } }
