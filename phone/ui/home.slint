@@ -58,13 +58,9 @@ export component HomeScreen inherits Window {
     // while Null's face rolls, the rest steps back
     property <float> rest: Home.shown >= 0 ? 0.35 : 1;
     animate rest { duration: 260ms; easing: T.out; }
-    // How far the keyboard reaches over the window, in step with it frame by frame as it slides (Slint has it from
-    // Android's inset animation; reading the insets ourselves only ever gave where it would end up). Bindings, not
-    // Home.kb, carry it to the field and the sheets, so they move in the very frame the keyboard does.
-    property <length> kb-overlap: self.virtual-keyboard-size.height > 0 ? max(0px, self.height - self.virtual-keyboard-position.y) : 0px;
-    // An open chat always follows it: back from another app, Android raises the keyboard again for the field
-    // without it taking focus anew.
-    property <length> kb: Home.typing || (Chats.open && Chats.current != "") ? kb-overlap : 0px;
+    // The keyboard, while a field is in use, frame by frame as it slides (Home.kb). An open chat always follows it:
+    // back from another app, Android raises the keyboard again for the field without it taking focus anew.
+    property <length> kb: Home.typing || (Chats.open && Chats.current != "") ? Home.kb : 0px;
 
     // Clawd's eyes follow a finger anywhere on the screen that nothing else takes.
     TouchArea {
@@ -224,12 +220,9 @@ export component HomeScreen inherits Window {
     // straight past the Chats screen and left the app, and the field kept its cursor handle on screen.
     property <string> chat-now: Chats.current;
     changed chat-now => { if (chat-now == "") { keys.focus(); } }
-    // Home.kb: for Rust (home.rs). At the end of the keyboard's slide away the chat's field lets go of the focus, so
-    // Back right after lands on the chat, not past it.
-    changed kb => {
-        Home.kb = self.kb;
-        if (self.kb == 0 && Chats.current != "") { keys.focus(); }
-    }
+    // At the end of the keyboard's slide away the chat's field lets go of the focus, so Back right after lands on
+    // the chat, not past it.
+    changed kb => { if (self.kb == 0 && Chats.current != "") { keys.focus(); } }
     // Back steps out one level: the photo, picker, a row slid open, thread, Chats screen, then a home sheet. False when
     // nothing is left; then the app goes to the background, warm, as the launcher left it (not closed).
     function back() -> bool {

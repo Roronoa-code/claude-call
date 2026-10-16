@@ -11,9 +11,8 @@ export global Home {
     in property <bool> can-pin: true;
     in property <length> sat: 36px;
     in property <length> sab: 24px;
-    // How far the keyboard reaches over the window, frame by frame as it slides (home.slint, from Slint's own
-    // virtual-keyboard properties); 0 unless a field is in use or a chat is open.
-    in-out property <length> kb;
+    // How far the keyboard reaches up from the bottom edge, frame by frame as it slides (Shell.kt followKeyboard).
+    in property <length> kb;
     in-out property <bool> typing; // a field (the channel's, a chat's) has the cursor
     in-out property <string> caller: "claude"; // who the Call button asks for: claude or codex (tap Clawd or Null)
     in property <bool> requested; // a call was just asked for; it rings within a minute or so

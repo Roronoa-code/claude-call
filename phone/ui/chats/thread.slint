@@ -28,7 +28,10 @@ export component ChatThread inherits Rectangle {
     property <duration> last-t;
     property <float> speed; // px per ms, downwards
     property <bool> past;
-    function drag(dy: length) {
+    property <length> shift; // how far the sheet (and so this thread, and the pull's own coordinates) has moved
+    // dy: the finger's travel as the swipe handler sees it, inside the moving sheet
+    function drag(local-dy: length) {
+        let dy = local-dy + root.shift;
         if (!root.pulling) {
             root.pulling = true;
             root.keys-only = root.kb > 0 || field.focused;
@@ -37,6 +40,7 @@ export component ChatThread inherits Rectangle {
             root.last-t = animation-tick();
             root.speed = 0;
             root.past = false;
+            root.shift = 0;
             if (root.keys-only) { field.blur(); }
             return;
         }
@@ -50,10 +54,12 @@ export component ChatThread inherits Rectangle {
         let p = max(0px, dy - root.from-y);
         if (p > root.height * 0.3 && !root.past) { Chats.tick(); }
         root.past = p > root.height * 0.3;
+        root.shift = p;
         root.pulled(p);
     }
-    function drop(dy: length) {
+    function drop(local-dy: length) {
         if (!root.pulling) { return; }
+        let dy = local-dy + root.shift;
         root.pulling = false;
         if (root.keys-only) { return; }
         let p = max(0px, dy - root.from-y);
@@ -61,12 +67,18 @@ export component ChatThread inherits Rectangle {
         let v = fresh ? root.speed : 0;
         root.let-go(p > 0px && (v > 0.9 || (p > root.height * 0.3 && v > -0.5)));
     }
+    function cancel-pull() {
+        if (root.pulling) {
+            root.pulling = false;
+            if (!root.keys-only) { root.let-go(false); }
+        }
+    }
     pull := SwipeGestureHandler {
         handle-swipe-down: true;
         enabled: log.content-y >= -0.5px && !Chats.viewing;
         moved => { if (self.swiping) { root.drag(self.current-position.y - self.pressed-position.y); } }
         swiped => { root.drop(self.current-position.y - self.pressed-position.y); }
-        cancelled => { root.drop(0px); }
+        cancelled => { root.cancel-pull(); }
         log := Log {
             y: Home.sat + 60px;
             width: parent.width;
@@ -146,7 +158,7 @@ export component ChatThread inherits Rectangle {
         handle-swipe-down: !Chats.viewing;
         moved => { if (self.swiping) { root.drag(self.current-position.y - self.pressed-position.y); } }
         swiped => { root.drop(self.current-position.y - self.pressed-position.y); }
-        cancelled => { root.drop(0px); }
+        cancelled => { root.cancel-pull(); }
         Rectangle {
             y: 0;
             height: Home.sat + 60px;
@@ -195,7 +207,8 @@ export component ChatThread inherits Rectangle {
         visible: !Chats.readonly;
         y: field.y - 30px;
         height: parent.height - self.y;
-        background: @linear-gradient(180deg, #0e0e1000 0%, #0e0e10 46%);
+        // opaque 55px down, as it always was with the keyboard down; with it up the thread never shows beside the field
+        background: @linear-gradient(180deg, #0e0e1000 0%, #0e0e10 (55px / self.height) * 100%);
     }
     // The character, standing by the field (it rides up with the keyboard). A tap: a hop.
     // One character at a time: in a new chat it stands big in the middle; after the first message it appears here

@@ -314,6 +314,13 @@ pub fn back() -> bool {
     true
 }
 
+/// The keyboard moved (shell.rs): the reply field rides on it.
+pub fn keyboard(dp: f32) {
+    if let Some(ui) = CALL.with(|c| c.borrow().upgrade()) {
+        ui.global::<Call>().set_kb(dp);
+    }
+}
+
 pub fn run(app: android_activity::AndroidApp) {
     app.set_window_flags(android_activity::WindowManagerFlags::KEEP_SCREEN_ON, android_activity::WindowManagerFlags::empty());
     let (link, answer) = android::intent();

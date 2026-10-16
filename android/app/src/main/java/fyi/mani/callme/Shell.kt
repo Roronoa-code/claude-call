@@ -20,6 +20,10 @@ import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
 import android.text.Editable
 import android.view.Surface
+import android.view.View
+import android.view.WindowInsets
+import android.view.WindowInsetsAnimation
+import android.widget.FrameLayout
 import android.view.inputmethod.InputMethodManager
 import android.view.SurfaceHolder
 import android.view.WindowManager
@@ -51,6 +55,7 @@ object Native {
     @JvmStatic external fun modeTapped(context: Context, intent: Intent)
     @JvmStatic external fun widgets(context: Context)
     @JvmStatic external fun back(phase: Int, progress: Float)
+    @JvmStatic external fun keyboard(dp: Float)
 }
 
 /**
@@ -66,6 +71,55 @@ open class Shown : NativeActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN or WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        followKeyboard()
+    }
+    /**
+     * How far the keyboard reaches up from the bottom edge, in dp, sent to Rust (Native.keyboard) frame by frame as it
+     * slides, so the field rides on it. As an inset animation runs, Android first hands every view the insets it
+     * will end with; those are held back until it ends (Slint's own copy passes them on: a frame with the field
+     * already at the top). Rust draws on its own surface, about a frame after the keyboard's window moves (measured on
+     * the emulator: the field trailed by one frame), so while the keyboard rises the field is put where it will be a
+     * frame on, along its own curve: never under it. Going down it follows as it is (a frame early it went under the
+     * keyboard; a frame late only leaves a gap that closes). Edge to edge, as Android 15 and later make every app:
+     * without it older Android has no slide to follow, only where it ends up.
+     */
+    private fun followKeyboard() {
+        if (Build.VERSION.SDK_INT < 30) return
+        window.setDecorFitsSystemWindows(false)
+        val ime = WindowInsets.Type.ime()
+        val d = resources.displayMetrics.density
+        val v = View(this)
+        fun at(i: WindowInsets?) = (i?.getInsets(ime)?.bottom ?: 0) / d
+        var sliding = false
+        var from = 0f
+        var to = 0f
+        v.setOnApplyWindowInsetsListener { _, i -> if (!sliding) Native.keyboard(at(i)); i }
+        v.setWindowInsetsAnimationCallback(object : WindowInsetsAnimation.Callback(DISPATCH_MODE_CONTINUE_ON_SUBTREE) {
+            override fun onPrepare(a: WindowInsetsAnimation) {
+                if (a.typeMask and ime != 0) { sliding = true; from = at(v.rootWindowInsets) }
+            }
+            override fun onStart(a: WindowInsetsAnimation, b: WindowInsetsAnimation.Bounds): WindowInsetsAnimation.Bounds {
+                if (a.typeMask and ime != 0) to = at(v.rootWindowInsets)
+                return b
+            }
+            override fun onProgress(i: WindowInsets, running: MutableList<WindowInsetsAnimation>): WindowInsets {
+                if (!sliding) return i
+                val a = running.firstOrNull { it.typeMask and ime != 0 }
+                if (a == null || to <= from || a.durationMillis <= 0) {
+                    Native.keyboard(at(i))
+                } else {
+                    val frame = 1000f / (display?.refreshRate ?: 60f)
+                    val f = (a.fraction + frame / a.durationMillis).coerceAtMost(1f)
+                    val k = a.interpolator?.getInterpolation(f) ?: f
+                    Native.keyboard(from + (to - from) * k)
+                }
+                return i
+            }
+            override fun onEnd(a: WindowInsetsAnimation) {
+                if (a.typeMask and ime != 0) { sliding = false; Native.keyboard(at(v.rootWindowInsets)) }
+            }
+        })
+        addContentView(v, FrameLayout.LayoutParams(0, 0))
     }
     @JvmField @Volatile var waiting = false
     private var finish: Runnable? = null

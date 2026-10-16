@@ -48,6 +48,13 @@ pub fn back_gesture(phase: i32, progress: f32) {
     });
 }
 
+/// The keyboard moved (shell.rs): the field and the sheets ride on it (home.slint).
+pub fn keyboard(dp: f32) {
+    if let Some(ui) = HOME.with(|h| h.borrow().upgrade()) {
+        ui.global::<Home>().set_kb(dp);
+    }
+}
+
 /// The most device px per logical px the pair is drawn at: past it (a very dense screen) the GPU's work grows with
 /// the square for detail the eye can't see; the picture is scaled up to its place instead.
 const PAIR_SF: f32 = 2.75;

@@ -13,7 +13,7 @@ export component Log inherits Flickable {
     in property <length> side: 20px;
     callback tapped(); // a tap on the thread, not on anything in it
     out property <bool> scrolled: self.content-y < -2px;
-    out property <bool> far: self.content-y > self.stick + 64px; // scrolled up from the end
+    out property <bool> far: !self.gliding && self.content-y > self.stick + 64px; // scrolled up from the end (not on its way there)
     out property <bool> fresh; // an answer came in while scrolled up (cleared at the end)
     // Rows that arrive once the thread is up rise in; the ones it opens with are simply there.
     property <bool> settled;
