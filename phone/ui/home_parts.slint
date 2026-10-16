@@ -7,26 +7,18 @@ export global Home {
     in property <bool> ready: true;
     in property <string> missing; // what still needs the user's OK
     in property <string> mode: "both";
-    in property <string> topic;
-    in property <bool> can-pin: true;
     in property <length> sat: 36px;
     in property <length> sab: 24px;
     // How far the keyboard reaches up from the bottom edge, frame by frame as it slides (Shell.kt followKeyboard).
     in property <length> kb;
-    in-out property <bool> typing; // a field (the channel's, a chat's) has the cursor
+    in-out property <bool> typing; // a chat's field has the cursor
     in-out property <string> caller: "claude"; // who the Call button asks for: claude or codex (tap Clawd or Null)
     in property <bool> requested; // a call was just asked for; it rings within a minute or so
-    in-out property <bool> widgets; // the Widget sheet is open
-    in-out property <bool> channel; // the private channel sheet is open (Back closes either)
     callback set-mode(string);
     callback set-up();
-    callback test-ring();
     callback call(string);
-    callback pin(bool);
-    callback save-topic(string);
     callback leave(); // Back with nothing open: the app goes to the background, warm (not closed)
     callback backable(bool); // something is open that Back closes: the system back swipe previews it (Shell.kt)
-    in-out property <bool> more; // the ••• sheet is open
     in property <int> shown: -1; // while Null is dragged: the mode his face shows (an index into modes), else -1
     in property <bool> hint; // the one-time hint that Null can be dragged
     // In the order Null's face rolls through them (settings.rs MODES), dragging up towards Calls only.

@@ -1,7 +1,7 @@
 // The home screen ("stage"): Clawd and Null in the spotlight, one line under them naming the contact mode, and a row
-// along the bottom: Chats (the in-app chats with the agents), Call (asks the agent picked by tapping Clawd or Null to
-// phone you) and ••• (Test ring, Widget, and setup while it is unfinished). The mode is changed on Null himself: drag
-// up or down on him and his LED face rolls through the six modes; letting go keeps the one he shows.
+// along the bottom: Chats (the in-app chats with the agents) and Call (asks the agent picked by tapping Clawd or Null
+// to phone you); while setup is unfinished, a quiet amber line under the mode opens it. The mode is changed on Null
+// himself: drag up or down on him and his LED face rolls through the six modes; letting go keeps the one he shows.
 import { T, Icon, Icons, Morph, SwapText } from "parts.slint";
 import { Home, RoundIcon } from "home_parts.slint";
 import { Toys, Clawd, Null } from "toys.slint";
@@ -11,48 +11,10 @@ import { ChatThread } from "chats/thread.slint";
 import { Sheet } from "chats/open.slint";
 import { StageBack, Look } from "stage.slint";
 
-// A choice in a sheet: icon, title and a line under it.
-component Choice {
-    in property <string> icon;
-    in property <brush> tint: T.fg;
-    in property <string> title;
-    in property <string> desc;
-    callback clicked;
-    min-height: 64px;
-    Rectangle {
-        border-radius: 18px;
-        background: touch.pressed ? #34363c : #26282d;
-    }
-    // The line under the title wraps (a large font, a narrow phone) and the row grows to fit it.
-    HorizontalLayout {
-        padding-left: 14px;
-        padding-right: 14px;
-        padding-top: 11px;
-        padding-bottom: 11px;
-        spacing: 14px;
-        Rectangle {
-            width: 24px;
-            Icon { d: root.icon; y: (parent.height - self.height) / 2; stroke: root.tint; }
-        }
-        VerticalLayout {
-            alignment: center;
-            spacing: 2px;
-            Text { text: root.title; font-size: 16px; font-weight: 600; color: T.fg; }
-            Text { text: root.desc; font-size: 13px; color: T.muted; wrap: word-wrap; }
-        }
-    }
-    touch := TouchArea { clicked => { root.clicked(); } }
-}
-
 export component HomeScreen inherits Window {
     background: Look.bg;
     title: "Claude Call";
-    property <string> draft;
     property <length> row-y: self.height - Home.sab - 20px - 56px; // the bottom row
-    property <length> more-x: self.width - 24px - 52px; // the ••• button, where its sheets grow from
-    property <length> sheet-x: 16px;
-    property <length> sheet-w: self.width - 2 * self.sheet-x;
-    property <length> sheet-bottom: self.row-y + 56px;
     // each stage leaves its own room under the pair, so the line sits clear of the floor they stand on
     property <length> under: Toys.stage == 1 ? 112px : Toys.stage == 2 ? 74px : Toys.stage == 3 ? 104px : Toys.stage == 4 ? 84px : 28px;
     // while Null's face rolls, the rest steps back
@@ -95,7 +57,7 @@ export component HomeScreen inherits Window {
     }
     // The stage, centred between the title and the bottom row.
     stage := VerticalLayout {
-        // Out of the way while the keyboard is up (only the channel sheet is in use then).
+        // Out of the way while the keyboard is up.
         opacity: root.kb > 0 ? 0 : 1;
         animate opacity { duration: 200ms; easing: T.out; }
         x: 20px;
@@ -132,12 +94,10 @@ export component HomeScreen inherits Window {
             color: T.fg;
             align: center;
         }
-        // Setup, while unfinished: one quiet line (and the first row of the ••• sheet).
+        // Setup, while unfinished: one quiet amber line; a tap goes through what is still needed.
         if !Home.ready: Rectangle {
             height: 30px;
-            // out of the way of an open sheet, which would cut it off
-            opacity: Home.more || Home.widgets || Home.channel ? 0 : root.rest;
-            animate opacity { duration: 200ms; easing: T.out; }
+            opacity: root.rest;
             Text {
                 text: "Finish setting up";
                 font-size: 14px;
@@ -146,7 +106,7 @@ export component HomeScreen inherits Window {
                 horizontal-alignment: center;
                 vertical-alignment: center;
             }
-            TouchArea { clicked => { Home.set-up(); } }
+            TouchArea { y: -9px; height: 48px; clicked => { Home.set-up(); } }
         }
     }
     // The one-time hint by Null's feet: his face rolls up or down.
@@ -162,29 +122,24 @@ export component HomeScreen inherits Window {
         animate opacity { duration: 600ms; easing: T.out; }
     }
 
-    // The bottom row: Chats, Call, •••. It steps back under an open sheet (which grows out of ••• over it), so the
-    // Call button is never seen cut by the sheet's edge.
-    property <bool> sheet-open: Home.more || Home.widgets || Home.channel;
-    property <float> under-sheet: sheet-open ? 0 : 1;
-    // back only once the closing sheet is small, so it isn't cut by it either
-    animate under-sheet { duration: 200ms; delay: root.sheet-open ? 0ms : 170ms; easing: T.out; }
+    // The bottom row: Chats, and Call filling the rest (the one big warm button).
     Rectangle {
         x: 24px;
         y: root.row-y;
         width: parent.width - 48px;
         height: 56px;
-        opacity: root.rest * root.under-sheet;
+        opacity: root.rest;
         RoundIcon {
             x: 0;
             y: 2px;
             icon: Icons.chat;
             dot: Chats.unread;
-            clicked => { Home.widgets = false; Home.channel = false; Home.more = false; Home.typing = false; Chats.open = true; }
+            clicked => { Chats.open = true; }
         }
         // Asks Claude (or Codex, if Null is picked) to call you; it rings within a minute or so.
         Rectangle {
-            x: (parent.width - self.width) / 2;
-            width: min(208px, parent.width - 2 * 52px - 24px);
+            x: 52px + 16px;
+            width: parent.width - self.x;
             border-radius: self.height / 2;
             background: Home.requested ? T.btn : call.pressed ? #c4664a : T.accent;
             animate background { duration: 250ms; easing: T.out; }
@@ -203,18 +158,10 @@ export component HomeScreen inherits Window {
             }
             call := TouchArea { clicked => { if (!Home.requested) { Home.call(Home.caller); } } }
         }
-        RoundIcon {
-            x: parent.width - self.width;
-            y: 2px;
-            icon: Icons.more;
-            dot: !Home.ready;
-            dot-color: #e8a33d;
-            clicked => { Home.widgets = false; Home.channel = false; Home.typing = false; Home.more = !Home.more; }
-        }
     }
 
-    // Back closes what is open (the new-chat picker, a chat, the Chats screen, a sheet); otherwise it is left
-    // unhandled and leaves the app.
+    // Back closes what is open (the new-chat picker, a chat, the Chats screen); otherwise the app goes to the
+    // background.
     forward-focus: keys;
     // Leaving a chat, or putting the keyboard away in one, hands focus back here: with nothing focused, Back went
     // straight past the Chats screen and left the app, and the field kept its cursor handle on screen.
@@ -223,18 +170,10 @@ export component HomeScreen inherits Window {
     // At the end of the keyboard's slide away the chat's field lets go of the focus, so Back right after lands on
     // the chat, not past it.
     changed kb => { if (self.kb == 0 && Chats.current != "") { keys.focus(); } }
-    // Back steps out one level: the photo, picker, a row slid open, thread, Chats screen, then a home sheet. False when
-    // nothing is left; then the app goes to the background, warm, as the launcher left it (not closed).
+    // Back steps out one level: the photo, picker, a row slid open, thread, Chats screen. False when nothing is left;
+    // then the app goes to the background, warm, as the launcher left it (not closed).
     function back() -> bool {
-        if (Chats.back()) { return true; }
-        if (Home.widgets || Home.channel || Home.more) {
-            Home.more = false;
-            Home.widgets = false;
-            Home.channel = false;
-            Home.typing = false;
-            return true;
-        }
-        return false;
+        return Chats.back();
     }
     keys := FocusScope {
         key-pressed(e) => {
@@ -266,126 +205,8 @@ export component HomeScreen inherits Window {
             Home.leave();
         }
     }
-    property <bool> backable: Chats.open || Chats.viewing || Chats.picker || Chats.revealed != "" || Home.more || Home.widgets || Home.channel;
+    property <bool> backable: Chats.open || Chats.viewing || Chats.picker || Chats.revealed != "";
     changed backable => { Home.backable(self.backable); }
-
-    // A tap outside an open sheet closes it.
-    if Home.widgets || Home.channel || Home.more: TouchArea {
-        clicked => { Home.more = false; Home.widgets = false; Home.channel = false; Home.typing = false; }
-    }
-
-    // The ••• sheet: setup (while unfinished), Test ring and Widget.
-    Morph {
-        open: Home.more;
-        panel: #1c1d21;
-        fx: root.more-x;
-        fy: root.row-y + 2px;
-        fsize: 52px;
-        tx: root.sheet-x;
-        tw: root.sheet-w;
-        th: more-rows.preferred-height;
-        ty: root.sheet-bottom - self.th;
-        face: Icons.more;
-        from: T.btn;
-        more-rows := VerticalLayout {
-            padding: 16px;
-            spacing: 10px;
-            if !Home.ready: Choice { icon: Icons.alert; tint: #e8a33d; title: "Finish setting up"; desc: Home.missing; clicked => { Home.more = false; Home.set-up(); } }
-            Choice { icon: Icons.bell; title: "Test ring"; desc: "Rings like a real call, to check the sound."; clicked => { Home.more = false; Home.test-ring(); } }
-            Choice { icon: Icons.grid; title: "Widget"; desc: "Home screen widget and the channel."; clicked => { Home.more = false; Home.widgets = true; } }
-        }
-    }
-
-    Morph {
-        open: Home.widgets;
-        panel: #1c1d21;
-        fx: root.more-x;
-        fy: root.row-y + 2px;
-        fsize: 52px;
-        tx: root.sheet-x;
-        tw: root.sheet-w;
-        th: widget-rows.preferred-height; // three (or one) rows
-        ty: root.sheet-bottom - self.th; // over the bottom row
-        face: Icons.grid;
-        from: T.btn;
-        widget-rows := VerticalLayout {
-            padding: 16px;
-            spacing: 10px;
-            if Home.can-pin: Choice { icon: Icons.grid; title: "Small"; desc: "The mode, one tap to change it."; clicked => { Home.pin(false); Home.widgets = false; } }
-            if Home.can-pin: Choice { icon: Icons.wide; title: "Wide"; desc: "All four modes side by side."; clicked => { Home.pin(true); Home.widgets = false; } }
-            Choice {
-                icon: Icons.hash;
-                title: "Private channel";
-                desc: "The ntfy topic the phone and PC share.";
-                clicked => { root.draft = Home.topic; Home.widgets = false; Home.channel = true; Home.typing = true; }
-            }
-        }
-    }
-
-    Morph {
-        open: Home.channel;
-        panel: #1c1d21;
-        fx: root.more-x; // opened from the Widget sheet
-        fy: root.row-y + 2px;
-        fsize: 52px;
-        tx: root.sheet-x;
-        tw: root.sheet-w;
-        th: 196px;
-        // Over the bottom row; above the keyboard while typing.
-        ty: min(root.sheet-bottom - self.th, root.height - root.kb - self.th - 12px);
-        face: Icons.hash;
-        from: T.btn;
-        VerticalLayout {
-            padding: 16px;
-            spacing: 10px;
-            Text { text: "Private channel"; font-size: 17px; font-weight: 700; color: T.fg; height: 24px; vertical-alignment: center; }
-            Text { text: "The same as \"topic\" in the PC's config.json."; font-size: 13px; color: T.muted; }
-            Rectangle {
-                height: 52px;
-                border-radius: 14px;
-                background: #26282d;
-                // The field only exists while the sheet is open, so nothing can focus it (and bring up the keyboard)
-                // while it's closed; a plain copy of the text shows as the sheet folds away.
-                if Home.channel: TextInput {
-                    x: 14px;
-                    width: parent.width - 28px;
-                    text <=> root.draft;
-                    font-size: 15px;
-                    color: T.fg;
-                    single-line: true;
-                    vertical-alignment: center;
-                }
-                if !Home.channel: Text {
-                    x: 14px;
-                    width: parent.width - 28px;
-                    text: root.draft;
-                    font-size: 15px;
-                    color: T.fg;
-                    vertical-alignment: center;
-                }
-            }
-            HorizontalLayout {
-                spacing: 10px;
-                alignment: end;
-                height: 44px;
-                Rectangle {
-                    width: 96px;
-                    border-radius: 22px;
-                    background: save.pressed ? #c4664a : T.accent;
-                    opacity: root.draft != "" && root.draft != Home.topic ? 1 : 0.4;
-                    Text { text: "Save"; font-size: 15px; font-weight: 600; color: white; }
-                    save := TouchArea {
-                        enabled: root.draft != "" && root.draft != Home.topic;
-                        clicked => {
-                            Home.save-topic(root.draft);
-                            Home.channel = false;
-                            Home.typing = false;
-                        }
-                    }
-                }
-            }
-        }
-    }
 
     // The Chats screen grows out of its button and fills the screen; the new-chat picker grows out of its "+".
     Morph {

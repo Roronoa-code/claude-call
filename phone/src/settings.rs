@@ -47,10 +47,6 @@ pub fn topic(env: &mut JNIEnv, ctx: &JObject) -> Result<String> {
     Ok(jx::string(env, t)?.unwrap_or_default())
 }
 
-pub fn set_topic(env: &mut JNIEnv, ctx: &JObject, topic: &str) -> Result<()> {
-    put(env, ctx, &[("topic", topic.trim())], &[])
-}
-
 /// The key chat messages are signed with, from res/values/topic.xml; None until the PC has set it up.
 pub fn chat_key(env: &mut JNIEnv, ctx: &JObject) -> Result<Option<String>> {
     let id = jx::res(env, ctx, "string", "chat_key")?;
@@ -154,20 +150,3 @@ pub fn set_up(env: &mut JNIEnv, act: &JObject) -> Result<()> {
     jx::start_activity(env, act, &i)
 }
 
-fn widgets<'a>(env: &mut JNIEnv<'a>, ctx: &JObject) -> Result<JObject<'a>> {
-    env.call_static_method("android/appwidget/AppWidgetManager", "getInstance", "(Landroid/content/Context;)Landroid/appwidget/AppWidgetManager;", &[JValue::Object(ctx)])?.l()
-}
-
-pub fn can_pin(env: &mut JNIEnv, ctx: &JObject) -> Result<bool> {
-    let w = widgets(env, ctx)?;
-    env.call_method(&w, "isRequestPinAppWidgetSupported", "()Z", &[])?.z()
-}
-
-/// Asks the launcher to place the widget (2x2, or 4x2 when `wide`).
-pub fn pin(env: &mut JNIEnv, ctx: &JObject, wide: bool) -> Result<()> {
-    let (w, cn) = (widgets(env, ctx)?, crate::widget::component(env, ctx, if wide { "ModeWidgetWide" } else { "ModeWidget" })?);
-    let none = JObject::null();
-    let sig = "(Landroid/content/ComponentName;Landroid/os/Bundle;Landroid/app/PendingIntent;)Z";
-    env.call_method(&w, "requestPinAppWidget", sig, &[JValue::Object(&cn), JValue::Object(&none), JValue::Object(&none)])?;
-    Ok(())
-}

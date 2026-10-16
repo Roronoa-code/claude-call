@@ -37,13 +37,6 @@ pub fn start(env: &mut JNIEnv, ctx: &JObject) -> Result<()> {
     Ok(())
 }
 
-/// A new channel: the listener reconnects on it.
-pub fn restart(env: &mut JNIEnv, ctx: &JObject) -> Result<()> {
-    let i = jx::intent(env, ctx, "ListenService")?;
-    env.call_method(ctx, "stopService", "(Landroid/content/Intent;)Z", &[JValue::Object(&i)])?;
-    start(env, ctx)
-}
-
 fn end_action<'a>(env: &mut JNIEnv<'a>, end: &JObject) -> Result<JObject<'a>> {
     let (none, t) = (JObject::null(), s(env, "End call")?);
     let ab = env.new_object(

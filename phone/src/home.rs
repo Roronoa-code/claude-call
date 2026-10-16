@@ -1,6 +1,6 @@
 //! The home screen: whether calls can reach this phone, how agents may reach you (dragged on Null's face, alive.rs),
-//! a test ring, the widget and the private channel (settings.rs, widget.rs, ring.rs).
-use crate::{Chats, Home, HomeScreen, Toys, alive, android, cast, faces, jx, live_gl, ring, service, settings, stage};
+//! the chats, and setup while it is unfinished (settings.rs).
+use crate::{Chats, Home, HomeScreen, Toys, alive, android, cast, faces, live_gl, ring, service, settings, stage};
 use slint::ComponentHandle;
 use std::{
     cell::Cell,
@@ -13,9 +13,9 @@ use std::{
 fn refresh(ui: &HomeScreen, fake: usize, first: bool) {
     let home = ui.global::<Home>();
     let read = android::with(|env, act| {
-        Ok((settings::missing(env, act)?, settings::mode(env, act)?, settings::topic(env, act)?, settings::can_pin(env, act)?))
+        Ok((settings::missing(env, act)?, settings::mode(env, act)?))
     });
-    if let Some((missing, mode, topic, can_pin)) = read {
+    if let Some((missing, mode)) = read {
         let missing = if fake == 2 { "Notifications, Microphone".to_string() } else { missing };
         if fake == 2 {
             ui.global::<Chats>().set_unread(true); // and a chat with something new
@@ -25,8 +25,6 @@ fn refresh(ui: &HomeScreen, fake: usize, first: bool) {
         if fake == 0 || first {
             home.set_mode(mode.into());
         }
-        home.set_topic(topic.into());
-        home.set_can_pin(can_pin);
     }
     if let Some((top, bottom)) = android::insets() {
         home.set_sat(top);
@@ -79,12 +77,6 @@ pub fn run(app: android_activity::AndroidApp) {
     home.on_set_up(|| {
         android::with(settings::set_up);
     });
-    home.on_test_ring(|| {
-        android::with(|env, act| {
-            let app = jx::app(env, act)?;
-            ring::ring(env, &app, ring::TEST_LINK, "Test ring")
-        });
-    });
     // The Call button: "Calling you…" until the call rings (or a minute and a half passes).
     let requested_at = Rc::new(Cell::new(None::<Instant>));
     home.on_call({
@@ -105,15 +97,6 @@ pub fn run(app: android_activity::AndroidApp) {
                 }
             }
         }
-    });
-    home.on_pin(|wide| {
-        android::with(|env, act| settings::pin(env, act, wide));
-    });
-    home.on_save_topic(|t| {
-        android::with(|env, act| {
-            settings::set_topic(env, act, &t)?;
-            service::restart(env, act)
-        });
     });
     // Back with nothing open: to the background, warm, as the launcher leaves it (finish() made the next open cold).
     home.on_leave(|| {
@@ -315,7 +298,7 @@ pub fn run(app: android_activity::AndroidApp) {
             // The home stage at rest (nothing moving, animating or touched for a moment): the display is told the
             // screen changes only at the pair's breathing rate, so it can run slower; anything else lifts that.
             let rest = show
-                && !home.get_more() && !home.get_widgets() && !home.get_channel() && hint.get().is_none()
+                && hint.get().is_none()
                 && !p.clawd.moving() && !p.null.moving()
                 && touched.get().elapsed() > Duration::from_secs(2)
                 && !ui.window().has_active_animations();
