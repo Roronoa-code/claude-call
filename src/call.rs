@@ -21,16 +21,22 @@ use tokio::{
 
 pub static PORT: OnceLock<u16> = OnceLock::new();
 
+#[derive(Clone, Copy)]
+struct Progress {
+    bytes: usize,
+    done: bool,
+}
+
 pub struct Stream {
     rate: u32,
     data: Mutex<Vec<u8>>,
-    progress: watch::Sender<(usize, bool)>,
+    progress: watch::Sender<Progress>,
 }
 struct DoneGuard(Arc<Stream>);
 impl Drop for DoneGuard {
     fn drop(&mut self) {
         let n = self.0.data.lock().unwrap().len();
-        self.0.progress.send_replace((n, true));
+        self.0.progress.send_replace(Progress { bytes: n, done: true });
     }
 }
 
@@ -119,7 +125,7 @@ async fn stream_line(seq: u64, text: &str, first: &mut Option<oneshot::Sender<()
         return true;
     }
     let rate = r.headers().get("x-sample-rate").and_then(|v| v.to_str().ok()?.parse().ok()).unwrap_or(24_000);
-    let st = Arc::new(Stream { rate, data: Mutex::new(vec![]), progress: watch::channel((0, false)).0 });
+    let st = Arc::new(Stream { rate, data: Mutex::new(vec![]), progress: watch::channel(Progress { bytes: 0, done: false }).0 });
     let _done = DoneGuard(st.clone());
     {
         let mut c = call();
@@ -137,7 +143,7 @@ async fn stream_line(seq: u64, text: &str, first: &mut Option<oneshot::Sender<()
                     d.extend_from_slice(&b);
                     d.len()
                 };
-                st.progress.send_replace((n, false));
+                st.progress.send_replace(Progress { bytes: n, done: false });
             }
             Err(e) => {
                 log(format!("voice stream broke {e}"));
@@ -271,7 +277,7 @@ pub async fn finish() {
 async fn wait_line() {
     let stream = call().stream.clone();
     if let Some(st) = stream {
-        let _ = timeout(Duration::from_secs(60), st.progress.subscribe().wait_for(|&(_, done)| done)).await;
+        let _ = timeout(Duration::from_secs(60), st.progress.subscribe().wait_for(|p| p.done)).await;
     }
 }
 
@@ -361,13 +367,13 @@ async fn handle(req: Request) -> Result<Response, String> {
             };
             let mut prx = st.progress.subscribe();
             loop {
-                let (bytes, done) = *prx.borrow_and_update();
+                let Progress { bytes, done } = *prx.borrow_and_update();
                 if bytes > from || done {
                     break;
                 }
                 let _ = timeout(Duration::from_secs(15), prx.changed()).await;
             }
-            let (bytes, done) = *st.progress.borrow();
+            let Progress { bytes, done } = *st.progress.borrow();
             let piece = st.data.lock().unwrap().get(from..).map(<[u8]>::to_vec).unwrap_or_default();
             if from == 0 && !piece.is_empty() {
                 mark("first audio byte sent to phone", false);

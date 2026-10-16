@@ -77,22 +77,61 @@ impl Spring {
 }
 
 #[derive(Clone, Copy)]
+struct Syllable {
+    level: f32,
+    until: f32,
+}
+
+#[derive(Clone, Copy)]
+struct ArmKick {
+    left: f32,
+    right: f32,
+    until: f32,
+}
+
+#[derive(Clone, Copy, Default)]
+struct Head {
+    roll: Spring,
+    nod: Spring,
+    turn: Spring,
+}
+
+#[derive(Clone, Copy, Default)]
+struct Antenna {
+    side: Spring,
+    forward: Spring,
+    stretch: Spring,
+}
+
+#[derive(Clone, Copy)]
+struct HeadVel {
+    x: f32,
+    y: f32,
+}
+
+#[derive(Clone, Copy)]
+struct Tune {
+    hz: f32,
+    zeta: f32,
+}
+
+#[derive(Clone, Copy)]
 struct Feel {
-    squash: (f32, f32),
+    squash: Tune,
     land: f32,
     hop: f32,
-    lean: (f32, f32),
-    arms: (f32, f32),
+    lean: Tune,
+    arms: Tune,
     arm_rest: f32,
     breath: f32,
 }
 fn feel(who: Who) -> Feel {
     match who {
-        Who::Clawd(Mat::Vinyl) => Feel { squash: (5.0, 0.55), land: 0.3, hop: 0.22, lean: (2.0, 0.45), arms: (3.0, 0.35), arm_rest: -0.6, breath: 0.016 },
-        Who::Clawd(Mat::Cartoon) => Feel { squash: (6.5, 0.38), land: 0.42, hop: 0.28, lean: (2.6, 0.4), arms: (4.0, 0.3), arm_rest: -0.85, breath: 0.02 },
-        Who::Clawd(Mat::Plush) => Feel { squash: (2.6, 0.2), land: 0.75, hop: 0.16, lean: (1.3, 0.42), arms: (1.8, 0.2), arm_rest: -0.8, breath: 0.024 },
-        Who::Clawd(Mat::Chrome) => Feel { squash: (7.5, 0.7), land: 0.16, hop: 0.15, lean: (1.8, 0.6), arms: (3.5, 0.5), arm_rest: -0.55, breath: 0.01 },
-        Who::Null => Feel { squash: (5.5, 0.5), land: 0.25, hop: 0.16, lean: (2.2, 0.5), arms: (6.0, 0.5), arm_rest: 0.0, breath: 0.012 },
+        Who::Clawd(Mat::Vinyl) => Feel { squash: Tune { hz: 5.0, zeta: 0.55 }, land: 0.3, hop: 0.22, lean: Tune { hz: 2.0, zeta: 0.45 }, arms: Tune { hz: 3.0, zeta: 0.35 }, arm_rest: -0.6, breath: 0.016 },
+        Who::Clawd(Mat::Cartoon) => Feel { squash: Tune { hz: 6.5, zeta: 0.38 }, land: 0.42, hop: 0.28, lean: Tune { hz: 2.6, zeta: 0.4 }, arms: Tune { hz: 4.0, zeta: 0.3 }, arm_rest: -0.85, breath: 0.02 },
+        Who::Clawd(Mat::Plush) => Feel { squash: Tune { hz: 2.6, zeta: 0.2 }, land: 0.75, hop: 0.16, lean: Tune { hz: 1.3, zeta: 0.42 }, arms: Tune { hz: 1.8, zeta: 0.2 }, arm_rest: -0.8, breath: 0.024 },
+        Who::Clawd(Mat::Chrome) => Feel { squash: Tune { hz: 7.5, zeta: 0.7 }, land: 0.16, hop: 0.15, lean: Tune { hz: 1.8, zeta: 0.6 }, arms: Tune { hz: 3.5, zeta: 0.5 }, arm_rest: -0.55, breath: 0.01 },
+        Who::Null => Feel { squash: Tune { hz: 5.5, zeta: 0.5 }, land: 0.25, hop: 0.16, lean: Tune { hz: 2.2, zeta: 0.5 }, arms: Tune { hz: 6.0, zeta: 0.5 }, arm_rest: 0.0, breath: 0.012 },
     }
 }
 
@@ -130,7 +169,7 @@ pub struct Cast {
     think: Spring,
     talk: Spring,
     voice: Spring,
-    syllable: (f32, f32),
+    syllable: Syllable,
     syllables_left: i32,
     level: Option<f32>,
     attend: bool,
@@ -138,17 +177,17 @@ pub struct Cast {
     nod_until: f32,
     arms: (Spring, Spring),
     arm_to: (Spring, Spring),
-    arm_kick: (f32, f32, f32),
+    arm_kick: ArmKick,
     next_fidget: f32,
-    head: (Spring, Spring, Spring),
+    head: Head,
     laptop: Spring,
     taps: (Spring, Spring),
     next_tap: f32,
     tap_side: bool,
     tap_until: f32,
-    ant: (Spring, Spring, Spring),
+    ant: Antenna,
     droop: Spring,
-    head_v: (f32, f32),
+    head_v: HeadVel,
     bright: Spring,
     pub hold: Hold,
     pub roll: f32,
@@ -189,7 +228,7 @@ impl Cast {
             think: Spring::default(),
             talk: Spring::default(),
             voice: Spring::default(),
-            syllable: (0.0, 0.0),
+            syllable: Syllable { level: 0.0, until: 0.0 },
             syllables_left: 0,
             level: None,
             attend: false,
@@ -197,17 +236,17 @@ impl Cast {
             nod_until: 0.0,
             arms: (Spring::at(f.arm_rest), Spring::at(f.arm_rest)),
             arm_to: (Spring::at(f.arm_rest), Spring::at(f.arm_rest)),
-            arm_kick: (0.0, 0.0, 0.0),
+            arm_kick: ArmKick { left: 0.0, right: 0.0, until: 0.0 },
             next_fidget: 4.0,
-            head: (Spring::default(), Spring::default(), Spring::default()),
+            head: Head::default(),
             laptop: Spring::default(),
             taps: (Spring::default(), Spring::default()),
             next_tap: 0.0,
             tap_side: false,
             tap_until: 0.0,
-            ant: (Spring::default(), Spring::default(), Spring::default()),
+            ant: Antenna::default(),
             droop: Spring::default(),
-            head_v: (0.0, 0.0),
+            head_v: HeadVel { x: 0.0, y: 0.0 },
             bright: Spring::at(1.0),
             hold: Hold::default(),
             roll: 0.0,
@@ -359,22 +398,22 @@ impl Cast {
                 State::Sleep => 0.0,
                 _ => self.range(0.12, 0.3),
             };
-            self.arm_kick = (if side < 0.5 { amount } else { 0.0 }, if side >= 0.5 { amount } else { 0.0 }, now + self.range(0.3, 0.7));
+            self.arm_kick = ArmKick { left: if side < 0.5 { amount } else { 0.0 }, right: if side >= 0.5 { amount } else { 0.0 }, until: now + self.range(0.3, 0.7) };
             self.next_fidget = now + if st == State::Talk { self.range(0.9, 2.0) } else { self.range(3.5, 9.0) };
         }
-        if st == State::Talk && self.level.is_none() && now >= self.syllable.1 {
-            if self.syllable.0 > 0.0 {
-                self.syllable = (0.0, now + self.range(0.04, 0.11));
+        if st == State::Talk && self.level.is_none() && now >= self.syllable.until {
+            if self.syllable.level > 0.0 {
+                self.syllable = Syllable { level: 0.0, until: now + self.range(0.04, 0.11) };
             } else if self.syllables_left <= 0 {
                 self.syllables_left = (self.range(5.0, 12.0)) as i32;
-                self.syllable = (0.0, now + self.range(0.25, 0.6));
+                self.syllable = Syllable { level: 0.0, until: now + self.range(0.25, 0.6) };
             } else {
                 self.syllables_left -= 1;
-                self.syllable = (self.range(0.35, 1.0), now + self.range(0.09, 0.22));
+                self.syllable = Syllable { level: self.range(0.35, 1.0), until: now + self.range(0.09, 0.22) };
             }
         }
         if st != State::Talk {
-            self.syllable.0 = 0.0;
+            self.syllable.level = 0.0;
         }
         if null && now >= self.next_tap && now >= self.tap_until {
             let typing = match st {
@@ -420,7 +459,7 @@ impl Cast {
         };
         let speaking = match self.level {
             Some(l) if st == State::Talk => ((l - 0.05) * 1.8).clamp(0.0, 1.0),
-            _ => self.syllable.0,
+            _ => self.syllable.level,
         };
         let nod = self.nod.x;
         gy -= 0.35 * nod;
@@ -434,9 +473,9 @@ impl Cast {
         if happy {
             (arm_l, arm_r) = (arm_up, arm_up);
         }
-        if now < self.arm_kick.2 {
-            arm_l += self.arm_kick.0;
-            arm_r += self.arm_kick.1;
+        if now < self.arm_kick.until {
+            arm_l += self.arm_kick.left;
+            arm_r += self.arm_kick.right;
         }
         let breath_period = match st {
             State::Sleep => 5.2,
@@ -482,8 +521,8 @@ impl Cast {
                     (self.y, self.vy) = (0.0, 0.0);
                 }
             }
-            self.squash.step(squash_to, f.squash.0, f.squash.1, h);
-            self.lean.step(self.lean_to + gx * 0.03 + sway, f.lean.0 * 0.6, f.lean.1, h);
+            self.squash.step(squash_to, f.squash.hz, f.squash.zeta, h);
+            self.lean.step(self.lean_to + gx * 0.03 + sway, f.lean.hz * 0.6, f.lean.zeta, h);
             let work = self.hold.work.map_or(0.0, |w| w.0 * 0.3);
             self.turn.step(gx * 0.22 + work + 0.04 * (now * 0.21).sin(), 1.3, 0.75, h);
             self.look.0.step(gx, 7.0, 0.92, h);
@@ -497,38 +536,38 @@ impl Cast {
             self.nod.step(if self.t < self.nod_until { 1.0 } else { 0.0 }, 3.2, 0.8, h);
             self.arm_to.0.step(arm_l, 1.5, 1.0, h);
             self.arm_to.1.step(arm_r, 1.35, 1.0, h);
-            self.arms.0.step(self.arm_to.0.x, f.arms.0, f.arms.1, h);
-            self.arms.1.step(self.arm_to.1.x, f.arms.0 * 1.07, f.arms.1, h);
+            self.arms.0.step(self.arm_to.0.x, f.arms.hz, f.arms.zeta, h);
+            self.arms.1.step(self.arm_to.1.x, f.arms.hz * 1.07, f.arms.zeta, h);
             let (bright_to, hz) = if st == State::Sleep { (0.35, 0.6) } else { (1.0, 1.8) };
             self.bright.step(bright_to * (1.0 - self.hold.dim), hz, 1.0, h);
             if null {
-                self.head.0.step(head_roll_to - self.lean.x * 0.5, 2.2, 0.55, h);
-                self.head.1.step(head_nod_to + 0.16 * nod, 2.5, 0.6, h);
-                self.head.2.step(gx * 0.12, 1.8, 0.7, h);
+                self.head.roll.step(head_roll_to - self.lean.x * 0.5, 2.2, 0.55, h);
+                self.head.nod.step(head_nod_to + 0.16 * nod, 2.5, 0.6, h);
+                self.head.turn.step(gx * 0.12, 1.8, 0.7, h);
                 self.laptop.step(laptop_to, 3.5, 0.5, h);
                 let tapping = self.t < self.tap_until;
                 self.taps.0.step(if tapping && self.tap_side { 1.0 } else { 0.0 }, 9.0, 0.6, h);
                 self.taps.1.step(if tapping && !self.tap_side { 1.0 } else { 0.0 }, 9.0, 0.6, h);
-                let hx = (self.lean.v + self.head.0.v) * -1.7 + self.turn.v * 0.3;
+                let hx = (self.lean.v + self.head.roll.v) * -1.7 + self.turn.v * 0.3;
                 let hy = self.vy + self.squash.v * 1.6;
-                let (dx, dy) = (hx - self.head_v.0, hy - self.head_v.1);
-                self.head_v = (hx, hy);
-                self.ant.0.v -= dx.clamp(-2.0, 2.0) * 1.4;
-                self.ant.1.v -= dy.clamp(-6.0, 6.0) * 0.35;
-                self.ant.2.v -= dy.clamp(-6.0, 6.0) * 0.6;
+                let (dx, dy) = (hx - self.head_v.x, hy - self.head_v.y);
+                self.head_v = HeadVel { x: hx, y: hy };
+                self.ant.side.v -= dx.clamp(-2.0, 2.0) * 1.4;
+                self.ant.forward.v -= dy.clamp(-6.0, 6.0) * 0.35;
+                self.ant.stretch.v -= dy.clamp(-6.0, 6.0) * 0.6;
                 self.droop.step(droop_to, 1.2, 1.0, h);
-                self.ant.0.step(1.25 * self.droop.x, 3.2, 0.13, h);
-                self.ant.1.step(0.2 * self.droop.x + 0.08 * self.head.1.x, 2.8, 0.15, h);
-                self.ant.2.step(if self.hold.drowsy > 0.0 && self.attend && st != State::Sleep { 0.14 } else { 0.0 }, 5.0, 0.2, h);
-                self.ant.0.x = self.ant.0.x.clamp(-1.4, 1.4);
-                self.ant.2.x = self.ant.2.x.clamp(-0.25, 0.25);
+                self.ant.side.step(1.25 * self.droop.x, 3.2, 0.13, h);
+                self.ant.forward.step(0.2 * self.droop.x + 0.08 * self.head.nod.x, 2.8, 0.15, h);
+                self.ant.stretch.step(if self.hold.drowsy > 0.0 && self.attend && st != State::Sleep { 0.14 } else { 0.0 }, 5.0, 0.2, h);
+                self.ant.side.x = self.ant.side.x.clamp(-1.4, 1.4);
+                self.ant.stretch.x = self.ant.stretch.x.clamp(-0.25, 0.25);
             }
         }
         self.breath = (self.breath + dt * TAU / breath_period) % TAU;
     }
 
     pub fn moving(&self) -> bool {
-        let springs = [&self.squash, &self.look.0, &self.look.1, &self.open, &self.happy, &self.arms.0, &self.arms.1, &self.ant.0, &self.voice, &self.nod];
+        let springs = [&self.squash, &self.look.0, &self.look.1, &self.open, &self.happy, &self.arms.0, &self.arms.1, &self.ant.side, &self.voice, &self.nod];
         self.y > 0.0 || self.finger.is_some() || self.state == State::Talk || self.roll != 0.0 || springs.iter().any(|s| s.v.abs() > 0.05)
     }
 
@@ -542,8 +581,8 @@ impl Cast {
         match self.who {
             Who::Null => vec![
                 ("uBody", body),
-                ("uHead", [self.head.0.x, self.head.1.x - breath * 2.0, self.head.2.x, self.laptop.x + lag * 0.2]),
-                ("uAnt", [self.ant.0.x, self.ant.1.x, self.ant.2.x, self.roll]),
+                ("uHead", [self.head.roll.x, self.head.nod.x - breath * 2.0, self.head.turn.x, self.laptop.x + lag * 0.2]),
+                ("uAnt", [self.ant.side.x, self.ant.forward.x, self.ant.stretch.x, self.roll]),
                 ("uEyes", eyes),
                 ("uMood", [happy, self.think.x.clamp(0.0, 1.0), self.talk.x.clamp(0.0, 1.0), self.t % 120.0]),
                 ("uHands", [self.taps.0.x.clamp(-0.3, 1.2), self.taps.1.x.clamp(-0.3, 1.2), self.voice.x.clamp(0.0, 1.0), self.bright.x]),

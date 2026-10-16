@@ -55,6 +55,9 @@ pub fn append_log(file: &str, line: &str) {
     }
 }
 
+#[cfg(windows)]
+pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 /// Its stdin is never ours (the MCP pipe).
 pub fn spawn_hidden(cmd: &mut std::process::Command) -> std::io::Result<()> {
     cmd.stdin(std::process::Stdio::null());
@@ -63,7 +66,6 @@ pub fn spawn_hidden(cmd: &mut std::process::Command) -> std::io::Result<()> {
         use std::os::windows::process::CommandExt;
         const DETACHED_PROCESS: u32 = 0x8;
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x200;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
     }
     cmd.spawn().map(drop)

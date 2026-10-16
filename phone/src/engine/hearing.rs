@@ -106,7 +106,7 @@ impl Engine {
             let again = std::mem::take(&mut u.again);
             let uid = u.id.clone();
             if let Some(text) = text.filter(|_| !closed) {
-                u.partial = Some((text.clone(), covers));
+                u.partial = Some(Partial { text: text.clone(), covers });
                 if s.barge == Some(id) {
                     let msg = format!("barge words \"{text}\" ({}ms)", (now - t0) as i64);
                     me.dbg(&mut s, &msg);
@@ -131,9 +131,9 @@ impl Engine {
         let mut s = self.lock();
         let s = &mut *s;
         let rms = (f.iter().map(|x| x * x).sum::<f32>() / f.len() as f32).sqrt();
-        s.stats.0 += 1;
-        s.stats.1 += rms;
-        s.stats.2 = s.stats.2.max(rms);
+        s.stats.frames += 1;
+        s.stats.sum += rms;
+        s.stats.max = s.stats.max.max(rms);
         s.preroll.push_back(f.clone());
         while s.preroll.len() > PREROLL_FRAMES {
             s.preroll.pop_front();
@@ -143,24 +143,24 @@ impl Engine {
         }
         match s.mode {
             Mode::Claude => self.barge_frame(s, f, rms, now),
-            Mode::Idle => s.noise_floor = s.noise_floor * 0.95 + rms * 0.05,
+            Mode::Idle => s.noise_floor = s.noise_floor * (1.0 - NOISE_LEARN) + rms * NOISE_LEARN,
             Mode::Listen => {
-                if rms > (0.012f32).max(s.noise_floor * 3.0) {
+                if rms > SPEECH_MIN.max(s.noise_floor * SPEECH_NOISE) {
                     s.speech_run += 1;
-                    if s.speech_run >= 3 {
+                    if s.speech_run >= SPEECH_FRAMES {
                         s.speech_run = 0;
                         let u = Self::new_utt(s, now);
                         self.start_talking(s, u, false, now);
                     }
                 } else {
                     s.speech_run = 0;
-                    s.noise_floor = s.noise_floor * 0.95 + rms * 0.05;
+                    s.noise_floor = s.noise_floor * (1.0 - NOISE_LEARN) + rms * NOISE_LEARN;
                 }
             }
             Mode::Talk => {
-                let speech = rms > (0.012f32).max(s.noise_floor * 3.0);
+                let speech = rms > SPEECH_MIN.max(s.noise_floor * SPEECH_NOISE);
                 let Some(id) = s.utt else { return };
-                s.view.mic_level = (rms * 12.0).min(1.0);
+                s.view.mic_level = (rms * MIC_LEVEL_GAIN).min(1.0);
                 let (ask, early) = {
                     let u = s.utts.get_mut(&id).unwrap();
                     u.unsent.extend_from_slice(&f);
@@ -175,7 +175,7 @@ impl Engine {
                     if ask {
                         u.asked = quiet >= PAUSE_MS;
                     }
-                    let early = quiet > EARLY_MS && u.partial.as_ref().is_some_and(|(t, covers)| *covers >= u.speech_end_raw && looks_complete(t));
+                    let early = quiet > EARLY_MS && u.partial.as_ref().is_some_and(|p| p.covers >= u.speech_end_raw && looks_complete(&p.text));
                     (ask, early)
                 };
                 if ask {
@@ -190,14 +190,14 @@ impl Engine {
     }
 
     pub(super) fn barge_frame(self: &Arc<Self>, s: &mut Inner, f: Vec<f32>, rms: f32, now: f64) {
-        let low = BARGE_MIN.max(s.echo * BARGE_ECHO).max(s.noise_floor * 2.0);
+        let low = BARGE_MIN.max(s.echo * BARGE_ECHO).max(s.noise_floor * BARGE_NOISE);
         let high = LOUD_MIN.max(s.echo * LOUD_ECHO);
-        (s.stats.3, s.stats.4) = (low, high);
+        (s.stats.low, s.stats.high) = (low, high);
         if s.barge.is_none() {
-            s.echo = if rms < s.echo { s.echo * 0.9 + rms * 0.1 } else { s.echo * 0.99 + rms * 0.01 };
+            s.echo = if rms < s.echo { s.echo * (1.0 - ECHO_FALL) + rms * ECHO_FALL } else { s.echo * (1.0 - ECHO_RISE) + rms * ECHO_RISE };
         }
         s.loud_run = if rms > high { s.loud_run + 1 } else { 0 };
-        if s.loud_run >= 4 && !s.player.paused() && s.line.as_ref().is_some_and(|l| l.started && now - l.start_at > 800.0) {
+        if s.loud_run >= LOUD_FRAMES && !s.player.paused() && s.line.as_ref().is_some_and(|l| l.started && now - l.start_at > LOUD_AFTER_MS) {
             s.player.pause(true);
             if s.barge.is_none() {
                 s.barge = Some(Self::new_utt(s, now));
@@ -205,11 +205,11 @@ impl Engine {
             self.dbg(s, "paused for a loud sound");
         }
         s.hot.push_back(rms > low);
-        if s.hot.len() > 7 {
+        if s.hot.len() > HOT_WINDOW {
             s.hot.pop_front();
         }
         let Some(id) = s.barge else {
-            if s.hot.iter().filter(|h| **h).count() >= 5 {
+            if s.hot.iter().filter(|h| **h).count() >= HOT_NEEDED {
                 s.barge = Some(Self::new_utt(s, now));
                 let msg = format!("barge? rms={rms:.4} thr={low:.4}");
                 self.dbg(s, &msg);
@@ -222,7 +222,7 @@ impl Engine {
         if rms > low {
             u.last_hot = now;
         }
-        if now - u.last_hot > 700.0 {
+        if now - u.last_hot > BARGE_DROP_MS {
             u.closed = true;
             if !u.inflight {
                 s.utts.remove(&id);
@@ -232,7 +232,7 @@ impl Engine {
             self.dbg(s, "barge dropped");
             return;
         }
-        if now - u.born > 200.0 && now - u.last_ask > 500.0 {
+        if now - u.born > BARGE_ASK_AFTER_MS && now - u.last_ask > BARGE_ASK_EVERY_MS {
             self.ask(s, id, now);
         }
     }
@@ -260,7 +260,7 @@ impl Engine {
         s.quiet_since = now;
         let u = s.utts.get_mut(&id).unwrap();
         u.speech_end_raw = u.raw;
-        let (uid, text) = (u.id.clone(), u.partial.as_ref().map(|p| p.0.clone()).unwrap_or_default());
+        let (uid, text) = (u.id.clone(), u.partial.as_ref().map(|p| p.text.clone()).unwrap_or_default());
         s.last_turn = Some(uid.clone());
         s.view.partial(&uid, &text);
         s.view.status("Hearing you…");
@@ -303,7 +303,7 @@ impl Engine {
         s.cut_in = false;
         s.view.status("Got it…");
         let Some(mut u) = s.utts.remove(&id) else { return };
-        let msg = format!("turn end ({why}) after {quiet}ms quiet, caption \"{}\"", u.partial.as_ref().map_or("", |p| p.0.as_str()));
+        let msg = format!("turn end ({why}) after {quiet}ms quiet, caption \"{}\"", u.partial.as_ref().map_or("", |p| p.text.as_str()));
         self.dbg(s, &msg);
         let (off, body) = Self::take(&mut u);
         s.speech_pending += 1;

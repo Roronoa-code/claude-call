@@ -29,6 +29,11 @@ pub struct Place {
     pub k: f32,
 }
 
+struct MyVoice {
+    loud_at: f32,
+    quiet_at: f32,
+}
+
 pub struct Caller {
     pub cast: Cast,
     seed: u64,
@@ -42,7 +47,7 @@ pub struct Caller {
     phase: Option<Phase>,
     next_ring: f32,
     next_nod: f32,
-    me: (f32, f32),
+    me: MyVoice,
 }
 
 fn place(phase: Option<Phase>) -> Place {
@@ -69,7 +74,7 @@ impl Caller {
             phase: None,
             next_ring: 0.0,
             next_nod: 0.0,
-            me: (0.0, -1e9),
+            me: MyVoice { loud_at: 0.0, quiet_at: -1e9 },
         }
     }
 
@@ -131,9 +136,9 @@ impl Caller {
         }
         let loud = me > 0.2;
         if loud {
-            self.me.0 = now;
-        } else if self.me.0 > self.me.1 && now - self.me.0 > 0.35 {
-            self.me.1 = now;
+            self.me.loud_at = now;
+        } else if self.me.loud_at > self.me.quiet_at && now - self.me.loud_at > 0.35 {
+            self.me.quiet_at = now;
             if phase == Phase::Hearing && now >= self.next_nod {
                 self.cast.nod(now);
                 self.next_nod = now + 1.6;
@@ -182,13 +187,13 @@ pub struct Mood {
 
 impl Mood {
     pub fn new() -> Self {
-        Mood { now: crate::stage::SPOT.key_col, at: 0.0 }
+        Mood { now: crate::stage::SPOT.key_col.to_vec4(), at: 0.0 }
     }
 
     pub fn ease(&mut self, phase: Phase, voice: f32, now: f32) {
         let v = voice.clamp(0.0, 1.0);
         let target = match phase {
-            Phase::Incoming | Phase::Connecting => crate::stage::SPOT.key_col,
+            Phase::Incoming | Phase::Connecting => crate::stage::SPOT.key_col.to_vec4(),
             Phase::Talking => [0.0, -0.1, -0.2, -0.42 + 0.14 * v],
             Phase::Listening | Phase::Hearing => [-0.12, -0.12, -0.08, -0.47],
             Phase::Thinking => [-0.28, -0.3, -0.32, -0.6],

@@ -8,6 +8,7 @@ use std::{
 use tokio::sync::watch;
 
 const PARTIAL_WINDOW: usize = 28 * 16_000; // Whisper's window is 30 s
+const END_SLACK_SAMPLES: usize = 160;
 
 #[derive(Clone, Serialize)]
 pub struct Partial {
@@ -123,7 +124,7 @@ pub async fn final_transcript(cell: &UttCell, end: Option<usize>) -> Result<(f32
         }
     };
     let end = end.unwrap_or(pcm.len());
-    let covering = || cell.m.lock().unwrap().partial.clone().filter(|p| p.from == 0 && p.up_to + 160 >= end);
+    let covering = || cell.m.lock().unwrap().partial.clone().filter(|p| p.from == 0 && p.up_to + END_SLACK_SAMPLES >= end);
     let live = match covering() {
         Some(p) => Some(p),
         None => {

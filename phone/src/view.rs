@@ -10,13 +10,19 @@ pub enum Phase {
     Ended,
 }
 
+#[derive(Clone, Copy, Default, Debug, PartialEq)]
+pub struct Spoken {
+    pub sentence: usize,
+    pub words: usize,
+}
+
 #[derive(Clone, Debug)]
 pub struct Msg {
     pub id: String,
     pub me: bool,
     pub text: String,
     pub parts: Vec<String>,
-    pub spoken: (usize, usize),
+    pub spoken: Spoken,
     pub cut: bool,
     pub live: bool,
 }
@@ -77,16 +83,16 @@ pub fn sentences(text: &str) -> Vec<String> {
     if out.is_empty() { vec![text.trim().to_string()] } else { out }
 }
 
-fn spoken_at(parts: &[String], shown: &str) -> (usize, usize) {
+fn spoken_at(parts: &[String], shown: &str) -> Spoken {
     let mut n = words(shown).len();
     for (i, p) in parts.iter().enumerate() {
         let w = words(p).len();
         if n < w {
-            return (i, n);
+            return Spoken { sentence: i, words: n };
         }
         n -= w;
     }
-    (parts.len(), 0)
+    Spoken { sentence: parts.len(), words: 0 }
 }
 
 impl View {
@@ -159,7 +165,7 @@ impl View {
     pub fn claude(&mut self, id: u64, text: &str) {
         self.hold_after = false;
         self.voice = Voice::Claude;
-        self.msgs.push(Msg { id: id.to_string(), me: false, text: String::new(), parts: sentences(text), spoken: (0, 0), cut: false, live: true });
+        self.msgs.push(Msg { id: id.to_string(), me: false, text: String::new(), parts: sentences(text), spoken: Spoken::default(), cut: false, live: true });
         (self.phase, self.transcribing, self.notice) = (Phase::Talking, false, String::new());
         self.partial.clear();
     }
@@ -179,7 +185,7 @@ impl View {
             m.live = false;
             m.cut = cut;
             if !cut {
-                m.spoken = (m.parts.len(), 0);
+                m.spoken = Spoken { sentence: m.parts.len(), words: 0 };
             }
         }
         if self.voice == Voice::Claude {
@@ -204,7 +210,7 @@ impl View {
             self.partial.clear();
         }
         if !text.is_empty() {
-            self.msgs.push(Msg { id: format!("u{id}"), me: true, text: text.to_string(), parts: vec![], spoken: (0, 0), cut: false, live: false });
+            self.msgs.push(Msg { id: format!("u{id}"), me: true, text: text.to_string(), parts: vec![], spoken: Spoken::default(), cut: false, live: false });
         }
     }
 
@@ -221,7 +227,7 @@ pub fn clock(ms: f64) -> String {
 }
 
 pub fn lit(m: &Msg, only: Option<usize>) -> (String, String) {
-    let (p, w) = m.spoken;
+    let Spoken { sentence: p, words: w } = m.spoken;
     let mut text = vec![];
     let mut lit = vec![];
     for (i, part) in m.parts.iter().enumerate() {

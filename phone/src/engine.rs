@@ -16,7 +16,8 @@ mod hearing;
 mod speaking;
 
 
-const PREROLL_FRAMES: usize = 12;
+const PREROLL_MS: usize = 480;
+const PREROLL_FRAMES: usize = PREROLL_MS / audio::FRAME_MS;
 const SILENCE_MS: f64 = 1800.0;
 const EARLY_MS: f64 = 700.0;
 const PARTIAL_MS: f64 = 900.0;
@@ -27,6 +28,25 @@ const BARGE_MIN: f32 = 0.006;
 const BARGE_ECHO: f32 = 3.0;
 const LOUD_MIN: f32 = 0.03;
 const LOUD_ECHO: f32 = 8.0;
+const BARGE_NOISE: f32 = 2.0;
+const ECHO_FALL: f32 = 0.1;
+const ECHO_RISE: f32 = 0.01;
+const LOUD_FRAMES: u32 = 4;
+const LOUD_AFTER_MS: f64 = 800.0;
+const HOT_WINDOW: usize = 7;
+const HOT_NEEDED: usize = 5;
+const BARGE_DROP_MS: f64 = 700.0;
+const BARGE_ASK_AFTER_MS: f64 = 200.0;
+const BARGE_ASK_EVERY_MS: f64 = 500.0;
+const SPEECH_MIN: f32 = 0.012;
+const SPEECH_NOISE: f32 = 3.0;
+const SPEECH_FRAMES: u32 = 3;
+const NOISE_LEARN: f32 = 0.05;
+const MIC_LEVEL_GAIN: f32 = 12.0;
+const DRAIN_SLACK_MS: f64 = 500.0;
+const POLL_MS: u64 = 20;
+const PART_MIN_MS: u64 = 1000;
+const MS_PER_WORD: u64 = 330;
 const MS_PER_CHAR: f64 = 60.0;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -37,6 +57,20 @@ pub enum Mode {
     Claude,
 }
 
+struct Partial {
+    text: String,
+    covers: usize,
+}
+
+#[derive(Default)]
+struct Stats {
+    frames: u32,
+    sum: f32,
+    max: f32,
+    low: f32,
+    high: f32,
+}
+
 #[derive(Default)]
 struct Utt {
     id: String,
@@ -44,7 +78,7 @@ struct Utt {
     raw: usize,
     sent16: usize,
     speech_end_raw: usize,
-    partial: Option<(String, usize)>,
+    partial: Option<Partial>,
     inflight: bool,
     again: bool,
     last_ask: f64,
@@ -90,7 +124,7 @@ pub struct Inner {
     pub line: Option<Line>,
     pub player: Player,
     last_hold: (bool, String),
-    stats: (u32, f32, f32, f32, f32),
+    stats: Stats,
     dq: Vec<String>,
 }
 
@@ -133,7 +167,7 @@ impl Engine {
                 line: None,
                 player: Player::new(),
                 last_hold: (false, String::new()),
-                stats: (0, 0.0, 0.0, 0.0, 0.0),
+                stats: Stats::default(),
                 dq: vec![],
             }),
             base: base.to_string(),
@@ -319,7 +353,7 @@ impl Engine {
                 if !s.debug {
                     continue;
                 }
-                let (n, sum, max, low, high) = std::mem::take(&mut s.stats);
+                let Stats { frames: n, sum, max, low, high } = std::mem::take(&mut s.stats);
                 let line = format!(
                     "{:.2} {:?} frames={n} rms avg={:.4} max={max:.4} echo={:.4} floor={:.4} out={}{}{}",
                     self.now() / 1000.0,

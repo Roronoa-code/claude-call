@@ -1,4 +1,4 @@
-#[allow(dead_code)]
+#[expect(dead_code)]
 #[path = "../../../../phone/src/cast.rs"]
 mod cast;
 use cast::{Cast, Mat, State, Uniforms, Who};

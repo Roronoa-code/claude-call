@@ -57,11 +57,10 @@ impl Engine {
                 _ = self.line_stop.notified() => return true,
             };
             let Ok(r) = r else { return from > 0 };
-            if !r.status().is_success() {
-                if from == 0 {
-                    return false;
-                }
-                break;
+            match r.status() {
+                s if s.is_success() => {}
+                _ if from == 0 => return false,
+                _ => break,
             }
             let rate: u32 = r.headers().get("x-sample-rate").and_then(|v| v.to_str().ok()?.parse().ok()).unwrap_or(24_000);
             let last = r.headers().get("x-done").is_some_and(|v| v == "1");
@@ -108,21 +107,21 @@ impl Engine {
                 let msg = format!("voice ran dry {gaps} times in this line");
                 self.dbg(&mut s, &msg);
             }
-            self.now() + 500.0 + 250.0 + s.line.as_ref().map_or(0.0, |l| l.dur)
+            self.now() + DRAIN_SLACK_MS + audio::CUSHION_MS as f64 + s.line.as_ref().map_or(0.0, |l| l.dur)
         };
         loop {
             {
                 let s = self.lock();
                 let (_, waiting) = s.player.position();
                 if s.player.paused() {
-                    until += 20.0;
+                    until += POLL_MS as f64;
                 }
                 if waiting == 0 || s.line.as_ref().is_none_or(|l| l.cut) || self.now() > until {
                     return;
                 }
             }
             tokio::select! {
-                _ = tokio::time::sleep(Duration::from_millis(20)) => {}
+                _ = tokio::time::sleep(Duration::from_millis(POLL_MS)) => {}
                 _ = self.line_stop.notified() => return,
             }
         }
@@ -171,7 +170,7 @@ impl Engine {
                 }
                 None => {
                     self.lock_started();
-                    tokio::time::sleep(Duration::from_millis(1000 + words(part) * 330)).await;
+                    tokio::time::sleep(Duration::from_millis(PART_MIN_MS + words(part) * MS_PER_WORD)).await;
                 }
             }
         }

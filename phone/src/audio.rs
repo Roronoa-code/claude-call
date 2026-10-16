@@ -9,10 +9,14 @@ use std::{
 };
 
 pub const MIC_RATE: usize = 16_000;
-pub const FRAME: usize = 640;
+pub const FRAME_MS: usize = 40;
+pub const FRAME: usize = MIC_RATE * FRAME_MS / 1000;
+pub const CUSHION_MS: usize = 250;
 
 /// AAudio streams may be used from any thread.
-struct Stream(#[allow(dead_code)] AudioStream);
+struct Stream {
+    _stream: AudioStream,
+}
 unsafe impl Send for Stream {}
 
 #[derive(Default)]
@@ -79,12 +83,12 @@ impl Player {
         match stream {
             Ok(s) => {
                 self.out_rate = s.sample_rate() as u32;
-                self.buf.lock().unwrap().cushion = self.out_rate as usize / 4;
+                self.buf.lock().unwrap().cushion = self.out_rate as usize * CUSHION_MS / 1000;
                 if self.out_rate != rate {
                     crate::android::log(&format!("speaker opened at {} Hz for a {rate} Hz voice: resampling", self.out_rate));
                 }
                 let _ = s.request_start();
-                self.stream = Some(Stream(s));
+                self.stream = Some(Stream { _stream: s });
                 self.rate = rate;
             }
             Err(e) => crate::android::log(&format!("speaker stream failed: {e:?}")),
@@ -207,7 +211,7 @@ impl Mic {
         }
         rate.store(actual, std::sync::atomic::Ordering::Relaxed);
         stream.request_start().ok()?;
-        Some(Mic { _stream: Stream(stream) })
+        Some(Mic { _stream: Stream { _stream: stream } })
     }
 }
 

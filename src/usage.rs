@@ -5,12 +5,19 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-fn price(model: &str) -> [f64; 4] {
+struct Price {
+    input: f64,
+    output: f64,
+    cache_write: f64,
+    cache_read: f64,
+}
+
+fn price(model: &str) -> Price {
     match model {
-        m if m.contains("haiku") => [0.10, 0.50, 0.125, 0.01],
-        m if m.contains("sonnet") => [2.0, 10.0, 2.5, 0.20],
-        m if m.contains("fable") || m.contains("mythos") => [10.0, 50.0, 12.5, 0.25],
-        _ => [4.0, 20.0, 5.0, 0.20],
+        m if m.contains("haiku") => Price { input: 0.10, output: 0.50, cache_write: 0.125, cache_read: 0.01 },
+        m if m.contains("sonnet") => Price { input: 2.0, output: 10.0, cache_write: 2.5, cache_read: 0.20 },
+        m if m.contains("fable") || m.contains("mythos") => Price { input: 10.0, output: 50.0, cache_write: 12.5, cache_read: 0.25 },
+        _ => Price { input: 4.0, output: 20.0, cache_write: 5.0, cache_read: 0.20 },
     }
 }
 
@@ -68,7 +75,7 @@ fn line_cost(m: &Value) -> f64 {
     let u = &m["usage"];
     let n = |k: &str| u[k].as_f64().unwrap_or(0.0);
     let p = price(m["model"].as_str().unwrap_or(""));
-    (n("input_tokens") * p[0] + n("output_tokens") * p[1] + n("cache_creation_input_tokens") * p[2] + n("cache_read_input_tokens") * p[3]) / 1e6
+    (n("input_tokens") * p.input + n("output_tokens") * p.output + n("cache_creation_input_tokens") * p.cache_write + n("cache_read_input_tokens") * p.cache_read) / 1e6
 }
 
 pub fn label(dollars: f64) -> String {

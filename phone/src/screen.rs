@@ -37,7 +37,7 @@ fn hash(s: &str) -> i32 {
 
 fn caption(v: &View, now: f64) -> Cap {
     let last_claude = v.msgs.iter().rev().find(|m| !m.me);
-    let part = |m: &Msg| m.spoken.0.min(m.parts.len().saturating_sub(1));
+    let part = |m: &Msg| m.spoken.sentence.min(m.parts.len().saturating_sub(1));
     let size = |m: &Msg| {
         let n = m.parts.get(part(m)).map_or(0, |p| view::words(p).len());
         if n > 30 { 2 } else if n > 18 { 1 } else { 0 }
@@ -73,7 +73,7 @@ fn caption(v: &View, now: f64) -> Cap {
         Phase::Incoming => plain("inc", "Calling now".into(), &format!("{} would like to talk.", v.agent), "", false),
         Phase::Connecting => plain("con", "Connecting".into(), "One moment…", "dim", false),
         Phase::Talking => match v.msgs.iter().find(|m| m.live).or(last_claude) {
-            Some(m) => spoken(m, if m.spoken == (0, 0) { "pre" } else { "" }),
+            Some(m) => spoken(m, if m.spoken == view::Spoken::default() { "pre" } else { "" }),
             None => plain("turn", "Your turn".into(), &format!("Go ahead, {} is listening.", v.agent), "dim", false),
         },
         Phase::Hold => plain("hold", format!("On hold · {}", clock(now - v.hold_start)), &format!("{}.", v.hold_label), "hold", true),

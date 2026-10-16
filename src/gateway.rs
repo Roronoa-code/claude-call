@@ -79,7 +79,13 @@ struct Backend {
     seen: Instant,
 }
 static BACKENDS: LazyLock<Mutex<HashMap<String, Backend>>> = LazyLock::new(Default::default);
-static TUNNEL: Mutex<(Option<String>, u64)> = Mutex::new((None, 0));
+#[derive(Clone)]
+struct Tunnel {
+    url: Option<String>,
+    born_at: u64,
+}
+
+static TUNNEL: Mutex<Tunnel> = Mutex::new(Tunnel { url: None, born_at: 0 });
 static CHILD_PID: Mutex<Option<u32>> = Mutex::new(None);
 
 fn glog(msg: &str) {
@@ -91,7 +97,7 @@ fn kill_tunnel() {
         let mut cmd = std::process::Command::new("taskkill");
         cmd.args(["/F", "/PID", &pid.to_string()]);
         #[cfg(windows)]
-        std::os::windows::process::CommandExt::creation_flags(&mut cmd, 0x0800_0000);
+        std::os::windows::process::CommandExt::creation_flags(&mut cmd, crate::CREATE_NO_WINDOW);
         let _ = cmd.output();
     }
 }
@@ -135,7 +141,7 @@ pub async fn run() {
 async fn control_route(req: Request) -> axum::response::Response {
     match (req.method().as_str(), req.uri().path()) {
         ("GET", "/health") => {
-            let (url, born_at) = TUNNEL.lock().unwrap().clone();
+            let Tunnel { url, born_at } = TUNNEL.lock().unwrap().clone();
             let n = BACKENDS.lock().unwrap().len();
             ([("content-type", "application/json")], json!({ "url": url, "bornAt": born_at, "backends": n }).to_string()).into_response()
         }
@@ -203,7 +209,7 @@ async fn keep_tunnel() {
                 wait = 0;
                 let _ = child.wait().await;
                 glog("tunnel died; restarting");
-                *TUNNEL.lock().unwrap() = (None, 0);
+                *TUNNEL.lock().unwrap() = Tunnel { url: None, born_at: 0 };
             }
             Err(e) => {
                 glog(&format!("tunnel failed: {e}"));
@@ -240,7 +246,7 @@ async fn open_tunnel() -> Result<tokio::process::Child, String> {
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
     #[cfg(windows)]
-    cmd.creation_flags(0x0800_0000);
+    cmd.creation_flags(crate::CREATE_NO_WINDOW);
     let mut child = cmd.spawn().map_err(|e| e.to_string())?;
     *CHILD_PID.lock().unwrap() = child.id();
     // Keep reading both outputs for the tunnel's whole life, or cloudflared blocks on a full pipe.
@@ -277,7 +283,7 @@ async fn open_tunnel() -> Result<tokio::process::Child, String> {
         }
         tokio::time::sleep(Duration::from_millis(1500)).await;
     }
-    *TUNNEL.lock().unwrap() = (Some(found.clone()), now_ms());
+    *TUNNEL.lock().unwrap() = Tunnel { url: Some(found.clone()), born_at: now_ms() };
     glog(&format!("tunnel {found}"));
     Ok(child)
 }
