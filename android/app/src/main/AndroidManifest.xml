@@ -64,6 +64,7 @@
 
         <receiver android:name=".DeclineReceiver" android:exported="false" />
         <receiver android:name=".ModeTap" android:exported="false" />
+        <receiver android:name=".ChatAction" android:exported="false" />
         <receiver android:name=".ModeWidget" android:exported="true" android:label="Claude contact mode">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />

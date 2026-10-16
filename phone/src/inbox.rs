@@ -139,7 +139,7 @@ fn arrived(env: &mut JNIEnv, ctx: &JObject, body: &str, what: &str, signed: fn(&
 }
 
 /// Adds or retries a message of mine (`f` says which) and sends it in the background.
-fn post(env: &mut JNIEnv, ctx: &JObject, chat: &str, f: impl FnOnce(&mut Store) -> Option<String>) -> Result<()> {
+pub(crate) fn post(env: &mut JNIEnv, ctx: &JObject, chat: &str, f: impl FnOnce(&mut Store) -> Option<String>) -> Result<()> {
     if crate::fake_chat::on() {
         path(env, ctx)?;
         crate::fake_chat::post(chat, f);
