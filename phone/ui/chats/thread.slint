@@ -208,7 +208,8 @@ export component ChatThread inherits Rectangle {
         y: field.y - 30px;
         height: parent.height - self.y;
         // opaque 55px down, as it always was with the keyboard down; with it up the thread never shows beside the field
-        background: @linear-gradient(180deg, #0e0e1000 0%, #0e0e10 (55px / self.height) * 100%);
+        property <float> solid: 55px / max(55px, self.height);
+        background: @linear-gradient(180deg, #0e0e1000 0%, #0e0e10 solid * 100%);
     }
     // The character, standing by the field (it rides up with the keyboard). A tap: a hop.
     // One character at a time: in a new chat it stands big in the middle; after the first message it appears here
