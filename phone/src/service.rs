@@ -317,6 +317,7 @@ pub fn home_resumed(env: &mut JNIEnv, act: &JObject) -> Result<()> {
 
 /// After the permission dialog: listen, and on to the rest of setup.
 pub fn permissions_answered(env: &mut JNIEnv, act: &JObject) -> Result<()> {
+    settings::answered(env, act)?;
     start(env, act)?;
     settings::set_up_rest(env, act)
 }

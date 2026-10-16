@@ -139,7 +139,7 @@ export component HomeScreen inherits Window {
                 Chats.picker = false;
                 Chats.from-id = ""; // no card to carry a character from
                 Chats.open = true;
-                Chats.current = Home.ask-chat;
+                Chats.open-chat(Home.ask-chat); // through Rust, as the list does: its own draft is in place first
             }
         }
     }

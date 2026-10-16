@@ -11,7 +11,9 @@ export struct ChatRow { id: string, name: string, face: string, preview: string,
     choices: [string], topic: string, count: int, head: string,
     // what is typed (or picked) in its text box and not sent ("Draft: …"), and where the PC is with my last message
     // ("Thinking", "Thinking · 3 min", "Queued")
-    draft: string, think: string }
+    draft: string, think: string,
+    // my message is the last word: sent, not answered yet
+    mine-last: bool }
 // One piece of the thread (inbox.rs thread). kind: "" my text bubble; "note" a quiet line (downloading, couldn't load,
 // stopped); "image" or "video" a card (pic, ratio = height / width) that opens the file at path when tapped; the
 // PC's text as blocks: "p", "h", "li" (mark "1." or "•", level 0 or 1), "quote" (all with their inline markdown in

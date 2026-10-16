@@ -70,8 +70,8 @@ pub fn media_dir() -> Option<PathBuf> {
     PATH.get().map(|p| p.with_file_name("media"))
 }
 
-/// Finds the store file (filesDir/chats.json).
-fn path(env: &mut JNIEnv, ctx: &JObject) -> Result<()> {
+/// Finds the store file (filesDir/chats.json). Also for a pick that comes back after Android closed the app (attach.rs).
+pub(crate) fn path(env: &mut JNIEnv, ctx: &JObject) -> Result<()> {
     if PATH.get().is_none() {
         let dir = env.call_method(ctx, "getFilesDir", "()Ljava/io/File;", &[])?.l()?;
         let dir = env.call_method(&dir, "getAbsolutePath", "()Ljava/lang/String;", &[])?.l()?;
@@ -317,6 +317,7 @@ fn show(ui: &HomeScreen) {
             head: Default::default(),
             draft: draft(c).into(),
             think: chats::think(c, now).into(),
+            mine_last: c.lines.iter().rev().find(|l| l.me || l.state != "partial").is_some_and(|l| l.me),
         })
         .collect();
     let (hero, line) = chat_view::hero(&rows);
@@ -356,8 +357,8 @@ fn show(ui: &HomeScreen) {
             let ask = chats::ask_state(chat, now);
             let msgs = chat_view::thread(chat, ask, now);
             let name = chats::label(chat);
-            // "Opus" from "Claude Â· Opus"; a PC-started thread keeps its whole name ("Deploy Â· Notebook")
-            let short = if chat.kind.is_empty() { name.rsplit(" Â· ").next().unwrap_or(&name) } else { &name }.to_string();
+            // "Opus" from "Claude · Opus"; a PC-started thread keeps its whole name ("Deploy · Notebook")
+            let short = if chat.kind.is_empty() { name.rsplit(" · ").next().unwrap_or(&name) } else { &name }.to_string();
             c.set_hint(if ask == "waiting" { "Type your answer".into() } else { format!("Message {short}").into() });
             c.set_short(short.into());
             c.set_name(name.into());
@@ -369,20 +370,15 @@ fn show(ui: &HomeScreen) {
             c.set_title(match (chat.kind.as_str(), ask) {
                 ("", _) => chat.title.clone().into(),
                 (_, "waiting") => "Waiting for your answer".into(),
-                (_, "sending") => "Sending answerâ€¦".into(),
+                (_, "sending") => "Sending answer…".into(),
                 (_, "answered") => "Answered".into(),
                 (_, "expired") => "Expired".into(),
                 _ => "From your PC".into(),
             });
             c.set_ask(ask.into());
             c.set_readonly(chat.kind == "note");
-            // The PC takes only the first answer to a question: once it has one (or nobody waits), no text box.
-            c.set_ended(match ask {
-                "answered" => "You've answered this. Start a new chat to say more.",
-                "expired" => "This question has expired.",
-                _ => "",
-            }
-            .into());
+            // The PC takes only the first answer to a question: once one is on its way (or nobody waits), no text box.
+            c.set_ended(chats::ended(ask).into());
             c.set_draft(chat.draft.clone().into());
             MSGS.with(|model| {
                 for (i, m) in msgs.iter().enumerate() {
@@ -418,7 +414,7 @@ fn status(ui: &HomeScreen) {
     if ask != c.get_ask().as_str() {
         changed(); // a question just expired (or its answer was taken) while open: redraw
     }
-    // "Opus is thinking Â· 3 min" (the time from the header's "Thinking Â· 3 min")
+    // "Opus is thinking · 3 min" (the time from the header's "Thinking · 3 min")
     let thinking = if waiting { format!("{} is thinking{}", c.get_short(), think.strip_prefix("Thinking").unwrap_or("")) } else { String::new() };
     // set only what changed (each set redraws)
     if c.get_status() != text {
@@ -549,7 +545,7 @@ impl Tracker {
     }
 }
 
-/// Deletes a chat for UNDO_FOR (its notification goes): hidden, with "Chat deleted Â· Undo"; replies that come meanwhile
+/// Deletes a chat for UNDO_FOR (its notification goes): hidden, with "Chat deleted · Undo"; replies that come meanwhile
 /// are kept with it. Each deleted chat keeps its own Undo time; Undo brings back the newest.
 fn delete(ui: &HomeScreen, chat: &str) {
     let c = ui.global::<Chats>();
@@ -564,6 +560,11 @@ fn delete(ui: &HomeScreen, chat: &str) {
     }
     changed();
     show(ui);
+    undo_timer();
+}
+
+/// Lets each deleted chat go for good once its Undo is over.
+fn undo_timer() {
     UNDO_TIMER.with(|t| {
         t.start(slint::TimerMode::Repeated, Duration::from_millis(250), || {
             forget(chats::now() - UNDO_FOR.as_millis() as i64);
@@ -614,8 +615,13 @@ pub fn wire(ui: &HomeScreen) -> Tracker {
         *HOME.lock().unwrap() = Some(env.new_global_ref(act)?);
         Ok(())
     });
-    forget(i64::MAX); // deleted before the app last closed: Undo is long over
-    // and chats left empty when it closed (they go when left, but the app may have been closed in one)
+    // deleted before: gone once their Undo is over (the screen may be made again a moment after a delete)
+    forget(chats::now() - UNDO_FOR.as_millis() as i64);
+    if read(|s| s.undoable().is_some()).unwrap_or(false) {
+        undo_timer();
+    }
+    // and chats left empty when it closed (they go when left, but the app may have been closed in one; not one the
+    // photo picker is open for: its pick lands there, attach.rs)
     update(|s| {
         let empty: Vec<String> = s.chats.iter().map(|c| c.id.clone()).collect();
         empty.iter().for_each(|id| {
@@ -632,7 +638,7 @@ pub fn wire(ui: &HomeScreen) -> Tracker {
         android::with(crate::ring::tick);
     };
     // The message couldn't be kept to send: what is typed stays, and the thread says so for a moment.
-    let trouble = |ui: &HomeScreen| ui.global::<Chats>().set_trouble("Couldn't save your message. Try again.".into());
+    let trouble = |ui: &HomeScreen| ui.global::<Chats>().set_trouble("Not saved. Try again.".into());
     c.on_open_chat({
         let ui = ui.as_weak();
         move |id| {

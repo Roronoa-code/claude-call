@@ -131,8 +131,8 @@ pub fn missing(env: &mut JNIEnv, ctx: &JObject) -> Result<String> {
 const ASKED: [(&str, &str); 2] = [("Notifications", "android.permission.POST_NOTIFICATIONS"), ("Microphone", "android.permission.RECORD_AUDIO")];
 
 /// Those of them still missing that Android will no longer ask for (refused twice, or "Don't ask again"): only its
-/// Settings page for the app can give them now. Before the first ask Android answers the same, so it counts only once
-/// setup has asked.
+/// Settings page for the app can give them now. Before the first refusal Android answers the same, so it counts only
+/// once one was refused (answered).
 fn blocked(env: &mut JNIEnv, act: &JObject, m: &str) -> Result<Vec<&'static str>> {
     let mut out = vec![];
     if get(env, act, "permsAsked")?.is_none() {
@@ -169,7 +169,6 @@ pub fn set_up(env: &mut JNIEnv, act: &JObject) -> Result<()> {
     }
     let ask: Vec<&str> = ASKED.iter().filter(|(name, _)| m.contains(name)).map(|(_, p)| *p).collect();
     if !ask.is_empty() {
-        put(env, act, &[("permsAsked", "1")], &[])?;
         let perms = env.new_object_array(ask.len() as i32, "java/lang/String", JObject::null())?;
         for (i, p) in ask.iter().enumerate() {
             let p = s(env, p)?;
@@ -179,6 +178,19 @@ pub fn set_up(env: &mut JNIEnv, act: &JObject) -> Result<()> {
         return Ok(());
     }
     set_up_rest(env, act)
+}
+
+/// The permission dialog was answered: a real refusal (Android would explain next time) is noted, so a later "no"
+/// for good sends setup to Settings. Backing out of the dialog is no refusal: the next tap asks again.
+pub fn answered(env: &mut JNIEnv, act: &JObject) -> Result<()> {
+    let m = missing(env, act)?;
+    for (name, p) in ASKED {
+        let p = s(env, p)?;
+        if m.contains(name) && env.call_method(act, "shouldShowRequestPermissionRationale", "(Ljava/lang/String;)Z", &[JValue::Object(&p)])?.z()? {
+            return put(env, act, &[("permsAsked", "1")], &[]);
+        }
+    }
+    Ok(())
 }
 
 /// After the permission dialog, whatever was answered: on to the system screens still needed. Never the dialog

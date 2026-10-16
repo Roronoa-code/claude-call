@@ -2,7 +2,10 @@
 //! filesDir/media (where the PC's files go too, so it shows and plays the same way), and the chip above the field until
 //! it is sent or removed.
 //! A pick belongs to the chat it was picked in: once ready it is kept with that chat in the store (chats.json), so it
-//! never goes with a message in another chat and stays when the app is closed.
+//! never goes with a message in another chat and stays when the app is closed. The chat the picker is open for is kept
+//! in the store too (Store::picking): Samsung may close the app while the Gallery is open, and the pick still lands.
+//! The Gallery is tried first; if what it gives back can't be read (no grant, no type), the system picker opens at once
+//! instead, and is used from then on until the app is closed.
 use crate::{
     Chats, HomeScreen, android,
     chats::{MEDIA_MAX, Media},
@@ -15,7 +18,14 @@ use jni::{
     objects::{JByteArray, JObject, JValue},
 };
 use slint::ComponentHandle;
-use std::{cell::RefCell, collections::HashMap, sync::Mutex};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    sync::{
+        Mutex,
+        atomic::{AtomicBool, Ordering::Relaxed},
+    },
+};
 
 /// A pick on its way, or one that can't be sent (why), and the chat it was picked in. Ready ones are in the store.
 #[derive(Clone)]
@@ -30,24 +40,52 @@ const REQUEST: i32 = 7; // MainActivity.onActivityResult in Shell.kt
 
 /// Samsung's own Gallery app: the pick opens there when the phone has it.
 const GALLERY: &str = "com.sec.android.gallery3d";
+/// The picker open now is the Gallery.
+static IN_GALLERY: AtomicBool = AtomicBool::new(false);
+/// What the Gallery gave back couldn't be read: the system picker from now on, until the app is closed.
+static GALLERY_FAILED: AtomicBool = AtomicBool::new(false);
 
-/// Opens Samsung's Gallery for `chat` (photos and videos), or, without it, the system photo picker; Android 10-12
-/// get "choose a file" limited to them.
+/// Opens Samsung's Gallery for `chat` (photos and videos), or, without it (or once it failed), the system picker.
 pub fn open(env: &mut JNIEnv, act: &JObject, chat: &str) -> Result<()> {
     *FOR.lock().unwrap() = chat.to_string();
-    let i = match gallery(env, act)? {
+    inbox::path(env, act)?;
+    inbox::update(|s| s.picking_for(chat));
+    let gallery = if GALLERY_FAILED.load(Relaxed) { None } else { gallery(env, act)? };
+    IN_GALLERY.store(gallery.is_some(), Relaxed);
+    let i = match gallery {
         Some(i) => i,
-        None => {
-            let pick_images = jx::sdk(env)? >= 33;
-            let i = new_intent(env, if pick_images { "android.provider.action.PICK_IMAGES" } else { "android.intent.action.GET_CONTENT" })?;
-            if !pick_images {
-                let openable = s(env, "android.intent.category.OPENABLE")?;
-                env.call_method(&i, "addCategory", "(Ljava/lang/String;)Landroid/content/Intent;", &[JValue::Object(&openable)])?;
-                media_types(env, &i)?;
-            }
-            i
-        }
+        None => system(env)?,
     };
+    env.call_method(act, "startActivityForResult", "(Landroid/content/Intent;I)V", &[JValue::Object(&i), JValue::Int(REQUEST)])?;
+    Ok(())
+}
+
+/// The system photo picker (photos and videos); Android 10-12 get "choose a file" limited to them.
+fn system<'a>(env: &mut JNIEnv<'a>) -> Result<JObject<'a>> {
+    let pick_images = jx::sdk(env)? >= 33;
+    let i = new_intent(env, if pick_images { "android.provider.action.PICK_IMAGES" } else { "android.intent.action.GET_CONTENT" })?;
+    if !pick_images {
+        let openable = s(env, "android.intent.category.OPENABLE")?;
+        env.call_method(&i, "addCategory", "(Ljava/lang/String;)Landroid/content/Intent;", &[JValue::Object(&openable)])?;
+        media_types(env, &i)?;
+    }
+    Ok(i)
+}
+
+/// The Gallery's pick couldn't be read: the system picker opens for the same chat straight away (no question asked),
+/// and is used from now on. Whatever was showing "Getting it ready…" goes.
+fn instead(env: &mut JNIEnv, act: &JObject, chat: &str) -> Result<()> {
+    android::log("attach: the Gallery's pick couldn't be read; the system picker instead");
+    GALLERY_FAILED.store(true, Relaxed);
+    {
+        let mut p = PICK.lock().unwrap();
+        if p.as_ref().is_some_and(|(c, _)| c == chat) {
+            *p = None;
+        }
+    }
+    inbox::changed();
+    *FOR.lock().unwrap() = chat.to_string();
+    let i = system(env)?;
     env.call_method(act, "startActivityForResult", "(Landroid/content/Intent;I)V", &[JValue::Object(&i), JValue::Int(REQUEST)])?;
     Ok(())
 }
@@ -84,41 +122,101 @@ fn media_types(env: &mut JNIEnv, i: &JObject) -> Result<()> {
     Ok(())
 }
 
-/// The picker closed (`data` is null when nothing was picked). Reads the file off the main thread.
+/// The picker closed (`data` is null when nothing was picked). Reads the file off the main thread. After Android closed
+/// the app while the picker was open, the chat it was for comes from the store, and opens again.
 pub fn picked(env: &mut JNIEnv, act: &JObject, data: &JObject) -> Result<()> {
-    if data.is_null() {
-        return Ok(());
+    inbox::path(env, act)?;
+    let gallery = IN_GALLERY.swap(false, Relaxed);
+    let mut chat = FOR.lock().unwrap().clone();
+    if chat.is_empty() {
+        chat = inbox::update(|s| s.picking.clone()).unwrap_or_default();
+        if !chat.is_empty() {
+            *inbox::OPEN_CHAT.lock().unwrap() = Some(chat.clone());
+        }
     }
-    let uri = env.call_method(data, "getData", "()Landroid/net/Uri;", &[])?.l()?;
-    let chat = FOR.lock().unwrap().clone();
-    let Some(dir) = inbox::media_dir().filter(|_| !uri.is_null() && !chat.is_empty()) else { return Ok(()) };
+    let uri = if data.is_null() { JObject::null() } else { env.call_method(data, "getData", "()Landroid/net/Uri;", &[])?.l()? };
+    if uri.is_null() && !data.is_null() && gallery && !chat.is_empty() {
+        return instead(env, act, &chat); // the Gallery answered with nothing to read
+    }
+    let Some(dir) = inbox::media_dir().filter(|_| !uri.is_null() && !chat.is_empty()) else {
+        inbox::update(|s| s.picked(&chat)); // closed without a pick
+        return Ok(());
+    };
     set_loading(&chat);
-    let app = jx::app(env, act)?;
+    let (app, act) = (jx::app(env, act)?, env.new_global_ref(act)?);
     let (vm, uri, ctx) = (env.get_java_vm()?, env.new_global_ref(uri)?, env.new_global_ref(app)?);
     std::thread::spawn(move || {
-        let got = vm.attach_current_thread().ok().and_then(|mut env| jx::ok(&mut env, |env| read(env, ctx.as_obj(), uri.as_obj())));
-        let pick = match got.unwrap_or_else(|| Err("Couldn't read that file".into())) {
-            Ok((bytes, mime)) => Media::picked(&bytes, &mime).and_then(|m| {
-                let file = dir.join(m.file_name());
-                let tmp = file.with_extension("part");
-                std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(&tmp, &bytes)).and_then(|_| std::fs::rename(&tmp, &file)).map_err(|_| "Couldn't save that file".to_string())?;
-                Ok(Media { path: file.to_string_lossy().into_owned(), ..m })
-            }),
-            Err(e) => Err(e),
+        let Ok(mut env) = vm.attach_current_thread() else { return set_result(&chat, Err("Couldn't read that file".into())) };
+        let got = jx::ok(&mut env, |env| read(env, ctx.as_obj(), uri.as_obj())).flatten();
+        let kind = got.as_ref().and_then(|(bytes, mime)| Media::kind(mime, bytes));
+        // no grant, nothing readable or no type it can tell: the system picker instead, straight away
+        if gallery && kind.is_none() && jx::ok(&mut env, |env| instead(env, act.as_obj(), &chat)).is_some() {
+            return;
+        }
+        let pick = match (got, kind) {
+            (None, _) => Err("Couldn't read that file".into()),
+            (Some((_, mime)), None) => Err(format!("Only photos and videos can be sent ({})", if mime.is_empty() { "unknown type" } else { mime.as_str() })),
+            (Some((bytes, _)), Some(k)) if Media::heif(k) => match jx::ok(&mut env, |env| jpeg(env, &bytes)).flatten() {
+                Some(jpg) => keep(&dir, &jpg, "image/jpeg"),
+                None => Err("Couldn't read that photo".into()),
+            },
+            (Some((bytes, _)), Some(k)) => keep(&dir, &bytes, k),
         };
         set_result(&chat, pick);
     });
     Ok(())
 }
 
-/// The picked file's bytes (read up to just past MEDIA_MAX, enough to know it is too big) and its type.
-fn read(env: &mut JNIEnv, ctx: &JObject, uri: &JObject) -> Result<std::result::Result<(Vec<u8>, String), String>> {
+/// A picked file checked (Media::picked) and saved in filesDir/media.
+fn keep(dir: &std::path::Path, bytes: &[u8], mime: &str) -> std::result::Result<Media, String> {
+    let m = Media::picked(bytes, mime)?;
+    let file = dir.join(m.file_name());
+    let tmp = file.with_extension("part");
+    std::fs::create_dir_all(dir).and_then(|_| std::fs::write(&tmp, bytes)).and_then(|_| std::fs::rename(&tmp, &file)).map_err(|_| "Couldn't save that file".to_string())?;
+    Ok(Media { path: file.to_string_lossy().into_owned(), ..m })
+}
+
+/// A HEIC / HEIF photo as a JPEG (the PC and the agent take JPEGs), at most 4096 px on its longer side. None: Android
+/// couldn't decode it.
+fn jpeg(env: &mut JNIEnv, bytes: &[u8]) -> Result<Option<Vec<u8>>> {
+    let arr = env.byte_array_from_slice(bytes)?;
+    let o = env.new_object("android/graphics/BitmapFactory$Options", "()V", &[])?;
+    let sig = "([BIILandroid/graphics/BitmapFactory$Options;)Landroid/graphics/Bitmap;";
+    let len = bytes.len() as i32;
+    env.set_field(&o, "inJustDecodeBounds", "Z", JValue::Bool(1))?;
+    env.call_static_method("android/graphics/BitmapFactory", "decodeByteArray", sig, &[JValue::Object(&arr), JValue::Int(0), JValue::Int(len), JValue::Object(&o)])?;
+    let big = env.get_field(&o, "outWidth", "I")?.i()?.max(env.get_field(&o, "outHeight", "I")?.i()?);
+    let mut sample = 1;
+    while big / sample > 4096 {
+        sample *= 2;
+    }
+    env.set_field(&o, "inJustDecodeBounds", "Z", JValue::Bool(0))?;
+    env.set_field(&o, "inSampleSize", "I", JValue::Int(sample))?;
+    let bmp = env.call_static_method("android/graphics/BitmapFactory", "decodeByteArray", sig, &[JValue::Object(&arr), JValue::Int(0), JValue::Int(len), JValue::Object(&o)])?.l()?;
+    if bmp.is_null() {
+        return Ok(None);
+    }
+    let out = env.new_object("java/io/ByteArrayOutputStream", "()V", &[])?;
+    let fmt = env.get_static_field("android/graphics/Bitmap$CompressFormat", "JPEG", "Landroid/graphics/Bitmap$CompressFormat;")?.l()?;
+    let sig = "(Landroid/graphics/Bitmap$CompressFormat;ILjava/io/OutputStream;)Z";
+    let ok = env.call_method(&bmp, "compress", sig, &[JValue::Object(&fmt), JValue::Int(90), JValue::Object(&out)])?.z()?;
+    env.call_method(&bmp, "recycle", "()V", &[])?;
+    if !ok {
+        return Ok(None);
+    }
+    let b = env.call_method(&out, "toByteArray", "()[B", &[])?.l()?;
+    Ok(Some(env.convert_byte_array(JByteArray::from(b))?))
+}
+
+/// The picked file's bytes (read up to just past MEDIA_MAX, enough to know it is too big) and the type it says it is;
+/// None when it can't be opened.
+fn read(env: &mut JNIEnv, ctx: &JObject, uri: &JObject) -> Result<Option<(Vec<u8>, String)>> {
     let cr = env.call_method(ctx, "getContentResolver", "()Landroid/content/ContentResolver;", &[])?.l()?;
     let t = env.call_method(&cr, "getType", "(Landroid/net/Uri;)Ljava/lang/String;", &[JValue::Object(uri)])?.l()?;
     let mime = jx::string(env, t)?.unwrap_or_default();
     let input = env.call_method(&cr, "openInputStream", "(Landroid/net/Uri;)Ljava/io/InputStream;", &[JValue::Object(uri)])?.l()?;
     if input.is_null() {
-        return Ok(Err("Couldn't read that file".into()));
+        return Ok(None);
     }
     let buf = env.new_byte_array(1 << 16)?;
     let (mut bytes, mut chunk) = (Vec::new(), vec![0i8; 1 << 16]);
@@ -131,7 +229,7 @@ fn read(env: &mut JNIEnv, ctx: &JObject, uri: &JObject) -> Result<std::result::R
         bytes.extend(chunk[..n as usize].iter().map(|&b| b as u8));
     }
     env.call_method(&input, "close", "()V", &[])?;
-    Ok(Ok((bytes, mime)))
+    Ok(Some((bytes, mime)))
 }
 
 /// A pick under way for `chat` (also PREVIEW, fake_chat.rs); a pick in another chat's box stays as it is.
@@ -144,25 +242,36 @@ pub fn set_loading(chat: &str) {
 pub fn set_result(chat: &str, r: std::result::Result<Media, String>) {
     let mut p = PICK.lock().unwrap();
     if !matches!(&*p, Some((c, Pick::Loading)) if c == chat) {
+        inbox::update(|s| s.picked(chat));
         return;
     }
     *p = match r {
         Ok(m) if inbox::update(|s| s.set_pick(chat, Some(m.clone()))) == Some(true) => None,
         Ok(_) => Some((chat.to_string(), Pick::Failed("Couldn't save that file".into()))),
-        Err(why) => Some((chat.to_string(), Pick::Failed(why))),
+        Err(why) => {
+            inbox::update(|s| s.picked(chat));
+            Some((chat.to_string(), Pick::Failed(why)))
+        }
     };
     drop(p);
     inbox::changed();
 }
 
-/// Removes what was picked in `chat` (the × on the chip).
+/// Removes what was picked in `chat` (the × on the chip), and its file once nothing else uses it.
 pub fn clear(chat: &str) {
     let mut p = PICK.lock().unwrap();
     if p.as_ref().is_some_and(|(c, _)| c == chat) {
         *p = None;
     }
     drop(p);
-    inbox::update(|s| s.set_pick(chat, None));
+    let unused = inbox::update(|s| {
+        let path = s.get(chat).and_then(|c| c.pick.as_ref()).map(|m| m.path.clone());
+        s.set_pick(chat, None);
+        path.filter(|p| !p.is_empty() && !s.uses(p))
+    });
+    if let Some(Some(path)) = unused {
+        let _ = std::fs::remove_file(path);
+    }
     inbox::changed();
 }
 

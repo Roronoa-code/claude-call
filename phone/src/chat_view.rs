@@ -46,7 +46,7 @@ pub fn hero(rows: &[ChatRow]) -> (ChatRow, String) {
         format!("Replied to \u{201c}{asked}\u{201d}")
     } else if r.think == "Queued" {
         format!("Queued: \u{201c}{asked}\u{201d}")
-    } else if r.preview == r.topic {
+    } else if r.mine_last {
         // my message is the last word: not answered yet (sending, sent, or the PC hasn't picked it up)
         format!("Sent \u{201c}{asked}\u{201d}")
     } else {

@@ -257,7 +257,8 @@ fn a_photo_goes_up_first_then_the_signed_message_carries_it() {
     assert_eq!(v["sig"], sign("k", &c2, &m, "codex", None, l.at, "", l.media.first()).as_str());
     s.sent(&c2, &m, false);
     assert_eq!(s.retry(&c2, "", true), Some(m.clone()));
-    assert!(s.to_upload(&c2, &m).is_some(), "a retry uploads again");
+    assert!(s.to_upload(&c2, &m).is_none(), "a retry re-sends the link it went up to");
+    assert_eq!(serde_json::from_str::<Value>(&s.body(&c2, &m, "k").unwrap()).unwrap()["att"]["url"], "https://ntfy.sh/file/up.jpg");
     assert!(s.downloads().is_empty(), "my own file is never fetched");
     let m2 = s.add_mine(&c, &"\"".repeat(5000), Some(Media::picked(b"abc", "video/webm").unwrap())).unwrap();
     s.uploaded(&c, &m2, &format!("https://ntfy.sh/file/{}.webm", "a".repeat(20)));
@@ -796,4 +797,99 @@ fn a_notification_answer_that_was_not_saved_says_so() {
     let sending = s.get("ask-r1").unwrap();
     assert_eq!(after_answer(sending, false, false, t), (false, Some("Already answered"), (vec![], false, false)));
     assert_eq!(after_answer(&ask, false, false, t + ASK_FOR + 2000).1, Some("This question has closed"));
+}
+
+#[test]
+fn retries_resend_the_uploaded_link_until_ntfy_may_have_dropped_it() {
+    let (mut s, c, _) = store();
+    let pic = Media { path: "/m/p.jpg".into(), ..Media::picked(b"abc", "image/jpeg").unwrap() };
+    let m = s.add_mine(&c, "look", Some(pic)).unwrap();
+    s.uploaded(&c, &m, "https://ntfy.sh/file/up.jpg");
+    for _ in 0..5 {
+        s.sent(&c, &m, false); // the publish failed after the upload worked
+        assert_eq!(s.retry(&c, &m, false), Some(m.clone()));
+        assert!(s.to_upload(&c, &m).is_none(), "auto-retry never uploads it again");
+    }
+    s.sent(&c, &m, false);
+    s.retry(&c, &m, true);
+    assert!(s.to_upload(&c, &m).is_none(), "nor does a tap while the link works");
+    // past LINK_KEEP the link may be gone: the next retry uploads it once more
+    s.get_mut(&c).unwrap().lines.last_mut().unwrap().media[0].uploaded -= LINK_KEEP + 1;
+    s.sent(&c, &m, false);
+    s.retry(&c, &m, true);
+    assert_eq!(s.to_upload(&c, &m).unwrap().path, "/m/p.jpg");
+}
+
+#[test]
+fn an_answer_on_its_way_takes_the_text_box_away() {
+    let mut s = Store::default();
+    s.apply_note(&note("ask-q", "n1", "ask", &["Yes", "No"], "Ship it?", 1, 1), None).unwrap();
+    let now = now();
+    let state = |s: &Store| ask_state(s.get("ask-q").unwrap(), now);
+    assert_eq!(ended(state(&s)), "", "waiting: the box");
+    let m = s.add_mine("ask-q", "Yes", None).unwrap();
+    assert_eq!(ended(state(&s)), "Sending your answer…", "no second answer can be typed");
+    s.sent("ask-q", &m, true);
+    s.apply_receipt(&receipt("ask-q", &m, "delivered"));
+    assert_eq!(ended(state(&s)), "You've answered this. Start a new chat to say more.");
+    // an answer that fails for good: the question waits again and the box comes back
+    let mut t = Store::default();
+    t.apply_note(&note("ask-q", "n1", "ask", &[], "Ship it?", 1, 1), None).unwrap();
+    let m = t.add_mine("ask-q", "Yes", None).unwrap();
+    t.sent("ask-q", &m, false);
+    t.get_mut("ask-q").unwrap().lines[1].first -= AUTO_FOR;
+    assert_eq!(ended(state(&t)), "");
+    assert_eq!(ended("expired"), "This question has expired.");
+}
+
+#[test]
+fn a_new_chat_waiting_on_the_picker_survives_the_app_being_closed() {
+    let mut s = Store::default();
+    let c = s.new_chat("claude", None);
+    s.picking_for(&c);
+    let path = std::env::temp_dir().join(format!("callme-picking-{}.json", std::process::id()));
+    s.save(&path).unwrap();
+    let mut back = Store::load(&path).unwrap();
+    std::fs::remove_file(&path).unwrap();
+    assert_eq!(back.picking, c, "the picker's chat is kept with the store");
+    assert!(!back.drop_empty(&c), "empty, but its pick is still to come");
+    let pic = Media { path: "/m/p.jpg".into(), ..Media::picked(b"abc", "image/jpeg").unwrap() };
+    assert!(back.set_pick(&c, Some(pic)));
+    assert_eq!(back.picking, "", "the pick landed");
+    assert!(!back.drop_empty(&c), "it has a pick now");
+    // closed without a pick: an empty chat goes as before
+    let d = back.new_chat("claude", None);
+    back.picking_for(&d);
+    back.picked(&c); // another chat's answer leaves it waiting
+    assert_eq!(back.picking, d);
+    back.picked(&d);
+    assert!(back.drop_empty(&d));
+}
+
+#[test]
+fn picked_files_are_known_by_their_first_bytes_when_the_type_is_missing() {
+    assert_eq!(Media::kind("image/png", b""), Some("image/png"), "a type it sends is taken as stated");
+    assert_eq!(Media::kind("", b"\xff\xd8\xff\xe0rest"), Some("image/jpeg"));
+    assert_eq!(Media::kind("image/jpg", b"\x89PNG\r\n"), Some("image/png"));
+    assert_eq!(Media::kind("", b"GIF89a"), Some("image/gif"));
+    assert_eq!(Media::kind("", b"RIFF\0\0\0\0WEBPVP8 "), Some("image/webp"));
+    assert_eq!(Media::kind("", b"\x1a\x45\xdf\xa3"), Some("video/webm"));
+    assert_eq!(Media::kind("", b"\0\0\0\x18ftypmp42"), Some("video/mp4"));
+    assert_eq!(Media::kind("application/octet-stream", b"\0\0\0\x14ftypqt  "), Some("video/quicktime"));
+    assert_eq!(Media::kind("", b"\0\0\0\x18ftypheic"), Some("image/heif"));
+    assert_eq!(Media::kind("image/heic", b""), Some("image/heic"));
+    assert!(Media::heif("image/heic") && Media::heif("image/heif") && !Media::heif("image/jpeg"));
+    assert_eq!(Media::kind("", b"%PDF-1.7"), None);
+    assert_eq!(Media::kind("", b""), None);
+    assert!(Media::picked(b"x", "image/heif").is_err(), "HEIF itself is never sent: it is made a JPEG first");
+}
+
+#[test]
+fn a_deleted_chat_is_not_asked_again_for_a_missing_part() {
+    let (mut s, c, m) = store();
+    s.apply_reply(&reply(&c, &m, "done", "half", 1, 2), None);
+    let t = now() + 20_000;
+    assert_eq!(s.stalled(t).len(), 1);
+    s.delete(&c, now());
+    assert!(s.stalled(t).is_empty(), "its Undo is still showing");
 }

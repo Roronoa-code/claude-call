@@ -24,6 +24,8 @@ const GROUP: &str = "chats";
 const SUMMARY_ID: i32 = 99; // chat notifications are 100 and up
 /// Where Reply's typed words come back (RemoteInput).
 const TYPED: &str = "reply";
+/// A choice button's intent action: only it may carry a "choice" (Reply's intent is mutable, so extras can be added).
+const CHOICE: &str = "fyi.mani.callme.CHOICE";
 const BUILDER: &str = "Landroid/app/Notification$Builder;";
 
 /// A chat was read: its notification goes, and the summary too once no chat notification is left.
@@ -78,9 +80,42 @@ pub fn notify(env: &mut JNIEnv, ctx: &JObject, chat: &str, name: &str, text: &st
 
 /// A button on a chat's notification (ChatAction): Reply's typed words, or a question's choice, sent as my message,
 /// unless the question was answered or closed meanwhile. The notification then shows what went, or why nothing did.
+/// Android leaves Reply's spinner until the notification is posted again, so a failure on the way still answers it:
+/// "Not sent", or, once the message is kept to send (only showing it failed), the notification goes.
 pub fn acted(env: &mut JNIEnv, ctx: &JObject, intent: &JObject) -> Result<()> {
     let Some(chat) = jx::extra(env, intent, "chat")? else { return Ok(()) };
-    let text = match jx::extra(env, intent, "choice")? {
+    let mut kept = false;
+    if jx::ok(env, |env| answer(env, ctx, intent, &chat, &mut kept)).is_some() {
+        return Ok(());
+    }
+    if !kept && jx::ok(env, |env| show(env, ctx, &not_sent(&chat, chats::now()))).is_some() {
+        return Ok(());
+    }
+    let nm = service(env, ctx, "notification")?;
+    env.call_method(&nm, "cancel", "(I)V", &[JValue::Int(notification_id(&chat))]).map(drop)
+}
+
+/// Nothing went: said in place of the spinner Reply leaves (a tap opens the chat).
+fn not_sent(chat: &str, now: i64) -> Alert<'_> {
+    Alert {
+        chat,
+        name: "Claude",
+        face: "clawd",
+        text: "Not sent. Open the chat to try again".into(),
+        at: now,
+        mine: None,
+        note: None,
+        answers: (vec![], false, false),
+        updates: false,
+        alert: false,
+    }
+}
+
+/// acted's work; `kept` turns true once my message is saved to send.
+fn answer(env: &mut JNIEnv, ctx: &JObject, intent: &JObject, chat: &str, kept: &mut bool) -> Result<()> {
+    let action = env.call_method(intent, "getAction", "()Ljava/lang/String;", &[])?.l()?;
+    let choice = if jx::string(env, action)?.as_deref() == Some(CHOICE) { jx::extra(env, intent, "choice")? } else { None };
+    let text = match choice {
         Some(c) => c,
         None => typed(env, intent)?.unwrap_or_default(),
     };
@@ -88,8 +123,8 @@ pub fn acted(env: &mut JNIEnv, ctx: &JObject, intent: &JObject) -> Result<()> {
     let now = chats::now();
     // None: nothing could be read (the store, or chat isn't set up); Some(None): the chat is gone or deleted
     let mut seen: Option<Option<(Chat, bool)>> = None;
-    let kept = inbox::post(env, ctx, &chat, |s| {
-        let r = s.answer(&chat, &text, now);
+    *kept = inbox::post(env, ctx, chat, |s| {
+        let r = s.answer(chat, &text, now);
         let msg = r.as_ref().and_then(|(_, m)| m.clone());
         seen = Some(r.map(|(c, m)| (c, m.is_some())));
         msg
@@ -98,29 +133,14 @@ pub fn acted(env: &mut JNIEnv, ctx: &JObject, intent: &JObject) -> Result<()> {
         Some(Some(v)) => v,
         Some(None) => {
             let nm = service(env, ctx, "notification")?;
-            return env.call_method(&nm, "cancel", "(I)V", &[JValue::Int(notification_id(&chat))]).map(drop);
+            return env.call_method(&nm, "cancel", "(I)V", &[JValue::Int(notification_id(chat))]).map(drop);
         }
-        // nothing went: said so in place of the spinner Reply leaves (a tap opens the chat)
-        None => {
-            let a = Alert {
-                chat: &chat,
-                name: "Claude",
-                face: "clawd",
-                text: "Not sent. Open the chat to try again".into(),
-                at: now,
-                mine: None,
-                note: None,
-                answers: (vec![], false, false),
-                updates: false,
-                alert: false,
-            };
-            return show(env, ctx, &a);
-        }
+        None => return show(env, ctx, &not_sent(chat, now)),
     };
     let last = c.lines.iter().rev().find(|l| !l.me && l.state != "partial");
-    let (sent, note, answers) = chats::after_answer(&c, tried, kept, now);
+    let (sent, note, answers) = chats::after_answer(&c, tried, *kept, now);
     let a = Alert {
-        chat: &chat,
+        chat,
         name: &chats::label(&c),
         face: chats::face(&c.agent, c.model.as_deref()),
         text: chats::brief(&last.map(chats::shown).unwrap_or_default()),
@@ -224,6 +244,8 @@ fn show(env: &mut JNIEnv, ctx: &JObject, a: &Alert) -> Result<()> {
     let (choices, reply, more) = &a.answers;
     for (k, c) in choices.iter().enumerate() {
         let i = jx::intent(env, ctx, "ChatAction")?;
+        let what = s(env, CHOICE)?;
+        env.call_method(&i, "setAction", "(Ljava/lang/String;)Landroid/content/Intent;", &[JValue::Object(&what)])?;
         let (chat, choice) = (s(env, a.chat)?, s(env, c)?);
         jx::put(env, &i, "chat", JValue::Object(&chat))?;
         jx::put(env, &i, "choice", JValue::Object(&choice))?;

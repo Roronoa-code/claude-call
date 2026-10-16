@@ -77,7 +77,7 @@ export component LyricsLook inherits Rectangle {
     property <length> chips-y: root.height - Call.sab - 14px - 46px;
     property <length> top: Call.sat + 300px; // the lyrics
     // above the controls, or above the reply field while typing
-    property <length> bottom: Call.typing ? root.height - Call.kb - max(12px, Call.sab + 96px - Call.kb) - 64px - 12px : root.keys-y - 40px;
+    property <length> bottom: Call.typing ? root.height - Call.kb - max(12px, Call.sab + 96px - Call.kb) - Call.field-h - 12px : root.keys-y - 40px;
     property <int> n: Call.msgs.length;
     // a line of its own at the end: the call's caption while it rings, connects, holds or ends, or before any line
     property <bool> cap-line: root.incoming || root.phase == "connecting" || root.phase == "hold" || root.ended || root.n == 0;

@@ -178,13 +178,23 @@ fn build<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, wide: bool, size: Option<(f32,
     Ok(v)
 }
 
+/// The calendar day (year, day of the year) of `at` moved by `by` days: a day of 23 or 25 hours (clocks changing)
+/// still counts as one.
+fn day(env: &mut JNIEnv, at: i64, by: i32) -> Result<(i32, i32)> {
+    let c = env.call_static_method("java/util/Calendar", "getInstance", "()Ljava/util/Calendar;", &[])?.l()?;
+    env.call_method(&c, "setTimeInMillis", "(J)V", &[JValue::Long(at)])?;
+    env.call_method(&c, "add", "(II)V", &[JValue::Int(5), JValue::Int(by)])?; // Calendar.DATE
+    let get = |env: &mut JNIEnv, f: i32| env.call_method(&c, "get", "(I)I", &[JValue::Int(f)])?.i();
+    Ok((get(env, 1)?, get(env, 6)?)) // YEAR, DAY_OF_YEAR
+}
+
 /// When the mode changed, short enough for the card: the time today, "yesterday", else the date ("14 Oct").
 fn since(env: &mut JNIEnv, ctx: &JObject, at: i64) -> Result<String> {
     let today = |env: &mut JNIEnv, t: i64| env.call_static_method("android/text/format/DateUtils", "isToday", "(J)Z", &[JValue::Long(t)])?.z();
     let pattern = if today(env, at)? {
         let h24 = env.call_static_method("android/text/format/DateFormat", "is24HourFormat", "(Landroid/content/Context;)Z", &[JValue::Object(ctx)])?.z()?;
         s(env, if h24 { "H:mm" } else { "h:mm a" })?
-    } else if today(env, at + 86_400_000)? {
+    } else if day(env, at, 0)? == day(env, jx::now_ms(), -1)? {
         return Ok("yesterday".into());
     } else {
         let locale = env.call_static_method("java/util/Locale", "getDefault", "()Ljava/util/Locale;", &[])?.l()?;
