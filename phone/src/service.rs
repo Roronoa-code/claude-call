@@ -281,7 +281,7 @@ fn live_link(env: &mut JNIEnv) -> Result<Option<String>> {
 
 /// The home screen opened: during a call the app icon brings the call back instead.
 pub fn home_opened(env: &mut JNIEnv, act: &JObject) -> Result<()> {
-    // A chat notification was tapped: the home screen opens that chat.
+    // A chat notification was tapped: the home screen opens that chat ("": the chat list, from the summary).
     let intent = env.call_method(act, "getIntent", "()Landroid/content/Intent;", &[])?.l()?;
     if let Some(chat) = jx::extra(env, &intent, "chat")? {
         *crate::inbox::OPEN_CHAT.lock().unwrap() = Some(chat);
@@ -296,14 +296,14 @@ pub fn home_opened(env: &mut JNIEnv, act: &JObject) -> Result<()> {
 }
 
 /// The home screen came to the front (the app icon brings an open one back without a new intent): during a call that
-/// means the call; otherwise listen if setup is done, and pick up a mode changed elsewhere.
+/// means the call; otherwise listen (chats work while call permissions are still missing), pick up a mode changed
+/// elsewhere, and bring the widget's "Changed" day up to date.
 pub fn home_resumed(env: &mut JNIEnv, act: &JObject) -> Result<()> {
     if live_link(env)?.is_some() {
         return home_opened(env, act);
     }
-    if settings::missing(env, act)?.is_empty() {
-        start(env, act)?;
-    }
+    start(env, act)?;
+    crate::widget::update_all(env, act)?;
     let (vm, ctx, topic) = (env.get_java_vm()?, jx::app(env, act)?, settings::topic(env, act)?);
     let ctx = env.new_global_ref(ctx)?;
     std::thread::spawn(move || {
@@ -315,7 +315,8 @@ pub fn home_resumed(env: &mut JNIEnv, act: &JObject) -> Result<()> {
     Ok(())
 }
 
-/// After the permission dialog: keep going through setup, or start listening.
+/// After the permission dialog: listen, and on to the rest of setup.
 pub fn permissions_answered(env: &mut JNIEnv, act: &JObject) -> Result<()> {
-    if settings::missing(env, act)?.is_empty() { start(env, act) } else { settings::set_up(env, act) }
+    start(env, act)?;
+    settings::set_up_rest(env, act)
 }

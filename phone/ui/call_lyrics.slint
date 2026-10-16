@@ -222,7 +222,7 @@ export component LyricsLook inherits Rectangle {
         icon: i == 0 ? (Call.muted ? Icons.mic-off : Icons.mic) : i == 1 ? Icons.speaker-off : i == 2 ? Icons.speaker : Icons.keyboard;
         label: i == 0 ? (Call.muted ? "Unmute" : "Mute") : i == 1 ? "Quiet" : i == 2 ? "Speaker" : "Type";
         on: i == 0 ? Call.muted : i == 1 ? Call.quiet : i == 2 ? Call.speaker : Call.typing;
-        enabled: !root.incoming && !root.ended;
+        enabled: !root.incoming && !root.ended && !Call.typing;
         opacity: root.incoming || root.ended || Call.typing ? 0 : 1;
         animate y { duration: root.incoming ? 300ms : 560ms; delay: root.incoming ? 0ms : Math.abs(i - 1.5) * 50ms; easing: root.incoming ? T.close : T.spring; }
         animate opacity { duration: 220ms; easing: T.out; }

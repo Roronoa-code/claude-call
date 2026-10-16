@@ -18,7 +18,7 @@ export component CameraLook inherits Rectangle {
     property <bool> yours: (phase == "hearing" || phase == "thinking") && Call.me-text != "";
     property <length> W: root.width;
     property <length> H: root.height;
-    property <length> field-top: H - Call.kb - Math.max(12px, Call.sab + 96px - Call.kb) - 64px;
+    property <length> field-top: H - Call.kb - Math.max(12px, Call.sab + 96px - Call.kb) - Call.field-h;
     property <bool> keys: Call.typing && Call.kb > 0;
     // The camera (Call.face-k, eased by caller.rs): the feet sit lower in the frame the closer it is.
     property <float> k: Call.face-k;
@@ -149,7 +149,7 @@ export component CameraLook inherits Rectangle {
         icon: Icons.phone;
         turn: true;
         fill: Spot.red;
-        enabled: !root.ended;
+        enabled: !root.ended && !root.keys; // hidden while typing: a tap there must not hang up
         opacity: root.ended || root.keys ? 0 : 1;
         animate x { duration: 520ms; easing: T.spring; }
         animate opacity { duration: 260ms; easing: T.out; }

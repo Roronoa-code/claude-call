@@ -833,6 +833,24 @@ impl Store {
         }
     }
 
+    /// How many chats have something new (a deleted one, its Undo still showing, doesn't count).
+    pub fn needing(&self) -> usize {
+        self.chats.iter().filter(|c| c.unread > 0 && c.deleted == 0).count()
+    }
+
+    /// Answers a chat from its notification (Reply's words or a question's choice): my message, and the chat read.
+    /// Nothing for a chat that is gone or deleted (its Undo still showing); nothing added to a question answered or
+    /// closed meanwhile. Returns the chat as it was, and my message's id when it was added.
+    pub fn answer(&mut self, chat: &str, text: &str, now: i64) -> Option<(Chat, Option<String>)> {
+        let c = self.get(chat).filter(|c| c.deleted == 0)?.clone();
+        let open = c.kind.is_empty() || (c.kind == "ask" && ask_state(&c, now) == "waiting");
+        let msg = if open { self.add_mine(chat, text, None) } else { None };
+        if msg.is_some() {
+            self.mark_read(chat); // answered from the notification: nothing new left in it
+        }
+        Some((c, msg))
+    }
+
     /// The PC's reply. Safe to apply twice (the phone replays what it missed). Returns (chat, name, text) when it is
     /// new and `open` (the chat being looked at) isn't that chat: that is what to notify.
     pub fn apply_reply(&mut self, v: &Value, open: Option<&str>) -> Option<(String, String, String)> {
@@ -968,6 +986,117 @@ fn file_part(l: &mut Line, v: &Value) -> bool {
     l.text = l.parts.drain(..).flatten().collect();
     l.state = "done".into();
     true
+}
+
+/// What a notification (and the chat list's preview) says for a message: plain words, one line per block, no markdown marks (`**`, backticks,
+/// a link's address), a code block as "(code)".
+pub fn brief(text: &str) -> String {
+    let mut out: Vec<String> = vec![];
+    for b in blocks(text) {
+        let t = match b.kind {
+            "code" => "(code)".to_string(),
+            _ => {
+                let t = unlinked(&b.text).replace("**", "").replace('`', "").replace('\n', " ");
+                if b.kind == "li" { format!("{} {t}", b.mark) } else { t }
+            }
+        };
+        if !(t == "(code)" && out.last().is_some_and(|l| l == "(code)")) {
+            out.push(t);
+        }
+    }
+    out.join("\n")
+}
+
+/// "[words](address)" as just the words.
+fn unlinked(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(open) = rest.find('[') {
+        let after = &rest[open + 1..];
+        match after.find("](").map(|m| (m, after[m + 2..].find(')'))) {
+            Some((m, Some(close))) if !after[..m].contains('[') => {
+                out.push_str(&rest[..open]);
+                out.push_str(&after[..m]);
+                rest = &after[m + 2 + close + 1..];
+            }
+            _ => {
+                out.push_str(&rest[..=open]);
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// What a chat's notification can answer with (Android shows at most three buttons): (its choices, Reply, Open).
+/// A chat of mine: Reply. A waiting question: its choices when they fit, Reply beside one or two; more than three:
+/// Reply and Open (the choices are in the app). Updates, and a question answered or closed: nothing.
+pub fn quick_answers(c: &Chat, now: i64) -> (Vec<String>, bool, bool) {
+    match c.kind.as_str() {
+        "" => (vec![], true, false),
+        "ask" if ask_state(c, now) == "waiting" => {
+            let choices = c.lines.iter().find(|l| !l.me).map_or(vec![], |l| l.choices.clone());
+            match choices.len() {
+                0..=2 => (choices, true, false),
+                3 => (choices, false, false),
+                _ => (vec![], true, true),
+            }
+        }
+        _ => (vec![], false, false),
+    }
+}
+
+/// What a chat's notification shows once answered from there (`c`: the chat as it was; `tried`: my answer was added;
+/// `kept`: and saved to send): (my answer shown as sent, a word on why nothing went, the buttons left). An answer that
+/// couldn't be saved went nowhere: it says so and keeps the buttons to try again.
+pub fn after_answer(c: &Chat, tried: bool, kept: bool, now: i64) -> (bool, Option<&'static str>, (Vec<String>, bool, bool)) {
+    let sent = tried && kept;
+    let note = match ask_state(c, now) {
+        _ if tried && !kept => Some("Not sent. Try again"),
+        "answered" | "sending" if !sent => Some("Already answered"),
+        "expired" => Some("This question has closed"),
+        _ => None,
+    };
+    // after answering a question nothing is left to tap; a chat of mine keeps Reply
+    let answers = if !sent || c.kind.is_empty() { quick_answers(c, now) } else { (vec![], false, false) };
+    (sent, note, answers)
+}
+
+#[cfg(test)]
+mod alert_tests {
+    use super::{Chat, Line, quick_answers};
+
+    #[test]
+    fn notification_buttons_fit_three() {
+        let ask = |n: usize| Chat {
+            kind: "ask".into(),
+            asked: 1_000,
+            lines: vec![Line { choices: (0..n).map(|i| format!("c{i}")).collect(), ..Line::default() }],
+            ..Chat::default()
+        };
+        assert_eq!(quick_answers(&Chat::default(), 2_000), (vec![], true, false));
+        assert_eq!(quick_answers(&ask(0), 2_000), (vec![], true, false));
+        assert_eq!(quick_answers(&ask(2), 2_000), (vec!["c0".into(), "c1".into()], true, false));
+        assert_eq!(quick_answers(&ask(3), 2_000).0.len(), 3);
+        assert_eq!(quick_answers(&ask(3), 2_000).1, false);
+        assert_eq!(quick_answers(&ask(5), 2_000), (vec![], true, true));
+        assert_eq!(quick_answers(&ask(2), 1_000 + super::ASK_FOR + 1), (vec![], false, false)); // closed
+        let mut answered = ask(2);
+        answered.lines.push(Line { me: true, state: "sent".into(), ..Line::default() });
+        assert_eq!(quick_answers(&answered, 2_000), (vec![], false, false));
+        assert_eq!(quick_answers(&Chat { kind: "note".into(), ..Chat::default() }, 2_000), (vec![], false, false));
+    }
+
+    #[test]
+    fn notifications_read_as_plain_words() {
+        assert_eq!(super::brief("**Done.** See `main.rs`"), "Done. See main.rs");
+        assert_eq!(super::brief("Fixed:\n```rust\nfn a() {}\n```\n```\nb\n```\nThat's it"), "Fixed:\n(code)\nThat's it");
+        assert_eq!(super::brief("# Plan\n- one\n2. two"), "Plan\n• one\n2. two");
+        assert_eq!(super::brief("see [the docs](https://x.y/a) and [b] (c)"), "see the docs and [b] (c)");
+        assert_eq!(super::brief("a\nb"), "a b");
+        assert_eq!(super::brief("Done."), "Done.");
+    }
 }
 
 #[cfg(test)]

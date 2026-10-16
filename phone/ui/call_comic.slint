@@ -318,7 +318,7 @@ export component ComicLook inherits Rectangle {
         icon: i == 0 ? (Call.muted ? Icons.mic-off : Icons.mic) : i == 1 ? Icons.speaker-off : i == 2 ? Icons.speaker : i == 3 ? Icons.captions : Icons.keyboard;
         label: i == 0 ? (Call.muted ? "Unmute" : "Mute") : i == 1 ? "Quiet" : i == 2 ? "Speaker" : i == 3 ? "Captions" : "Type";
         on: i == 0 ? Call.muted : i == 1 ? Call.quiet : i == 2 ? Call.speaker : i == 3 ? Call.caps-open : Call.typing;
-        enabled: !root.incoming && !root.ended;
+        enabled: !root.incoming && !root.ended && !Call.typing;
         opacity: root.incoming || root.ended || Call.typing ? 0 : 1;
         animate y { duration: root.incoming ? 300ms : 560ms; delay: root.incoming ? 0ms : i * 35ms; easing: root.incoming ? T.close : T.spring; }
         animate opacity { duration: 220ms; delay: root.incoming ? 0ms : i * 35ms; easing: T.out; }

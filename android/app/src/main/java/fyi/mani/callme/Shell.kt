@@ -53,6 +53,7 @@ object Native {
     @JvmStatic external fun picked(activity: Activity, data: Intent?)
     @JvmStatic external fun declined(context: Context, intent: Intent)
     @JvmStatic external fun modeTapped(context: Context, intent: Intent)
+    @JvmStatic external fun chatAction(context: Context, intent: Intent)
     @JvmStatic external fun widgets(context: Context)
     @JvmStatic external fun back(phase: Int, progress: Float)
     @JvmStatic external fun keyboard(dp: Float)
@@ -229,6 +230,11 @@ class BootReceiver : BroadcastReceiver() {
 /** Widget tile taps. Not exported, so only this app's own taps can change the mode. */
 class ModeTap : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) = Native.modeTapped(context, intent)
+}
+
+/** A chat notification's Reply or answer button (phone/src/chat_alert.rs). Not exported: only this app's own buttons. */
+class ChatAction : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) = Native.chatAction(context, intent)
 }
 
 /** The contact-mode widget (phone/src/widget.rs). */

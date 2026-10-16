@@ -21,6 +21,8 @@ struct State {
     vibrator: Option<GlobalRef>,
 }
 static STATE: Mutex<Option<State>> = Mutex::new(None);
+/// Calls that have rung, counted: the home screen's Call button tells a call that came from one that never did.
+pub static RINGS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// The call screen for link, answered or not.
 pub fn call_intent<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, link: &str, answer: bool) -> Result<JObject<'a>> {
@@ -93,6 +95,7 @@ pub fn ring(env: &mut JNIEnv, ctx: &JObject, link: &str, reason: &str) -> Result
     }
     stop_sound(env)?;
     STATE.lock().unwrap().as_mut().unwrap().current = Some(link.to_string());
+    RINGS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
     let nm = service(env, ctx, "notification")?;
     channel(env, &nm, CHANNEL, "Calls from Claude", 4, true)?; // we play the ringtone ourselves so it loops

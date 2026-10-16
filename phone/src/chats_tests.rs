@@ -749,3 +749,51 @@ fn send_again_makes_a_new_message_with_the_same_text() {
     let l = s.get(&c).unwrap().lines.last().unwrap();
     assert_eq!((l.text.as_str(), l.state.as_str(), l.me), ("hello", "sending", true));
 }
+
+#[test]
+fn a_notification_answer_skips_deleted_chats_and_closed_questions() {
+    let (mut s, mine, _) = store();
+    s.apply_note(&note("ask-r1", "r1", "ask", &["Yes", "No"], "Ship it?", 1, 1), None);
+    assert_eq!(s.needing(), 1);
+    // deleted, its Undo still showing: gone for the notification, and it no longer needs me
+    assert!(s.delete("ask-r1", 1));
+    assert_eq!(s.needing(), 0);
+    let before = s.clone();
+    assert!(s.answer("ask-r1", "Yes", now()).is_none());
+    assert_eq!(s, before, "nothing added to a deleted chat");
+    s.undelete("ask-r1");
+    // the question waits: the choice goes and the chat is read; the home line's question (asks) is over
+    let (c, msg) = s.answer("ask-r1", "Yes", now()).unwrap();
+    assert!(msg.is_some());
+    assert_eq!(ask_state(&c, now()), "waiting", "the chat as it was");
+    assert_eq!(ask_state(s.get("ask-r1").unwrap(), now()), "sending");
+    assert_eq!(s.needing(), 0);
+    // a second tap (answered meanwhile): nothing more is added
+    let n = s.get("ask-r1").unwrap().lines.len();
+    assert!(s.answer("ask-r1", "No", now()).unwrap().1.is_none());
+    assert_eq!(s.get("ask-r1").unwrap().lines.len(), n);
+    // a chat of mine takes Reply's words; empty words add nothing
+    assert!(s.answer(&mine, "  ", now()).unwrap().1.is_none());
+    assert!(s.answer(&mine, "more", now()).unwrap().1.is_some());
+}
+
+#[test]
+fn a_notification_answer_that_was_not_saved_says_so() {
+    let mut s = Store::default();
+    s.apply_note(&note("ask-r1", "r1", "ask", &["Yes", "No"], "Ship it?", 1, 1), None);
+    let ask = s.get("ask-r1").unwrap().clone();
+    let mine = Chat::default();
+    let t = now();
+    let choices = (vec!["Yes".to_string(), "No".to_string()], true, false);
+    // saved: shown as sent; a question has nothing left to tap, a chat of mine keeps Reply
+    assert_eq!(after_answer(&ask, true, true, t), (true, None, (vec![], false, false)));
+    assert_eq!(after_answer(&mine, true, true, t), (true, None, (vec![], true, false)));
+    // not saved (the store couldn't be written): not shown as sent, said so, and the buttons stay to try again
+    assert_eq!(after_answer(&ask, true, false, t), (false, Some("Not sent. Try again"), choices));
+    assert_eq!(after_answer(&mine, true, false, t), (false, Some("Not sent. Try again"), (vec![], true, false)));
+    // answered in the app a moment ago (still on its way), or closed
+    s.answer("ask-r1", "Yes", t);
+    let sending = s.get("ask-r1").unwrap();
+    assert_eq!(after_answer(sending, false, false, t), (false, Some("Already answered"), (vec![], false, false)));
+    assert_eq!(after_answer(&ask, false, false, t + ASK_FOR + 2000).1, Some("This question has closed"));
+}

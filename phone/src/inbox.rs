@@ -167,7 +167,7 @@ fn arrived(env: &mut JNIEnv, ctx: &JObject, body: &str, what: &str, signed: fn(&
 
 /// Adds or retries a message of mine (`f` says which) and sends it in the background. True once it is kept (saved)
 /// to send.
-fn post(env: &mut JNIEnv, ctx: &JObject, chat: &str, f: impl FnOnce(&mut Store) -> Option<String>) -> Result<bool> {
+pub(crate) fn post(env: &mut JNIEnv, ctx: &JObject, chat: &str, f: impl FnOnce(&mut Store) -> Option<String>) -> Result<bool> {
     if crate::fake_chat::on() {
         path(env, ctx)?;
         return Ok(crate::fake_chat::post(chat, f));
@@ -285,12 +285,10 @@ fn show(ui: &HomeScreen) {
     let now = chats::now();
     let mut all: Vec<_> = st.chats.iter().filter(|c| c.deleted == 0).collect();
     all.sort_by_key(|c| -c.updated);
-    // The last line in one line, without its markdown marks.
+    // The last line in one line, in plain words (as its notification says it).
     let preview = |c: &chats::Chat| {
         let last = c.lines.iter().rev().find(|l| l.me || l.state != "partial");
-        let t = last.map_or("New chat".to_string(), chats::shown);
-        let t: Vec<_> = chats::blocks(&t).iter().map(|b| b.text.replace("**", "").replace('`', "")).collect();
-        t.join(" ").replace('\n', " ")
+        chats::brief(&last.map_or("New chat".to_string(), chats::shown)).replace('\n', " ")
     };
     // What waits in its text box, in one line ("Photo" when only a photo is picked).
     let draft = |c: &chats::Chat| match (c.draft.trim(), &c.pick) {
@@ -358,8 +356,8 @@ fn show(ui: &HomeScreen) {
             let ask = chats::ask_state(chat, now);
             let msgs = chat_view::thread(chat, ask, now);
             let name = chats::label(chat);
-            // "Opus" from "Claude · Opus"; a PC-started thread keeps its whole name ("Deploy · Notebook")
-            let short = if chat.kind.is_empty() { name.rsplit(" · ").next().unwrap_or(&name) } else { &name }.to_string();
+            // "Opus" from "Claude Â· Opus"; a PC-started thread keeps its whole name ("Deploy Â· Notebook")
+            let short = if chat.kind.is_empty() { name.rsplit(" Â· ").next().unwrap_or(&name) } else { &name }.to_string();
             c.set_hint(if ask == "waiting" { "Type your answer".into() } else { format!("Message {short}").into() });
             c.set_short(short.into());
             c.set_name(name.into());
@@ -371,7 +369,7 @@ fn show(ui: &HomeScreen) {
             c.set_title(match (chat.kind.as_str(), ask) {
                 ("", _) => chat.title.clone().into(),
                 (_, "waiting") => "Waiting for your answer".into(),
-                (_, "sending") => "Sending answer…".into(),
+                (_, "sending") => "Sending answerâ€¦".into(),
                 (_, "answered") => "Answered".into(),
                 (_, "expired") => "Expired".into(),
                 _ => "From your PC".into(),
@@ -420,7 +418,7 @@ fn status(ui: &HomeScreen) {
     if ask != c.get_ask().as_str() {
         changed(); // a question just expired (or its answer was taken) while open: redraw
     }
-    // "Opus is thinking · 3 min" (the time from the header's "Thinking · 3 min")
+    // "Opus is thinking Â· 3 min" (the time from the header's "Thinking Â· 3 min")
     let thinking = if waiting { format!("{} is thinking{}", c.get_short(), think.strip_prefix("Thinking").unwrap_or("")) } else { String::new() };
     // set only what changed (each set redraws)
     if c.get_status() != text {
@@ -551,7 +549,7 @@ impl Tracker {
     }
 }
 
-/// Deletes a chat for UNDO_FOR (its notification goes): hidden, with "Chat deleted · Undo"; replies that come meanwhile
+/// Deletes a chat for UNDO_FOR (its notification goes): hidden, with "Chat deleted Â· Undo"; replies that come meanwhile
 /// are kept with it. Each deleted chat keeps its own Undo time; Undo brings back the newest.
 fn delete(ui: &HomeScreen, chat: &str) {
     let c = ui.global::<Chats>();

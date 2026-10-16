@@ -43,7 +43,7 @@ export component ScriptLook inherits Rectangle {
     property <length> by: H - Call.sab - 20px - 56px;
     property <length> fx: W / 2;
     property <length> fy: root.by - 46px;
-    property <length> field-top: H - Call.kb - Math.max(12px, Call.sab + 96px - Call.kb) - 64px;
+    property <length> field-top: H - Call.kb - Math.max(12px, Call.sab + 96px - Call.kb) - Call.field-h;
     property <bool> keys: Call.typing && Call.kb > 0;
     property <length> col-top: Call.sat + 66px;
     property <length> col-bottom: keys ? field-top - 14px : fy - 200px;
@@ -142,7 +142,7 @@ export component ScriptLook inherits Rectangle {
         icon: Icons.phone;
         turn: true;
         fill: Spot.red;
-        enabled: !root.ended;
+        enabled: !root.ended && !root.keys; // hidden while typing: a tap there must not hang up
         opacity: root.ended || root.keys ? 0 : 1;
         animate opacity { duration: 260ms; easing: T.out; }
         clicked => { Call.hang-up(); }
@@ -155,7 +155,7 @@ export component ScriptLook inherits Rectangle {
         icon: root.incoming ? Icons.phone : Icons.check;
         fill: root.incoming ? Spot.green : Spot.warm;
         ink: root.incoming ? white : #1b1713;
-        enabled: root.big-live && !root.ended;
+        enabled: root.big-live && !root.ended && !root.keys;
         opacity: root.big-live && !root.ended && !root.keys ? 1 : 0;
         transform-origin: { x: 28px, y: 28px };
         transform-scale: root.big-live ? 1 : 0.7;
@@ -185,19 +185,20 @@ export component ScriptLook inherits Rectangle {
         animate opacity { duration: 240ms; easing: T.out; }
         for page in 2: HorizontalLayout {
             property <bool> on: (page == 1) == root.more;
+            property <bool> live: self.on && !root.keys; // the row fades out while typing: nothing in it takes a tap
             alignment: center;
             spacing: 0;
             opacity: self.on ? 1 : 0;
             y: self.on ? 0 : page == 1 ? 8px : -8px;
             animate opacity { duration: self.on ? 300ms : 160ms; delay: self.on ? 100ms : 0ms; easing: T.out; }
             animate y { duration: self.on ? 420ms : 200ms; delay: self.on ? 100ms : 0ms; easing: self.on ? T.spring : T.close; }
-            if page == 0: Say { text: Call.muted ? "UNMUTE" : "MUTE"; on: Call.muted; enabled: parent.on && !root.incoming; clicked => { Call.toggle-mute(); } }
-            if page == 0: Say { text: "TYPE"; on: Call.typing; enabled: parent.on && !root.incoming; clicked => { Call.typing = !Call.typing; } }
-            if page == 0: Say { text: "MORE"; enabled: parent.on && !root.incoming; clicked => { root.more = true; } }
-            if page == 1: Say { text: "SPEAKER"; on: Call.speaker; enabled: parent.on; clicked => { Call.toggle-speaker(); } }
-            if page == 1: Say { text: "QUIET"; on: Call.quiet; enabled: parent.on; clicked => { Call.toggle-quiet(); } }
-            if page == 1: Say { text: "IN 5 MIN"; enabled: parent.on; clicked => { Call.call-back(); } }
-            if page == 1: Say { text: "BACK"; enabled: parent.on; clicked => { root.more = false; } }
+            if page == 0: Say { text: Call.muted ? "UNMUTE" : "MUTE"; on: Call.muted; enabled: parent.live && !root.incoming; clicked => { Call.toggle-mute(); } }
+            if page == 0: Say { text: "TYPE"; on: Call.typing; enabled: parent.live && !root.incoming; clicked => { Call.typing = !Call.typing; } }
+            if page == 0: Say { text: "MORE"; enabled: parent.live && !root.incoming; clicked => { root.more = true; } }
+            if page == 1: Say { text: "SPEAKER"; on: Call.speaker; enabled: parent.live; clicked => { Call.toggle-speaker(); } }
+            if page == 1: Say { text: "QUIET"; on: Call.quiet; enabled: parent.live; clicked => { Call.toggle-quiet(); } }
+            if page == 1: Say { text: "IN 5 MIN"; enabled: parent.live; clicked => { Call.call-back(); } }
+            if page == 1: Say { text: "BACK"; enabled: parent.live; clicked => { root.more = false; } }
         }
     }
 

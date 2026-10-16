@@ -5,7 +5,9 @@ export struct Mode { id: string, title: string }
 
 export global Home {
     in property <bool> ready: true;
-    in property <string> missing; // what still needs the user's OK
+    in property <string> setup-text: "Finish setting up"; // the setup line: or which permission only Settings can give now
+    in property <string> ask-chat; // an agent's question waiting for an answer: its chat ("" none)
+    in property <string> ask-line; // ...and the line naming it, "Notebook sync has a question"
     in property <string> mode: "both";
     in property <length> sat: 36px;
     in property <length> sab: 24px;
@@ -14,6 +16,7 @@ export global Home {
     in-out property <bool> typing; // a chat's field has the cursor
     in-out property <string> caller: "claude"; // who the Call button asks for: claude or codex (tap Clawd or Null)
     in property <bool> requested; // a call was just asked for; it rings within a minute or so
+    in property <bool> no-answer; // ...and none came: the button says so for a moment
     callback set-mode(string);
     callback set-up();
     callback call(string);
@@ -24,8 +27,8 @@ export global Home {
     // In the order Null's face rolls through them (settings.rs MODES), dragging up towards Calls only.
     out property <[Mode]> modes: [
         { id: "call", title: "Calls only" },
-        { id: "text", title: "Messages only" },
-        { id: "both", title: "Calls and messages" },
+        { id: "text", title: "Texts only" },
+        { id: "both", title: "Calls and texts" },
         { id: "none", title: "Quiet for now" },
         { id: "wake", title: "Asleep, wake me" },
         { id: "sleep", title: "Asleep" },
