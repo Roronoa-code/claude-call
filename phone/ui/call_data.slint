@@ -45,6 +45,7 @@ export global Call {
     in-out property <bool> typing;
     in-out property <bool> more; // a look's More row is up (call_camera.slint, call_light.slint)
     in-out property <string> draft;
+    in-out property <length> field-h: 64px; // the reply field's height as it grows with its lines (call_kit.slint)
     // PREVIEW (branch preview/call-screen): which call screen shows, from debug.callme.call (0: as shipped).
     in property <int> look;
     in property <bool> placed; // the real status and gesture bar sizes are known: the directions show only then

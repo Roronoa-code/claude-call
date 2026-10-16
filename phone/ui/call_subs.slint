@@ -17,7 +17,7 @@ export component SubsLook inherits Rectangle {
     property <length> H: root.height;
     // The reply field's top while typing (call_kit Sheets, lift 96): the scene rises so the caller and its line stay
     // in view above it.
-    property <length> field-top: H - Call.kb - Math.max(12px, Call.sab + 96px - Call.kb) - 64px;
+    property <length> field-top: H - Call.kb - Math.max(12px, Call.sab + 96px - Call.kb) - Call.field-h;
     property <bool> keys: Call.typing && Call.kb > 0;
     property <length> fy0: round(H * 0.5 / 1px) * 1px;
     property <length> dy: keys ? Math.max(0px, fy0 + 40px - (field-top - 116px)) : 0px;
@@ -143,7 +143,7 @@ export component SubsLook inherits Rectangle {
         icon: Icons.phone;
         turn: true;
         fill: Spot.red;
-        enabled: !root.ended;
+        enabled: !root.ended && !root.keys; // hidden while typing: a tap there must not hang up
         opacity: root.ended || root.keys ? 0 : 1;
         animate opacity { duration: 260ms; easing: T.out; }
         clicked => { Call.hang-up(); }
@@ -156,7 +156,7 @@ export component SubsLook inherits Rectangle {
         label: root.incoming ? "Answer" : "Done talking";
         fill: root.incoming ? Spot.green : Spot.warm;
         ink: root.incoming ? white : #1b1713;
-        enabled: root.big-live && !root.ended;
+        enabled: root.big-live && !root.ended && !root.keys;
         opacity: root.big-live && !root.ended && !root.keys ? 1 : 0;
         transform-origin: { x: self.width / 2, y: 28px };
         transform-scale: root.big-live ? 1 : 0.9;
