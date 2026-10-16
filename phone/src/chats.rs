@@ -96,7 +96,6 @@ pub enum Unsent {
     Failed,
 }
 
-/// A wire word as one of the saved enums; None for a word it doesn't have.
 pub fn wire<T: serde::de::DeserializeOwned>(s: &str) -> Option<T> {
     serde_json::from_value(Value::from(s)).ok()
 }
