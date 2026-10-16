@@ -21,15 +21,8 @@ export component ChatThread inherits Rectangle {
         height: parent.height - self.y;
         side: 14px;
         pad-bottom: Chats.readonly ? Home.sab + 28px : root.height - field.y + 18px;
-        if Chats.action == "stop": Rectangle {
-            property <float> k: 0;
-            init => { self.k = 1; }
-            animate k { duration: 420ms; easing: T.out; }
-            height: 46px;
-            opacity: k;
-            Shimmer { x: 6px; y: 22px + (1 - parent.k) * 6px; text: Chats.short + " is thinking"; font-size: 14.5px; base: #8a8c93; }
-        }
-        if Chats.status != "" && Chats.action != "stop": HorizontalLayout {
+        // my last message's receipt (Sending…, Sent, Delivered, Read), staying put while the PC thinks below it
+        if Chats.status != "": HorizontalLayout {
             alignment: end;
             padding-top: 6px;
             Rectangle {
@@ -44,6 +37,14 @@ export component ChatThread inherits Rectangle {
                 }
                 TouchArea { enabled: Chats.action == "retry"; clicked => { Chats.retry(); } }
             }
+        }
+        if Chats.action == "stop": Rectangle {
+            property <float> k: 0;
+            init => { self.k = 1; }
+            animate k { duration: 420ms; easing: T.out; }
+            height: 46px;
+            opacity: k;
+            Shimmer { x: 6px; y: 22px + (1 - parent.k) * 6px; text: Chats.short + " is thinking"; font-size: 14.5px; base: #8a8c93; }
         }
     }
     // A new chat: its character big in the middle, inviting the first message.
