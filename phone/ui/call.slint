@@ -124,8 +124,8 @@ export component CallScreen inherits Window {
                 animate opacity { duration: 200ms; easing: T.out; }
                 laterText := Text { text: "Call back in 5 min"; font-size: 14px; color: laterTouch.pressed ? #111 : T.fg; vertical-alignment: center; horizontal-alignment: center; }
                 laterTouch := TouchArea {
-                    enabled: !root.ended;
-                    clicked => { Call.call-back(); }
+                    enabled: !root.ended && !Call.asking-back;
+                    clicked => { if (!Call.asking-back) { Call.call-back(); } }
                 }
             }
         }

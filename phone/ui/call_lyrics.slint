@@ -301,7 +301,7 @@ export component LyricsLook inherits Rectangle {
         label: "In 5 min";
         opacity: root.incoming || root.ended ? 0 : 1;
         animate opacity { duration: 220ms; easing: T.out; }
-        clicked => { if (!root.incoming && !root.ended) { Call.call-back(); } }
+        clicked => { if (!root.incoming && !root.ended) { if (!Call.asking-back) { Call.call-back(); } } }
     }
     Chip {
         x: 136px;

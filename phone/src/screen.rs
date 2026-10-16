@@ -134,6 +134,9 @@ fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activi
     }
     let ended = s.ended;
     let v = &s.view;
+    if ui.global::<Call>().get_asking_back() != v.asking_back {
+        ui.global::<Call>().set_asking_back(v.asking_back);
+    }
     // PREVIEW (captures only): `adb shell setprop debug.callme.hear "<words>"` shows those words on your turn as if you
     // were saying them (the test emulator's mic is silent). Only the screen sees them; nothing reaches the call.
     let hear = if v.phase == Phase::Listening { stage::prop_text(c"debug.callme.hear") } else { String::new() };
@@ -319,6 +322,9 @@ pub fn back() -> bool {
 }
 
 pub fn run(app: android_activity::AndroidApp) {
+    // a Back meant for the last call must not close anything on this one
+    OVERLAYS.store(false, std::sync::atomic::Ordering::Relaxed);
+    CLOSE.store(false, std::sync::atomic::Ordering::Relaxed);
     app.set_window_flags(android_activity::WindowManagerFlags::KEEP_SCREEN_ON, android_activity::WindowManagerFlags::empty());
     let (link, answer) = android::intent();
     let Some(link) = link else {
@@ -358,9 +364,20 @@ pub fn run(app: android_activity::AndroidApp) {
         move || e.toggle_quiet()
     });
     // what is on screen: the typed text with the keyboard's word still being put together, where the cursor is
+    // A second tap in the moment before the keyboard lets go of its word would send that word again: the same text
+    // within 1.5 s goes once.
     ui.global::<Call>().on_send({
         let e = e.clone();
-        move |draft, word, at| e.send_typed(&crate::chats::composed(&draft, &word, at.max(0) as usize))
+        let last = RefCell::new((String::new(), None::<std::time::Instant>));
+        move |draft, word, at| {
+            let text = crate::chats::composed(&draft, &word, at.max(0) as usize);
+            let mut l = last.borrow_mut();
+            if l.0 == text && l.1.is_some_and(|t| t.elapsed() < Duration::from_millis(1500)) {
+                return;
+            }
+            *l = (text.clone(), Some(std::time::Instant::now()));
+            e.send_typed(&text);
+        }
     });
     ui.global::<Call>().on_clear_field(|| {
         android::with(|env, act| env.call_method(act, "clearField", "()V", &[]).map(drop));

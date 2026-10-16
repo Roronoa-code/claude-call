@@ -27,6 +27,9 @@ const TYPED: &str = "reply";
 /// A choice button's intent action: only it may carry a "choice" (Reply's intent is mutable, so extras can be added).
 const CHOICE: &str = "fyi.mani.callme.CHOICE";
 const BUILDER: &str = "Landroid/app/Notification$Builder;";
+/// What the summary last said (its count and line): it is posted again only when that changes (Android drops a
+/// burst of updates, which could take a real one with it).
+static SUMMED: std::sync::Mutex<Option<(usize, String)>> = std::sync::Mutex::new(None);
 
 /// A chat was read: its notification goes, and the summary too once no chat notification is left (while some are,
 /// its count is brought up to date).
@@ -41,6 +44,7 @@ pub fn cancel(env: &mut JNIEnv, ctx: &JObject, chat: &str) -> Result<()> {
         }
     }
     env.call_method(&nm, "cancel", "(I)V", &[JValue::Int(SUMMARY_ID)])?;
+    *SUMMED.lock().unwrap() = None;
     Ok(())
 }
 
@@ -62,7 +66,15 @@ fn recount(env: &mut JNIEnv, ctx: &JObject, read: &str) -> Result<()> {
         updates: c.kind == "note",
         alert: false,
     };
+    if SUMMED.lock().unwrap().as_ref() == Some(&(need, summary_line(&a))) {
+        return Ok(()); // nothing to change
+    }
     summary(env, ctx, &a, need)
+}
+
+/// The summary's line: who, and the first line of what they said.
+fn summary_line(a: &Alert) -> String {
+    format!("{}: {}", a.name, a.text.lines().next().unwrap_or(""))
 }
 
 /// One chat's notification.
@@ -161,7 +173,13 @@ fn answer(env: &mut JNIEnv, ctx: &JObject, intent: &JObject, chat: &str, kept: &
     };
     let last = c.lines.iter().rev().find(|l| !l.me && l.state != "partial");
     let (sent, note, answers) = chats::after_answer(&c, tried, *kept, now);
-    let note = if long { Some("Too long to send from here. It's in the chat") } else { note };
+    // "in the chat" only once it really was saved there (else the words would be lost with this notification)
+    let kept_long = long && inbox::saved_draft(chat).is_some_and(|d| d.ends_with(text.as_str()));
+    let note = match () {
+        _ if kept_long => Some("Too long to send from here. It's in the chat"),
+        _ if long => Some("Not sent. Open the chat to try again"),
+        _ => note,
+    };
     let a = Alert {
         chat,
         name: &chats::label(&c),
@@ -314,13 +332,14 @@ fn summary(env: &mut JNIEnv, ctx: &JObject, a: &Alert, need: usize) -> Result<()
     let b = builder(env, ctx, &nm, a.updates)?;
     let title = if need == 1 { "1 chat needs you".to_string() } else { format!("{need} chats need you") };
     ring::set_text(env, &b, "setContentTitle", &title)?;
-    ring::set_text(env, &b, "setContentText", &format!("{}: {}", a.name, a.text.lines().next().unwrap_or("")))?;
+    ring::set_text(env, &b, "setContentText", &summary_line(a))?;
     let tap = open(env, ctx, "", SUMMARY_ID)?;
     jx::call(env, &b, "setContentIntent", &format!("(Landroid/app/PendingIntent;){BUILDER}"), &[JValue::Object(&tap)])?;
     jx::call(env, &b, "setGroupSummary", &format!("(Z){BUILDER}"), &[JValue::Bool(1)])?;
     jx::call(env, &b, "setGroupAlertBehavior", &format!("(I){BUILDER}"), &[JValue::Int(2)])?; // GROUP_ALERT_CHILDREN
     let n = env.call_method(&b, "build", "()Landroid/app/Notification;", &[])?.l()?;
     env.call_method(&nm, "notify", "(ILandroid/app/Notification;)V", &[JValue::Int(SUMMARY_ID), JValue::Object(&n)])?;
+    *SUMMED.lock().unwrap() = Some((need, summary_line(a)));
     Ok(())
 }
 

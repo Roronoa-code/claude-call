@@ -341,7 +341,7 @@ pub fn label(c: &Chat) -> String {
 }
 
 /// An agent's question: "waiting" for my answer, "sending" (my answer is on its way: the PC hasn't taken it yet),
-/// "answered" (the PC took it: its reply to my answer is done) or "expired" (unanswered after ASK_FOR, or the PC
+/// "answered" (the PC took it: its reply to my answer is done) or "expired" (not taken after ASK_FOR, or the PC
 /// turned my answer away as "missed": nothing waits for it any more); "" for any other chat. A message of mine answers
 /// it unless it failed for good or the PC failed it (a photo it couldn't get: the question still waits). Only the PC's
 /// reply counts: a "delivered" receipt comes before the PC has checked the answer.
@@ -351,8 +351,9 @@ pub fn ask_state(c: &Chat, now: i64) -> &'static str {
     match c.kind.as_str() {
         "ask" if answers().any(|l| reply(&l.id) == "done") => "answered",
         "ask" if answers().any(|l| reply(&l.id) == "missed") => "expired",
-        "ask" if answers().next().is_some() => "sending",
+        // past a day nothing waits on the PC either, even for an answer it never took: the thread can't hang open
         "ask" if now - c.asked > ASK_FOR => "expired",
+        "ask" if answers().next().is_some() => "sending",
         "ask" => "waiting",
         _ => "",
     }

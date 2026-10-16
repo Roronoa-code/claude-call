@@ -136,7 +136,7 @@ export component CameraLook inherits Rectangle {
         clicked => {
             if (j == 0) { Call.toggle-speaker(); }
             else if (j == 1) { Call.typing = !Call.typing; root.more = false; }
-            else { Call.call-back(); }
+            else { if (!Call.asking-back) { Call.call-back(); } }
         }
     }
 

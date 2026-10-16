@@ -280,8 +280,13 @@ impl Engine {
     /// Hangs up and asks for a call back in `min` minutes (sent before the hang-up, so the PC knows why). The call
     /// ends once the PC took the request; if it didn't, the call stays and says so (no call back is coming).
     pub fn call_back(self: &Arc<Self>, min: u32) {
-        if self.lock().ended {
-            return;
+        {
+            let mut s = self.lock();
+            if s.ended || s.view.asking_back {
+                return; // one request at a time: a second tap would ask twice
+            }
+            s.view.asking_back = true;
+            s.view.notice = "Calling you back…".into();
         }
         let (me, url) = (self.clone(), format!("{}&back={min}", self.api("decline")));
         RT.spawn(async move {
@@ -289,13 +294,18 @@ impl Engine {
             if ok {
                 me.end();
             } else {
-                me.lock().view.notice = "Couldn't ask for a call back. Try again".into();
+                let mut s = me.lock();
+                s.view.asking_back = false;
+                s.view.notice = "Couldn't ask for a call back. Try again".into();
             }
         });
     }
 
     fn end(&self) {
         let mut s = self.lock();
+        if s.ended {
+            return;
+        }
         s.ended = true;
         s.mode = Mode::Idle;
         let now = self.now();
@@ -400,7 +410,11 @@ impl Engine {
         RT.spawn(async move {
             let ok = HTTP.post(url).body(text.clone()).timeout(Duration::from_secs(15)).send().await.is_ok_and(|r| r.status().is_success());
             let mut s = me.lock();
-            if ok || s.ended {
+            if ok {
+                return;
+            }
+            if s.ended {
+                android::log("call: a typed reply didn't go, and the call has ended");
                 return;
             }
             let bubble = format!("u{id}");

@@ -170,7 +170,8 @@ impl Store {
 
     /// My messages that didn't go and are due to be tried again by themselves (chat, message).
     pub fn due(&self, now: i64) -> Vec<(String, String)> {
-        let due = |l: &Line| unsent(l, now) == "waiting" && now >= l.since + backoff(l.tries);
+        // a wall clock set back (since in the future) must not hold a retry up until it catches up
+        let due = |l: &Line| unsent(l, now) == "waiting" && (now >= l.since + backoff(l.tries) || l.since > now);
         self.chats.iter().filter(|c| c.deleted == 0).flat_map(|c| c.lines.iter().filter(|l| due(l)).map(|l| (c.id.clone(), l.id.clone()))).collect()
     }
 
@@ -182,6 +183,20 @@ impl Store {
             for l in c.lines.iter().filter(|l| !l.me && l.state == "partial" && (15_000..30 * 60_000).contains(&(now - l.at))) {
                 if c.lines.iter().any(|m| m.me && m.id == l.id) {
                     out.push((c.id.clone(), l.id.clone()));
+                }
+            }
+        }
+        out
+    }
+
+    /// My answers to a question that went out a minute ago or more but the PC has neither taken nor turned away (no
+    /// reply), while the question is still open: (chat, message, when it went). The PC is asked again (inbox_send.rs).
+    pub fn unanswered(&self, now: i64) -> Vec<(String, String, i64)> {
+        let mut out = vec![];
+        for c in self.chats.iter().filter(|c| c.deleted == 0 && ask_state(c, now) == "sending") {
+            for l in c.lines.iter().filter(|l| l.me && l.state == "sent" && now - l.since >= 60_000) {
+                if !c.lines.iter().any(|x| !x.me && x.id == l.id) {
+                    out.push((c.id.clone(), l.id.clone(), l.since));
                 }
             }
         }

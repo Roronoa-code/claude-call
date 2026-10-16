@@ -723,6 +723,7 @@ fn copy_plain_text_and_code_exactly() {
     assert_eq!(only_link("see [the docs](https://x.y/a) now"), "https://x.y/a");
     assert_eq!(only_link("plain, and `https://in.code`"), "");
     assert_eq!(only_link("https://a.dev and [b](https://b.dev)"), "");
+    assert_eq!(only_link("a](b and nothing else"), "", "not a web address: the words stay as they were");
 }
 
 #[test]
@@ -946,4 +947,36 @@ fn a_question_that_no_longer_waits_shows_no_draft_on_its_row() {
     let (mut t, c, _) = store();
     t.set_draft(&c, "  my  own ");
     assert_eq!(draft_line(t.get(&c).unwrap(), now()), "my own", "a chat of mine always shows it");
+}
+
+#[test]
+fn an_answer_the_pc_never_took_is_asked_about_again_and_the_question_closes_after_a_day() {
+    let mut s = Store::default();
+    s.apply_note(&note("ask-u", "u1", "ask", &["Yes"], "Ship it?", 1, 1), None);
+    let asked = s.get("ask-u").unwrap().asked;
+    let m = s.add_mine("ask-u", "Yes", None).unwrap();
+    assert!(s.unanswered(now()).is_empty(), "still sending: the retry handles it");
+    s.sent("ask-u", &m, true);
+    let since = s.get("ask-u").unwrap().lines[1].since;
+    assert!(s.unanswered(since + 59_000).is_empty(), "give the PC a minute");
+    assert_eq!(s.unanswered(since + 61_000), vec![("ask-u".to_string(), m.clone(), since)]);
+    s.apply_receipt(&receipt("ask-u", &m, "delivered"));
+    assert_eq!(s.unanswered(since + 61_000).len(), 1, "delivered is not taken: still asked");
+    // past a day the question is closed, taken or not: nothing is asked and the thread doesn't hang open
+    let late = asked + ASK_FOR + 1;
+    assert_eq!(ask_state(s.get("ask-u").unwrap(), late), "expired");
+    assert!(s.unanswered(late).is_empty());
+    // the PC's reply ends it
+    s.apply_reply(&reply("ask-u", &m, "done", "Got it.", 1, 1), None);
+    assert!(s.unanswered(since + 61_000).is_empty());
+    assert_eq!(ask_state(s.get("ask-u").unwrap(), late), "answered", "an answered question never expires");
+}
+
+#[test]
+fn a_clock_set_back_does_not_hold_up_a_retry() {
+    let (mut s, c, m) = store();
+    s.sent(&c, &m, false);
+    let t = now();
+    s.get_mut(&c).unwrap().lines[0].since = t + 3_600_000; // the clock went back an hour after it failed
+    assert_eq!(s.due(t), vec![(c.clone(), m.clone())]);
 }

@@ -80,7 +80,11 @@ pub(crate) fn path(env: &mut JNIEnv, ctx: &JObject) -> Result<()> {
 fn store<'a>(cache: &'a mut Option<Store>) -> Option<&'a mut Store> {
     if cache.is_none() {
         let Some(s) = Store::load(PATH.get()?) else {
-            android::log("chats: chats.json unreadable; left as it is");
+            // said once: the listener looks every second
+            static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+            if !SAID.swap(true, Relaxed) {
+                android::log("chats: chats.json unreadable; left as it is");
+            }
             return None;
         };
         *cache = Some(s);
@@ -118,6 +122,11 @@ pub(crate) fn needing(read_now: &str) -> Option<(usize, Option<chats::Chat>)> {
         let need: Vec<_> = s.chats.iter().filter(|c| c.unread > 0 && c.deleted == 0 && c.id != read_now).collect();
         (need.len(), need.iter().max_by_key(|c| c.updated).map(|c| (*c).clone()))
     })
+}
+
+/// A chat's draft as last saved (None: no such chat, or the store can't be read).
+pub(crate) fn saved_draft(chat: &str) -> Option<String> {
+    read(|s| s.get(chat).map(|c| c.draft.clone())).flatten()
 }
 
 /// PREVIEW (fake_chat.rs): the chat on screen right now, if any.

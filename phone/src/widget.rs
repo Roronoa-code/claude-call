@@ -140,7 +140,13 @@ fn build<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, wide: bool, size: Option<(f32,
         call(env, &v, "setTextViewTextSize", "(IIF)V", &[JValue::Int(lbl), JValue::Int(SP), JValue::Float(14.0 * k)])?;
         text(env, &v, "setTextViewText", lbl, label)?;
         text(env, &v, "setContentDescription", tile, &if on { format!("{spoken}, selected") } else { spoken.to_string() })?;
-        let tap = tap(env, ctx, id, n as i32)?;
+        // asleep, the lit tile opens the app: a tap there must not quietly stop "wake me" (or sleep) by setting Quiet
+        let tap = if sleep.is_some() {
+            let home = jx::intent(env, ctx, "MainActivity")?;
+            jx::pending(env, ctx, "getActivity", 21, &home)?
+        } else {
+            tap(env, ctx, id, n as i32)?
+        };
         call(env, &v, "setOnClickPendingIntent", "(ILandroid/app/PendingIntent;)V", &[JValue::Int(tile), JValue::Object(&tap)])?;
         if !wide {
             call(env, &v, "setViewPadding", "(IIIII)V", &[JValue::Int(tile), px(12.0), px(12.0), px(12.0), px(10.0)])?;

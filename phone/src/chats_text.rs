@@ -172,7 +172,8 @@ pub fn only_link(text: &str) -> String {
     let named = t.match_indices("](").map(|(i, _)| &t[i + 2..]);
     let mut all = bare.chain(named).map(|s| &s[..s.find(['>', ')']).unwrap_or(s.len())]);
     match (all.next(), all.next()) {
-        (Some(l), None) => l.to_string(),
+        // only a web address opens (open-link takes nothing else): a stray "](" leaves the words as they were
+        (Some(l), None) if l.starts_with("https://") || l.starts_with("http://") => l.to_string(),
         _ => String::new(),
     }
 }

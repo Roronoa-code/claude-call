@@ -197,7 +197,7 @@ export component ScriptLook inherits Rectangle {
             if page == 0: Say { text: "MORE"; enabled: parent.live && !root.incoming; clicked => { root.more = true; } }
             if page == 1: Say { text: "SPEAKER"; on: Call.speaker; enabled: parent.live; clicked => { Call.toggle-speaker(); } }
             if page == 1: Say { text: "QUIET"; on: Call.quiet; enabled: parent.live; clicked => { Call.toggle-quiet(); } }
-            if page == 1: Say { text: "IN 5 MIN"; enabled: parent.live; clicked => { Call.call-back(); } }
+            if page == 1: Say { text: "IN 5 MIN"; enabled: parent.live; clicked => { if (!Call.asking-back) { Call.call-back(); } } }
             if page == 1: Say { text: "BACK"; enabled: parent.live; clicked => { root.more = false; } }
         }
     }

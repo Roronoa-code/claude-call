@@ -5,13 +5,14 @@ use super::*;
 static FETCHING: Mutex<Vec<String>> = Mutex::new(Vec::new());
 /// My messages being sent right now (never tried again by themselves meanwhile).
 static SENDING: Mutex<Vec<String>> = Mutex::new(Vec::new());
-/// My messages whose answer is missing a part, and when the PC was last asked for it again.
-static ASKED: Mutex<Vec<(String, i64)>> = Mutex::new(Vec::new());
+/// My messages the PC was asked about again (an answer missing a part, a question's answer it hasn't taken), and when
+/// (a steady clock: a wall clock set back would hold these up).
+static ASKED: Mutex<Vec<(String, Instant)>> = Mutex::new(Vec::new());
 /// How many of my messages are waiting to be tried again (when it changes, the thread redraws their lines).
 static WAITING: AtomicU64 = AtomicU64::new(0);
-/// When my messages were last looked at for trying again (ms). The home screen and the listener both ask every second;
-/// one at a time, at most once a second, so one message is never sent twice at once.
-static AUTO_AT: Mutex<i64> = Mutex::new(0);
+/// When my messages were last looked at for trying again (a steady clock). The home screen and the listener both ask
+/// every second; one at a time, at most once a second, so one message is never sent twice at once.
+static AUTO_AT: Mutex<Option<Instant>> = Mutex::new(None);
 
 /// Adds or retries a message of mine (`f` says which) and sends it in the background. True once it is kept (saved)
 /// to send.
@@ -91,23 +92,28 @@ pub(super) fn fetch_media() {
     }
 }
 
-/// Every second: my messages that didn't go are tried again by themselves (with a growing wait), and an answer missing
-/// a part is asked for again (the PC sends a recorded answer again for the same message, never runs it twice). Called
-/// by the home screen and by the listener (net.rs), so a Reply sent from a notification is retried with the app closed.
+/// Every second: my messages that didn't go are tried again by themselves (with a growing wait), and the PC is asked
+/// again about an answer missing a part, or my answer to a question it hasn't taken (the same signed message: the PC
+/// replays its recorded reply, or takes it now; it never runs anything twice). Called by the home screen and by the
+/// listener (net.rs), so a Reply sent from a notification is retried with the app closed.
 pub fn auto(env: &mut JNIEnv, ctx: &JObject) -> Result<()> {
     if crate::fake_chat::on() {
         return Ok(());
     }
-    let mut last = AUTO_AT.lock().unwrap(); // held to the end: one caller at a time
-    let now = chats::now();
-    if now - *last < 900 {
+    // the other caller is at it already (held to the end: one at a time, and the UI thread never waits on it)
+    let Ok(mut last) = AUTO_AT.try_lock() else { return Ok(()) };
+    if last.is_some_and(|t| t.elapsed() < Duration::from_millis(900)) {
         return Ok(());
     }
-    *last = now;
+    *last = Some(Instant::now());
+    let now = chats::now();
     path(env, ctx)?;
     let Some((due, stalled, waiting)) = read(|s| {
         let waiting = s.chats.iter().flat_map(|c| &c.lines).filter(|l| chats::unsent(l, now) == "waiting").count() as u64;
-        (s.due(now), s.stalled(now), waiting)
+        // a part missing: asked again each minute; an answer not taken: less and less often (a minute, up to half an hour)
+        let parts = s.stalled(now).into_iter().map(|(c, m)| (c, m, 60_000));
+        let taken = s.unanswered(now).into_iter().map(|(c, m, since)| (c, m, ((now - since) / 4).clamp(60_000, 30 * 60_000)));
+        (s.due(now), parts.chain(taken).collect::<Vec<_>>(), waiting)
     }) else {
         return Ok(());
     };
@@ -118,10 +124,11 @@ pub fn auto(env: &mut JNIEnv, ctx: &JObject) -> Result<()> {
     let due: Vec<_> = due.into_iter().filter(|(_, m)| !busy.contains(m)).collect();
     let stalled: Vec<_> = {
         let mut asked = ASKED.lock().unwrap();
-        asked.retain(|(_, t)| now - t < 30 * 60_000);
-        let s: Vec<_> = stalled.into_iter().filter(|(_, m)| !asked.iter().any(|(a, t)| a == m && now - t < 60_000)).collect();
-        asked.retain(|(a, _)| !s.iter().any(|(_, m)| m == a));
-        asked.extend(s.iter().map(|(_, m)| (m.clone(), now)));
+        asked.retain(|(_, t)| t.elapsed() < Duration::from_secs(30 * 60));
+        let wait = |ms: i64| Duration::from_millis(ms as u64);
+        let s: Vec<_> = stalled.into_iter().filter(|(_, m, w)| !asked.iter().any(|(a, t)| a == m && t.elapsed() < wait(*w))).collect();
+        asked.retain(|(a, _)| !s.iter().any(|(_, m, _)| m == a));
+        asked.extend(s.iter().map(|(_, m, _)| (m.clone(), Instant::now())));
         s
     };
     if due.is_empty() && stalled.is_empty() {
@@ -135,7 +142,7 @@ pub fn auto(env: &mut JNIEnv, ctx: &JObject) -> Result<()> {
     }
     let Some(key) = settings::chat_key(env, ctx)? else { return Ok(()) };
     let topic = settings::topic(env, ctx)?;
-    for (chat, msg) in stalled {
+    for (chat, msg, _) in stalled {
         // the very message it answered, unchanged: the PC knows it and only replays its answer
         if let Some(Some(body)) = read(|s| s.body(&chat, &msg, &key)) {
             let topic = topic.clone();

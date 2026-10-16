@@ -5,8 +5,8 @@
 //! never goes with a message in another chat and stays when the app is closed. The chat the picker is open for is kept
 //! in the store too (Store::picking): Samsung may close the app while the Gallery is open, and the pick still lands.
 //! The Gallery is tried first; if what it gives back can't be read (no grant, no type), the system picker opens at once
-//! instead, and is used from then on. Both are kept in the settings, so they hold after Samsung closes the app while
-//! the Gallery is open, and after the app is started again.
+//! instead, and is used for a day, or until the app is updated (one fluke must not turn the Gallery off for good). Both
+//! are kept in the settings, so they hold after Samsung closes the app while the Gallery is open, and after a restart.
 use crate::{
     Chats, HomeScreen, android,
     chats::{MEDIA_MAX, Media},
@@ -41,15 +41,22 @@ const REQUEST: i32 = 7; // MainActivity.onActivityResult in Shell.kt
 const GALLERY: &str = "com.sec.android.gallery3d";
 /// Settings: the picker open now is the Gallery.
 const IN_GALLERY: &str = "inGallery";
-/// Settings: what the Gallery gave back couldn't be read, so the system picker from now on.
-const GALLERY_FAILED: &str = "galleryFailed";
+/// Settings: when what the Gallery gave back couldn't be read (ms), so the system picker for GALLERY_OFF.
+const GALLERY_FAILED: &str = "galleryFailedAt";
+const GALLERY_OFF: i64 = 24 * 3600 * 1000;
+
+/// Whether the Gallery is off for now: it failed less than GALLERY_OFF ago, and the app wasn't updated since.
+fn gallery_off(env: &mut JNIEnv, act: &JObject) -> Result<bool> {
+    let at = settings::stamp(env, act, GALLERY_FAILED)?;
+    Ok(at > 0 && at > settings::updated_at(env, act)? && (0..GALLERY_OFF).contains(&(jx::now_ms() - at)))
+}
 
 /// Opens Samsung's Gallery for `chat` (photos and videos), or, without it (or once it failed), the system picker.
 pub fn open(env: &mut JNIEnv, act: &JObject, chat: &str) -> Result<()> {
     *FOR.lock().unwrap() = chat.to_string();
     inbox::path(env, act)?;
     inbox::update(|s| s.picking_for(chat));
-    let gallery = if settings::flag(env, act, GALLERY_FAILED)? { None } else { gallery(env, act)? };
+    let gallery = if gallery_off(env, act)? { None } else { gallery(env, act)? };
     settings::set_flag(env, act, IN_GALLERY, gallery.is_some())?;
     let i = match gallery {
         Some(i) => i,
@@ -72,10 +79,10 @@ fn system<'a>(env: &mut JNIEnv<'a>) -> Result<JObject<'a>> {
 }
 
 /// The Gallery's pick couldn't be read: the system picker opens for the same chat straight away (no question asked),
-/// and is used from now on. Whatever was showing "Getting it ready…" goes.
+/// and is used for a day (gallery_off). Whatever was showing "Getting it ready…" goes.
 fn instead(env: &mut JNIEnv, act: &JObject, chat: &str) -> Result<()> {
     android::log("attach: the Gallery's pick couldn't be read; the system picker instead");
-    settings::set_flag(env, act, GALLERY_FAILED, true)?;
+    settings::set_stamp(env, act, GALLERY_FAILED, jx::now_ms())?;
     {
         let mut p = PICK.lock().unwrap();
         if p.as_ref().is_some_and(|(c, _)| c == chat) {

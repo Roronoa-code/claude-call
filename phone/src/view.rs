@@ -53,6 +53,8 @@ pub struct View {
     pub agent: String,
     /// A typed reply that didn't reach the PC: it goes back in the reply field (screen.rs), then this is emptied.
     pub unsent: String,
+    /// "Call back" was tapped and the PC hasn't answered yet (no second tap, "Calling you back…" shows).
+    pub asking_back: bool,
 }
 
 pub fn words(t: &str) -> Vec<&str> {
@@ -117,6 +119,7 @@ impl View {
             mic_level: 0.0,
             agent: "Claude".into(),
             unsent: String::new(),
+            asking_back: false,
         }
     }
 

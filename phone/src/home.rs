@@ -200,6 +200,7 @@ pub fn run(app: android_activity::AndroidApp) {
     let mut lit = [1.0f32; 2]; // PREVIEW: each one's light on a stage, easing to 1 or DIM as the Call button's pick changes
     let mut last_now = 0.0f32;
     let mut shown = false;
+    let mut swiping = false; // a back swipe started and hasn't ended (Back or cancel)
     let mut last_refresh = Instant::now();
     let mut warmed = false; // the chats' characters' shaders built ahead (live_gl.rs Scene::warm)
     let mut voted = (0.0f32, Instant::now()); // the frame rate last asked of the display (0: no preference)
@@ -231,7 +232,12 @@ pub fn run(app: android_activity::AndroidApp) {
             }
             if away {
                 shown = false; // all drawn afresh on the way back
-                BACK.lock().unwrap().clear();
+                // hidden mid-swipe (a call came up): the swipe is called off, so nothing comes back half pulled
+                BACK.lock().unwrap().clear(); // steps never played left nothing on screen
+                if swiping {
+                    swiping = false;
+                    ui.invoke_back_gesture(3, 0.0);
+                }
                 return;
             }
             let home = ui.global::<Home>();
@@ -240,6 +246,7 @@ pub fn run(app: android_activity::AndroidApp) {
                 home.set_kb(android::kb());
             }
             for (phase, progress) in std::mem::take(&mut *BACK.lock().unwrap()) {
+                swiping = phase <= 1;
                 ui.invoke_back_gesture(phase, progress);
             }
             chats.tick(&ui);

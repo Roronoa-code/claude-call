@@ -274,7 +274,7 @@ export component StageLook inherits Rectangle {
             animate transform-scale { duration: 420ms; easing: T.spring; }
             Icon { d: Icons.later; x: 15px; y: 11px; width: 22px; height: 22px; stroke: T.fg2; }
             Text { y: 34px; width: parent.width; height: 12px; text: "In 5 min"; font-size: 10px; font-weight: 600; color: T.muted; horizontal-alignment: center; vertical-alignment: center; }
-            laterTouch := TouchArea { enabled: !root.incoming && !root.ended; clicked => { Call.call-back(); } }
+            laterTouch := TouchArea { enabled: !root.incoming && !root.ended && !Call.asking-back; clicked => { if (!Call.asking-back) { Call.call-back(); } } }
         }
         // Answer, then Done talking
         pill := Rectangle {

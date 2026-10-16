@@ -144,7 +144,7 @@ export component CloseLook inherits Rectangle {
             else if (i == 2) { Call.toggle-quiet(); }
             else if (i == 3) { Call.caps-open = !Call.caps-open; }
             else if (i == 4) { Call.typing = !Call.typing; }
-            else { Call.call-back(); }
+            else { if (!Call.asking-back) { Call.call-back(); } }
         }
     }
 

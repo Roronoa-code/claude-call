@@ -222,7 +222,7 @@ export component LightLook inherits Rectangle {
         clicked => {
             if (j == 0) { Call.toggle-quiet(); }
             else if (j == 1) { Call.caps-open = !Call.caps-open; root.more = false; }
-            else { Call.call-back(); }
+            else { if (!Call.asking-back) { Call.call-back(); } }
         }
     }
 

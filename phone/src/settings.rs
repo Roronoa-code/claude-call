@@ -107,6 +107,25 @@ pub fn set_flag(env: &mut JNIEnv, ctx: &JObject, key: &str, on: bool) -> Result<
     put(env, ctx, &[(key, if on { "1" } else { "" })], &[])
 }
 
+/// A time kept in the settings (ms; 0: never).
+pub fn stamp(env: &mut JNIEnv, ctx: &JObject, key: &str) -> Result<i64> {
+    let (p, k) = (prefs(env, ctx)?, s(env, key)?);
+    env.call_method(&p, "getLong", "(Ljava/lang/String;J)J", &[JValue::Object(&k), JValue::Long(0)])?.j()
+}
+
+pub fn set_stamp(env: &mut JNIEnv, ctx: &JObject, key: &str, ms: i64) -> Result<()> {
+    put(env, ctx, &[], &[(key, ms)])
+}
+
+/// When this app was last installed or updated (ms).
+pub fn updated_at(env: &mut JNIEnv, ctx: &JObject) -> Result<i64> {
+    let pm = env.call_method(ctx, "getPackageManager", "()Landroid/content/pm/PackageManager;", &[])?.l()?;
+    let pkg = s(env, PKG)?;
+    let sig = "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;";
+    let info = env.call_method(&pm, "getPackageInfo", sig, &[JValue::Object(&pkg), JValue::Int(0)])?.l()?;
+    env.get_field(&info, "lastUpdateTime", "J")?.j()
+}
+
 /// Whether the home screen's one-time hint (drag Null to change the mode) has played.
 pub fn hinted(env: &mut JNIEnv, ctx: &JObject) -> Result<bool> {
     Ok(get(env, ctx, "faceHint")?.is_some())

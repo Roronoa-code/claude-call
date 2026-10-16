@@ -112,7 +112,7 @@ export component ComicLook inherits Rectangle {
         opacity: root.ended ? 0 : 1;
         animate opacity, background { duration: 200ms; easing: T.out; }
         laterText := Text { text: "Call back in 5 min"; font-size: 13px; font-weight: 600; color: root.ink; horizontal-alignment: center; vertical-alignment: center; }
-        laterTouch := TouchArea { enabled: !root.ended; clicked => { Call.call-back(); } }
+        laterTouch := TouchArea { enabled: !root.ended && !Call.asking-back; clicked => { if (!Call.asking-back) { Call.call-back(); } } }
     }
 
     // ---- The caller's balloon: grows and shrinks with its line; a thought balloon while it works ----
