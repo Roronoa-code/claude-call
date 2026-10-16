@@ -55,8 +55,9 @@ export component Piece inherits Rectangle {
     property <bool> unsent: m.kind == "unsent"; // an earlier message of mine that didn't go
     property <bool> again: m.kind == "again"; // "Send again"
     property <bool> refetch: quiet && m.mark == "refetch"; // a photo to fetch again
-    // A long-press copies: my bubble, the agent's words, code, quiet lines. Words with a link keep the press for the
-    // link (StyledText takes every press on itself), so there the long-press works around them.
+    // A long-press copies: my bubble, the agent's words, code, quiet lines. Words with several links keep the press for
+    // the links (StyledText takes every press on itself), so there the long-press works around them; with one link the
+    // long-press sits over the words and a tap opens that link.
     property <bool> copyable: bubble || (carded && (prose || code || (quiet && !refetch)));
     // The agent's pieces sit on its card, the first and last with room above and below.
     property <bool> carded: !m.me;
@@ -119,7 +120,7 @@ export component Piece inherits Rectangle {
         border-bottom-right-radius: m.last ? 22px : 0px;
         opacity: k;
     }
-    if copyable && m.links: Hold {
+    if copyable && m.links && m.link == "": Hold {
         x: root.hold-x;
         y: root.top;
         width: root.hold-w;
@@ -345,13 +346,19 @@ export component Piece inherits Rectangle {
             TouchArea { clicked => { Chats.open-media(m.path, m.kind); } }
         }
     }
-    if copyable && !m.links: Hold {
+    if copyable && (!m.links || m.link != ""): Hold {
         x: root.hold-x;
         y: root.top;
         width: root.hold-w;
         height: root.height - root.top;
         held(x, y) => { root.hold(self.x + x, self.y + y); }
-        clicked => { if (!self.fired) { root.tapped(); } }
+        clicked => {
+            if (!self.fired && m.link != "") {
+                Chats.open-link(m.link);
+            } else if (!self.fired) {
+                root.tapped();
+            }
+        }
     }
     // "Copied", just above the finger: it rises a little and fades.
     if root.copying: Rectangle {

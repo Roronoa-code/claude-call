@@ -20,7 +20,8 @@ export struct ChatRow { id: string, name: string, face: string, preview: string,
 // body) or "code" (text, mark its language); under an agent's question, a "choice" (an answer to tap; mark "on": the
 // one I sent) and a "tag" (a small grey word, "Expired"). gap: px of room above it; n: its place in its message (the
 // arrival's stagger); anchor: the first block of the newest answer. line: its message's id (long-press copies it);
-// links: its words hold a link (the long-press then stays off them). "unsent": a quiet line under an earlier message of
+// links: its words hold a link (the long-press then stays off them, unless it is the only one: link, which a tap on
+// the words then opens). "unsent": a quiet line under an earlier message of
 // mine that didn't go (mark "retry": tap to retry); "again": a "Send again" chip under the PC's failed answer (mark: a
 // caption); a "note" with mark "refetch" fetches its photo again (path: its link).
 export struct ChatMsg {
@@ -39,6 +40,7 @@ export struct ChatMsg {
     last: bool, // the last piece of its message
     line: string,
     links: bool,
+    link: string,
 }
 
 // The chats' own colours: near-black like the home stage, one warm tone for me.

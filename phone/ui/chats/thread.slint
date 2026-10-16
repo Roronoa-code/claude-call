@@ -70,11 +70,13 @@ export component ChatThread inherits Rectangle {
         let p = max(0px, dy - root.from-y);
         let fresh = animation-tick() - root.last-t < 100ms; // a finger held still has no speed left
         let v = fresh ? root.speed : 0;
+        root.shift = 0; // the sheet goes back (or away): the next pull starts from where the finger is
         root.let-go(p > 0px && (v > 0.9 || (p > root.height * 0.3 && v > -0.5)));
     }
     function cancel-pull() {
         if (root.pulling) {
             root.pulling = false;
+            root.shift = 0;
             if (!root.keys-only) { root.let-go(false); }
         }
     }

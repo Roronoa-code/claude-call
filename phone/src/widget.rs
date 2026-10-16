@@ -18,10 +18,11 @@ const MODES: [(&str, &str, &str, &str); 4] = [
     ("both", "Both", "Calls and texts", "Claude can call or message you"),
     ("none", "Quiet", "Quiet for now", "Claude saves its questions"),
 ];
-/// The Sleep modes have no tile (set in the app); the wide card still says which is on, with the Quiet tile's art.
+/// The Sleep modes have no tile of their own (set in the app): the Quiet tile stands for them, lit and saying "Asleep"
+/// (read out as which one); the wide card says which is on, with the Quiet tile's art.
 const SLEEP: [(&str, &str, &str, &str); 2] = [
-    ("wake", "Quiet", "Asleep, wake me", "Calls ring until you pick up"),
-    ("sleep", "Quiet", "Asleep", "Claude decides and keeps working"),
+    ("wake", "Asleep", "Asleep, wake me", "Calls ring until you pick up"),
+    ("sleep", "Asleep", "Asleep", "Claude decides and keeps working"),
 ];
 const WHITE: i32 = 0xFFFFFFFFu32 as i32;
 const DIM: i32 = 0x8CFFFFFFu32 as i32; // white at 55%
@@ -122,8 +123,11 @@ fn build<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, wide: bool, size: Option<(f32,
     let density = jx::density(env, ctx)?;
     let px = |dp: f32| JValue::Int((dp * k * density) as i32);
     let tile_bg = jx::res(env, ctx, "drawable", "widget_tile")?;
+    let asleep = SLEEP.iter().find(|m| m.0 == current);
     for (n, (id, label, ..)) in MODES.iter().enumerate() {
-        let on = *id == current;
+        let sleep = asleep.filter(|_| *id == "none");
+        let on = *id == current || sleep.is_some();
+        let (label, spoken) = sleep.map_or((*label, *label), |m| (m.1, m.2));
         let res = |env: &mut JNIEnv, kind: &str, name: &str| jx::res(env, ctx, kind, &format!("{name}_{id}"));
         let (tile, icon, lbl) = (res(env, "id", "tile")?, res(env, "id", "icon")?, res(env, "id", "label")?);
         let bg = if !on { tile_bg } else { res(env, "drawable", if wide { "widget_outline" } else { "widget_lit" })? };
@@ -134,7 +138,8 @@ fn build<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, wide: bool, size: Option<(f32,
         call(env, &v, "setInt", "(ILjava/lang/String;I)V", &[JValue::Int(icon), JValue::Object(&alpha), JValue::Int(if on { 255 } else { 140 })])?;
         call(env, &v, "setTextColor", "(II)V", &[JValue::Int(lbl), JValue::Int(if on { WHITE } else { DIM })])?;
         call(env, &v, "setTextViewTextSize", "(IIF)V", &[JValue::Int(lbl), JValue::Int(SP), JValue::Float(14.0 * k)])?;
-        text(env, &v, "setContentDescription", tile, &if on { format!("{label}, selected") } else { label.to_string() })?;
+        text(env, &v, "setTextViewText", lbl, label)?;
+        text(env, &v, "setContentDescription", tile, &if on { format!("{spoken}, selected") } else { spoken.to_string() })?;
         let tap = tap(env, ctx, id, n as i32)?;
         call(env, &v, "setOnClickPendingIntent", "(ILandroid/app/PendingIntent;)V", &[JValue::Int(tile), JValue::Object(&tap)])?;
         if !wide {

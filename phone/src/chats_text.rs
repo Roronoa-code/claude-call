@@ -164,6 +164,19 @@ pub fn has_link(text: &str) -> bool {
     t.contains("<http") || t.contains("](")
 }
 
+/// A block's one link address ("" with none, or with more than one): then a tap anywhere on its words opens it, and a
+/// long-press copies it like any other.
+pub fn only_link(text: &str) -> String {
+    let t = inline(text);
+    let bare = t.match_indices("<http").map(|(i, _)| &t[i + 1..]);
+    let named = t.match_indices("](").map(|(i, _)| &t[i + 2..]);
+    let mut all = bare.chain(named).map(|s| &s[..s.find(['>', ')']).unwrap_or(s.len())]);
+    match (all.next(), all.next()) {
+        (Some(l), None) => l.to_string(),
+        _ => String::new(),
+    }
+}
+
 /// What a notification (and the chat list's preview) says for a message: plain words, one line per block, no markdown marks (`**`, backticks,
 /// a link's address), a code block as "(code)".
 pub fn brief(text: &str) -> String {
