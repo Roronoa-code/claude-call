@@ -48,25 +48,14 @@ fn short(s: &str, n: usize) -> String {
     format!("{}…", s.chars().take(n - 1).collect::<String>().trim_end())
 }
 
-thread_local! {
-    static HOME: std::cell::RefCell<slint::Weak<HomeScreen>> = Default::default();
-}
+/// The system back swipe's steps not yet played, in order: (phase, progress).
+static BACK: std::sync::Mutex<Vec<(i32, f32)>> = std::sync::Mutex::new(Vec::new());
 
 /// The system back swipe, from Android's main thread (Shell.kt, shell.rs): phase 0 starts, 1 moves (progress 0..1),
-/// 2 is Back, 3 cancels. Handled by the home screen (home.slint back-gesture).
+/// 2 is Back, 3 cancels. Played by the home screen's frame timer (home.slint back-gesture), not posted to the event
+/// loop: that proxy is the newest screen's, which after a call is the call's.
 pub fn back_gesture(phase: i32, progress: f32) {
-    let _ = slint::invoke_from_event_loop(move || {
-        if let Some(ui) = HOME.with(|h| h.borrow().upgrade()) {
-            ui.invoke_back_gesture(phase, progress);
-        }
-    });
-}
-
-/// The keyboard moved (shell.rs): the field and the sheets ride on it (home.slint).
-pub fn keyboard(dp: f32) {
-    if let Some(ui) = HOME.with(|h| h.borrow().upgrade()) {
-        ui.global::<Home>().set_kb(dp);
-    }
+    BACK.lock().unwrap().push((phase, progress));
 }
 
 /// The most device px per logical px the pair is drawn at: past it (a very dense screen) the GPU's work grows with
@@ -130,7 +119,6 @@ pub fn run(app: android_activity::AndroidApp) {
     home.on_backable(|on| {
         android::with(|env, act| env.call_method(act, "backable", "(Z)V", &[jni::objects::JValue::Bool(on as u8)]).map(drop));
     });
-    HOME.with(|h| *h.borrow_mut() = ui.as_weak());
     refresh(&ui, fake, true);
     let mut chats = crate::inbox::wire(&ui);
 
@@ -243,9 +231,17 @@ pub fn run(app: android_activity::AndroidApp) {
             }
             if away {
                 shown = false; // all drawn afresh on the way back
+                BACK.lock().unwrap().clear();
                 return;
             }
             let home = ui.global::<Home>();
+            // the keyboard and the back swipe, as Android's main thread last said (android::kb, back_gesture)
+            if home.get_kb() != android::kb() {
+                home.set_kb(android::kb());
+            }
+            for (phase, progress) in std::mem::take(&mut *BACK.lock().unwrap()) {
+                ui.invoke_back_gesture(phase, progress);
+            }
             chats.tick(&ui);
             // Permissions granted in Settings, or a mode changed elsewhere, show up within a second.
             if last_refresh.elapsed() > Duration::from_secs(1) {

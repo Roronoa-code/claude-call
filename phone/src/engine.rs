@@ -277,12 +277,21 @@ impl Engine {
         }
     }
 
-    /// Hangs up and asks for a call back in `min` minutes (sent before the hang-up, so the PC knows why).
-    pub fn call_back(&self, min: u32) {
-        if !self.lock().ended {
-            self.post(format!("{}&back={min}", self.api("decline")), vec![]);
-            self.end();
+    /// Hangs up and asks for a call back in `min` minutes (sent before the hang-up, so the PC knows why). The call
+    /// ends once the PC took the request; if it didn't, the call stays and says so (no call back is coming).
+    pub fn call_back(self: &Arc<Self>, min: u32) {
+        if self.lock().ended {
+            return;
         }
+        let (me, url) = (self.clone(), format!("{}&back={min}", self.api("decline")));
+        RT.spawn(async move {
+            let ok = HTTP.post(url).timeout(Duration::from_secs(10)).send().await.is_ok_and(|r| r.status().is_success());
+            if ok {
+                me.end();
+            } else {
+                me.lock().view.notice = "Couldn't ask for a call back. Try again".into();
+            }
+        });
     }
 
     fn end(&self) {
@@ -385,7 +394,21 @@ impl Engine {
         s.view.heard(&id, &text, true);
         s.view.status("Claude is thinking…");
         drop(s);
-        self.post(self.api("reply"), text.into_bytes());
+        // Not sent again by itself (the PC would take a second copy as a second turn): if it didn't go, its bubble
+        // goes, the words go back in the reply field, and the call says so.
+        let (me, url) = (self.clone(), self.api("reply"));
+        RT.spawn(async move {
+            let ok = HTTP.post(url).body(text.clone()).timeout(Duration::from_secs(15)).send().await.is_ok_and(|r| r.status().is_success());
+            let mut s = me.lock();
+            if ok || s.ended {
+                return;
+            }
+            let bubble = format!("u{id}");
+            s.view.msgs.retain(|m| m.id != bubble);
+            s.view.status("Listening");
+            s.view.notice = "Your reply didn't go. It's back in the box".into();
+            s.view.unsent = text;
+        });
     }
 
     pub fn toggle_mute(self: &Arc<Self>) {

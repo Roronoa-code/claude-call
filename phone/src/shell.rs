@@ -50,11 +50,8 @@ pub extern "system" fn Java_fyi_mani_callme_Native_back(_env: JNIEnv, _class: JC
 }
 
 /// The keyboard moved (Shell.kt followKeyboard, Android's main thread): how far it reaches up, in dp. The screen that
-/// is up follows it in its next frame.
+/// is up follows it in its next frame (android::kb).
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_fyi_mani_callme_Native_keyboard(_env: JNIEnv, _class: JClass, dp: jni::sys::jfloat) {
-    let _ = slint::invoke_from_event_loop(move || {
-        crate::home::keyboard(dp);
-        crate::screen::keyboard(dp);
-    });
+    crate::android::set_kb(dp);
 }

@@ -56,6 +56,8 @@ export global Call {
     callback toggle-speaker();
     callback toggle-quiet();
     callback call-back();
-    callback send(string);
+    // what is typed, the keyboard's word still being put together, and where it goes (a byte offset into the text)
+    callback send(string, string, int);
+    callback clear-field(); // the keyboard's own copy of the text emptied too (the sent word must not come back)
     callback poke();
 }

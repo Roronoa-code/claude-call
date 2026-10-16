@@ -252,12 +252,18 @@ export component Sheets inherits Rectangle {
                     y: parent.height - 56px;
                     height: 48px;
                     border-radius: 24px;
-                    background: Call.draft != "" ? T.accent : transparent;
+                    property <bool> any: Call.draft != "" || input.preedit-text != "";
+                    background: self.any ? T.accent : transparent;
                     animate background { duration: 200ms; easing: T.out; }
-                    Icon { d: Icons.send; x: 12px; y: 12px; stroke: Call.draft != "" ? white : T.muted; }
+                    Icon { d: Icons.send; x: 12px; y: 12px; stroke: parent.any ? white : T.muted; }
                     TouchArea {
-                        enabled: Call.draft != "";
-                        clicked => { Call.send(Call.draft); Call.draft = ""; Call.typing = false; }
+                        enabled: parent.any;
+                        clicked => {
+                            Call.send(Call.draft, input.preedit-text, input.cursor-position-byte-offset);
+                            Call.draft = "";
+                            Call.clear-field();
+                            Call.typing = false;
+                        }
                     }
                 }
             }

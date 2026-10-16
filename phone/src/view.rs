@@ -51,6 +51,8 @@ pub struct View {
     pub mic_level: f32,
     /// Who is calling: "Claude" or "Codex" (from the call server).
     pub agent: String,
+    /// A typed reply that didn't reach the PC: it goes back in the reply field (screen.rs), then this is emptied.
+    pub unsent: String,
 }
 
 pub fn words(t: &str) -> Vec<&str> {
@@ -114,6 +116,7 @@ impl View {
             voice: Voice::None,
             mic_level: 0.0,
             agent: "Claude".into(),
+            unsent: String::new(),
         }
     }
 

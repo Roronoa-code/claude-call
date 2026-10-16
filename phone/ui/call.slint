@@ -532,11 +532,18 @@ export component CallScreen inherits Window {
                     color: T.fg;
                     vertical-alignment: center;
                     single-line: true;
-                    accepted => { if (root.draft != "") { Call.send(root.draft); root.draft = ""; root.typing = false; } }
+                    accepted => {
+                        if (root.draft != "" || self.preedit-text != "") {
+                            Call.send(root.draft, self.preedit-text, self.cursor-position-byte-offset);
+                            root.draft = "";
+                            Call.clear-field();
+                            root.typing = false;
+                        }
+                    }
                     Text {
                         x: 0;
                         width: parent.width;
-                        visible: root.draft == "";
+                        visible: root.draft == "" && input.preedit-text == "";
                         text: "Type a reply";
                         font-size: 17px;
                         color: #8c8f97;
@@ -549,12 +556,18 @@ export component CallScreen inherits Window {
                     height: 48px;
                     y: 8px;
                     border-radius: 24px;
-                    background: root.draft != "" ? T.accent : transparent;
+                    property <bool> any: root.draft != "" || input.preedit-text != "";
+                    background: self.any ? T.accent : transparent;
                     animate background { duration: 200ms; easing: T.out; }
-                    Icon { d: Icons.send; x: 12px; y: 12px; stroke: root.draft != "" ? white : T.muted; }
+                    Icon { d: Icons.send; x: 12px; y: 12px; stroke: parent.any ? white : T.muted; }
                     TouchArea {
-                        enabled: root.draft != "";
-                        clicked => { Call.send(root.draft); root.draft = ""; root.typing = false; }
+                        enabled: parent.any;
+                        clicked => {
+                            Call.send(root.draft, input.preedit-text, input.cursor-position-byte-offset);
+                            root.draft = "";
+                            Call.clear-field();
+                            root.typing = false;
+                        }
                     }
                 }
                 Rectangle {

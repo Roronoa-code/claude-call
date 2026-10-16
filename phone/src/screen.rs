@@ -124,6 +124,14 @@ fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activi
     let claude_level = e.claude_level();
     let mut s = e.lock();
     e.line_progress(&mut s);
+    // a typed reply that didn't go: back in the field, before anything typed since
+    let unsent = std::mem::take(&mut s.view.unsent);
+    if !unsent.is_empty() {
+        let now_typed = ui.global::<Call>().get_draft();
+        let back = if now_typed.is_empty() { unsent } else { format!("{unsent} {now_typed}") };
+        ui.global::<Call>().set_draft(back.into());
+        ui.global::<Call>().set_typing(true);
+    }
     let ended = s.ended;
     let v = &s.view;
     // PREVIEW (captures only): `adb shell setprop debug.callme.hear "<words>"` shows those words on your turn as if you
@@ -297,28 +305,17 @@ fn set_if(cur: SharedString, new: String, set: impl FnOnce(SharedString)) {
 
 /// The call screen has something open over it that Back closes first (call.slint overlays).
 pub static OVERLAYS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-thread_local! {
-    static CALL: std::cell::RefCell<slint::Weak<CallScreen>> = Default::default();
-}
+/// Back asked for what is open over the call to close; the call's frame timer does it (not the event loop proxy,
+/// which is the newest screen's: the home screen's, once it was opened during the call).
+static CLOSE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Back on the call screen (from Android's main thread): closes what is open over the call; false when nothing was.
 pub fn back() -> bool {
     if !OVERLAYS.swap(false, std::sync::atomic::Ordering::Relaxed) {
         return false;
     }
-    let _ = slint::invoke_from_event_loop(|| {
-        if let Some(ui) = CALL.with(|c| c.borrow().upgrade()) {
-            ui.invoke_close_overlays();
-        }
-    });
+    CLOSE.store(true, std::sync::atomic::Ordering::Relaxed);
     true
-}
-
-/// The keyboard moved (shell.rs): the reply field rides on it.
-pub fn keyboard(dp: f32) {
-    if let Some(ui) = CALL.with(|c| c.borrow().upgrade()) {
-        ui.global::<Call>().set_kb(dp);
-    }
 }
 
 pub fn run(app: android_activity::AndroidApp) {
@@ -360,13 +357,16 @@ pub fn run(app: android_activity::AndroidApp) {
         let e = e.clone();
         move || e.toggle_quiet()
     });
+    // what is on screen: the typed text with the keyboard's word still being put together, where the cursor is
     ui.global::<Call>().on_send({
         let e = e.clone();
-        move |t| e.send_typed(&t)
+        move |draft, word, at| e.send_typed(&crate::chats::composed(&draft, &word, at.max(0) as usize))
+    });
+    ui.global::<Call>().on_clear_field(|| {
+        android::with(|env, act| env.call_method(act, "clearField", "()V", &[]).map(drop));
     });
     // Back closes the Transcript, the reply field or More before it leaves the call (service.rs call_back).
     ui.on_overlays(|on| OVERLAYS.store(on, std::sync::atomic::Ordering::Relaxed));
-    CALL.with(|c| *c.borrow_mut() = ui.as_weak());
     let now = e.now();
     // Which call screen shows: debug.callme.call 4 (or unset): Camera, Mani's pick (look 8); 0: Comic, as shipped before
     // (look 3); 1-3: round 2's Subtitles, Script and Your light (looks 5-7).
@@ -411,6 +411,13 @@ pub fn run(app: android_activity::AndroidApp) {
         let mut mood = crate::caller::Mood::new(look >= 5);
         move || {
             let Some(ui) = ui.upgrade() else { return };
+            // the keyboard and Back, as Android's main thread last said (android::kb, back)
+            if ui.global::<Call>().get_kb() != android::kb() {
+                ui.global::<Call>().set_kb(android::kb());
+            }
+            if CLOSE.swap(false, std::sync::atomic::Ordering::Relaxed) {
+                ui.invoke_close_overlays();
+            }
             let now = start.elapsed().as_secs_f32();
             let (phase, agent, perched, me) = {
                 let f = f.borrow();

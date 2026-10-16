@@ -29,6 +29,19 @@ pub fn set_home_shown(on: bool) {
     HOME_SHOWN.store(on, std::sync::atomic::Ordering::Relaxed);
 }
 
+/// How far the keyboard reaches up, in dp (f32 bits), as Shell.kt's followKeyboard last said on Android's main thread.
+/// Each screen's own frame timer reads it: Slint's event loop proxy is one per process (the newest screen's), so a
+/// post from the main thread could land in the other screen's loop.
+static KB: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+pub fn kb() -> f32 {
+    f32::from_bits(KB.load(std::sync::atomic::Ordering::Relaxed))
+}
+
+pub fn set_kb(dp: f32) {
+    KB.store(dp.to_bits(), std::sync::atomic::Ordering::Relaxed);
+}
+
 pub fn init(app: &android_activity::AndroidApp) {
     let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) }.expect("vm");
     let activity = {
