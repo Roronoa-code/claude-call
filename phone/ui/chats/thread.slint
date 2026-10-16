@@ -120,13 +120,17 @@ export component ChatThread inherits Rectangle {
             property <length> room: field.y - 8px - self.top;
             x: 24px;
             width: parent.width - 48px;
-            y: self.top + max(0px, (self.room - self.preferred-height) / 2) - (Chats.empty ? 0px : 16px);
+            // centred in the room above the field, riding up with it as the keyboard comes (a lag let the field slide over
+        // it); it lifts a little as it goes
+        property <length> lift: Chats.empty ? 0px : 16px;
+        animate lift { duration: 320ms; easing: T.out; }
+        y: self.top + max(0px, (self.room - self.preferred-height) / 2) - self.lift;
             height: self.preferred-height;
             alignment: start;
             spacing: 4px;
             opacity: Chats.empty ? 1 : 0;
             visible: self.opacity > 0.01;
-            animate opacity, y { duration: 320ms; easing: T.out; }
+            animate opacity { duration: 320ms; easing: T.out; }
             Rectangle {
                 height: 170px;
                 Floor { x: (parent.width - 220px) / 2; y: 130px; width: 220px; height: 52px; }
