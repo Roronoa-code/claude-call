@@ -10,21 +10,12 @@ export global Call {
     in property <string> agent: "Claude"; // who is calling: Claude or Codex
     in property <string> time-text: "Calling you";
     in property <string> time-key: "Calling you"; // the header line animates only when this changes
-    in property <string> status;
     in property <bool> asking-back; // "Call back" was tapped and the PC hasn't answered yet: it takes no second tap
     in property <string> notice; // round 2: only what is out of the ordinary (a dropped line, a muted mic)
     in property <Cap> cap: { key: 0, label: "Calling now", text: "Claude would like to talk.", lit: "Claude would like to talk.", size: 0, tone: "", orb: false };
-    in property <string> bubble-text; // Claude's line in the thread
-    in property <string> bubble-lit;
-    in property <bool> has-bubble;
     in property <string> me-text; // your words (live, then heard); empty = dots
-    in property <bool> me-live;
-    in property <bool> show-me;
-    in property <bool> show-pending;
     // Whoever is calling, alive (caller.rs): the middle of its feet in the stage, its size, how visible it is.
     in property <string> face: "clawd";
-    in property <float> face-x: 81;
-    in property <float> face-y: 108;
     in property <float> face-k: 0.55;
     in property <float> face-fade;
     in property <bool> face-gpu: true; // false: the GPU can't draw it, so its still picture stands in
@@ -33,25 +24,19 @@ export global Call {
     in property <int> face-h;
     in property <int> face-th;
     in property <float> level; // whoever is talking, 0..1
-    in property <float> me-level;
     in property <float> t; // seconds, advanced by Rust only while something moves
-    in property <float> glow-t; // the glow drifts only while someone talks
     in property <bool> muted;
     in property <bool> speaker;
     in property <bool> quiet;
-    in property <bool> can-finish;
     in property <bool> closed;
     in property <[Msg]> msgs;
     in-out property <bool> caps-open;
     in-out property <bool> typing;
-    in-out property <bool> more; // a look's More row is up (call_camera.slint, call_light.slint)
+    in-out property <bool> more;
     in-out property <string> draft;
     in-out property <length> field-h: 64px; // the reply field's height as it grows with its lines (call_kit.slint)
-    // PREVIEW (branch preview/call-screen): which call screen shows, from debug.callme.call (0: as shipped).
-    in property <int> look;
     in property <bool> placed; // the real status and gesture bar sizes are known: the directions show only then
     callback answer();
-    callback done-talking();
     callback hang-up();
     callback toggle-mute();
     callback toggle-speaker();

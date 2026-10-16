@@ -17,10 +17,6 @@ static AUTO_AT: Mutex<Option<Instant>> = Mutex::new(None);
 /// Adds or retries a message of mine (`f` says which) and sends it in the background. True once it is kept (saved)
 /// to send.
 pub(crate) fn post(env: &mut JNIEnv, ctx: &JObject, chat: &str, f: impl FnOnce(&mut Store) -> Option<String>) -> Result<bool> {
-    if crate::fake_chat::on() {
-        path(env, ctx)?;
-        return Ok(crate::fake_chat::post(chat, f));
-    }
     let Some(key) = settings::chat_key(env, ctx)? else { return Ok(false) };
     let topic = settings::topic(env, ctx)?;
     path(env, ctx)?;
@@ -93,9 +89,6 @@ pub(super) fn fetch_media() {
 }
 
 pub fn auto(env: &mut JNIEnv, ctx: &JObject) -> Result<()> {
-    if crate::fake_chat::on() {
-        return Ok(());
-    }
     // the other caller is at it already (held to the end: one at a time, and the UI thread never waits on it)
     let Ok(mut last) = AUTO_AT.try_lock() else { return Ok(()) };
     if last.is_some_and(|t| t.elapsed() < Duration::from_millis(900)) {

@@ -10,9 +10,6 @@ from PIL import Image
 
 # name: (k drawn for, px per logical px, logical width, above and below the feet line)
 LOOKS = {
-    'subs': (1.0, 1.5, 500, 640, 760),
-    'script': (0.72, 1.5, 500, 760, 420),
-    'light': (0.95, 1.5, 500, 640, 760),
     'camera': (0.62, 2.4, 440, 640, 480),
 }
 

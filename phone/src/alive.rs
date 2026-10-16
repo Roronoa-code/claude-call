@@ -15,13 +15,12 @@ pub const NULL_SIZE: (f32, f32) = (150.0, 230.0);
 pub struct Frame {
     pub w: f32,
     pub h: f32,
-    pub body_w: f32,
 }
 
 pub fn frame(who: Who) -> Frame {
     match who {
-        Who::Null => Frame { w: 150.0, h: 230.0, body_w: 80.0 },
-        Who::Clawd(_) => Frame { w: 300.0, h: 250.0, body_w: 208.0 },
+        Who::Null => Frame { w: 150.0, h: 230.0 },
+        Who::Clawd(_) => Frame { w: 300.0, h: 250.0 },
     }
 }
 

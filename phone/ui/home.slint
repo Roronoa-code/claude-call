@@ -10,14 +10,13 @@ import { Chats, NewChat, Ink } from "chat.slint";
 import { ChatList } from "chats/list.slint";
 import { ChatThread } from "chats/thread.slint";
 import { Sheet } from "chats/open.slint";
-import { StageBack, Look } from "stage.slint";
+import { StageBack } from "stage.slint";
 
 export component HomeScreen inherits Window {
-    background: Look.bg;
+    background: #010101;
     title: "Claude Call";
     property <length> row-y: self.height - Home.sab - 20px - 56px; // the bottom row
-    // each stage leaves its own room under the pair, so the line sits clear of the floor they stand on
-    property <length> under: Toys.stage == 1 ? 112px : Toys.stage == 2 ? 74px : Toys.stage == 3 ? 104px : Toys.stage == 4 ? 84px : 28px;
+    property <length> under: 112px;
     // while Null's face rolls, the rest steps back
     property <float> rest: Home.shown >= 0 ? 0.35 : 1;
     animate rest { duration: 260ms; easing: T.out; }
@@ -37,14 +36,6 @@ export component HomeScreen inherits Window {
         width: parent.width;
         height: parent.height;
         feet: stage.y + 176px * Toys.k * 0.967;
-    }
-    // The stage light behind Clawd and Null.
-    if Toys.stage == 0: Rectangle {
-        x: (parent.width - 440px) / 2;
-        y: stage.y + 40px - 220px; // centred on the pair
-        width: 440px;
-        height: 440px;
-        background: @radial-gradient(circle, #d977572e 0%, #8a5cff14 40%, #11121400 70%);
     }
     Text {
         y: Home.sat + 14px;
@@ -72,16 +63,11 @@ export component HomeScreen inherits Window {
             clawd := Clawd {
                 width: 230px * Toys.k;
                 height: 176px * Toys.k;
-                // on a stage the one not asked for is dimmed in its light (stage.rs), not see-through
-                opacity: Home.caller == "claude" || Toys.stage > 0 ? 1 : 0.55;
-                animate opacity { duration: 250ms; easing: T.out; }
                 tapped => { Home.caller = "claude"; Toys.tapped("claude"); }
             }
             null := Null {
                 width: 96px * Toys.k;
                 height: 172px * Toys.k;
-                opacity: Home.caller == "codex" || Toys.stage > 0 ? 1 : 0.55;
-                animate opacity { duration: 250ms; easing: T.out; }
                 tapped => { Home.caller = "codex"; Toys.tapped("codex"); }
             }
         }

@@ -226,24 +226,6 @@ impl View {
         (self.phase, self.ended_at, self.can_finish) = (Phase::Ended, now, false);
         self.notice.clear();
     }
-
-    pub fn status_text(&self) -> String {
-        let a = &self.agent;
-        match self.phase {
-            Phase::Incoming => "Incoming call".into(),
-            Phase::Connecting => "Connecting…".into(),
-            Phase::Talking => format!("{a} is talking…"),
-            Phase::Listening => {
-                (if self.muted { "Mic muted, type a reply" } else { "Listening… take your time" }).into()
-            }
-            Phase::Hearing => "Hearing you…".into(),
-            Phase::Thinking => {
-                if self.transcribing { "Got it, transcribing…".into() } else { format!("{a} is thinking…") }
-            }
-            Phase::Hold => "On hold".into(),
-            Phase::Ended => "Call ended".into(),
-        }
-    }
 }
 
 pub fn clock(ms: f64) -> String {

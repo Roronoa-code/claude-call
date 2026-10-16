@@ -29,7 +29,6 @@ export component SpotBack inherits Rectangle {
     in property <length> bw: 500px; // the picture's logical size at drawn-k, and its feet line from the top
     in property <length> bh: 1400px;
     in property <length> above: 640px;
-    in property <float> lift; // 0..1: brighter, for a look's own reasons (your light)
     property <string> phase: Call.phase;
     property <float> s: root.k / root.drawn-k;
     // How far the light is down, per state (eased); while it rings it swells on each ring.
@@ -48,7 +47,7 @@ export component SpotBack inherits Rectangle {
     }
     Rectangle {
         background: black;
-        opacity: Math.max(0, root.dim - 0.22 * root.ring - 0.1 * root.lift);
+        opacity: Math.max(0, root.dim - 0.22 * root.ring);
     }
     // The pool warms and brightens with the caller's voice.
     property <length> pw: 400px * root.k;

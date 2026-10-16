@@ -27,5 +27,3 @@ Fallbacks: ElevenLabs for the voice (`ELEVENLABS_API_KEY` + `ELEVENLABS_VOICE_ID
 - Phone: `cd android; .\gradlew.bat assembleRelease` builds the Rust library first (needs `rustup target add aarch64-linux-android` and `cargo install cargo-ndk`), then the app. Install with `adb install -r app\build\outputs\apk\release\app-release.apk`.
 
 **Tests:** `cargo test -p hosttest -p callme` runs the phone's chat, signing and file rules (`phone/hosttest` includes the phone source) and the PC's on this PC.
-
-**Check:** `cargo run --release --example phone_check -- <adb serial>` (with `CALLME_AGENT=Codex` for a call from Codex): a whole call on the real phone without ringing it (private test topic, typed replies), with screenshots, a screen recording and CPU readings in `D:\Outputs\CallMe\`.

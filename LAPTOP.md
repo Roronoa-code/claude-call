@@ -37,5 +37,4 @@ Download `cloudflared-windows-amd64.exe` from the cloudflare/cloudflared GitHub 
 - The GPU voice server (`voice/voice_server.py`); it needs an NVIDIA GPU.
 
 ## 6. Check
-- `cargo run --release --example phone_check -- <adb serial>`: a whole call on the phone without ringing it (see README). It needs the PC's GPU voice, so run it on the PC.
 - Keep work in sync with the PC through git: pull before you start, and commit and push when done.

@@ -384,11 +384,6 @@ impl Engine {
         RT.spawn(self.clone().debug_log());
     }
 
-    pub fn done_talking(self: &Arc<Self>) {
-        let mut s = self.lock();
-        self.finish(&mut s, "button");
-    }
-
     pub fn send_typed(self: &Arc<Self>, text: &str) {
         let text = text.trim().to_string();
         if text.is_empty() {

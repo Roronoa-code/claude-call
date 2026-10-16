@@ -9,9 +9,6 @@ export global Toys {
     in property <bool> live: true; // false: the GPU couldn't build them, so the sprites show
     // The finger, from Clawd's eyes; down false when it lifts. Both watch it.
     callback point(length, length, bool);
-    // PREVIEW (stage.rs): which stage they stand in (0: as shipped), their scale in it, and the logical px of floor
-    // drawn under each picture at k = 1.
-    in property <int> stage;
     in property <float> k: 1;
     in property <length> clawd-below;
     in property <length> null-below;

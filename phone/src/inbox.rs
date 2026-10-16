@@ -132,10 +132,6 @@ pub(crate) fn saved_draft(chat: &str) -> Option<String> {
     read(|s| s.get(chat).map(|c| c.draft.clone())).flatten()
 }
 
-/// PREVIEW (fake_chat.rs): the chat on screen right now, if any.
-pub(crate) fn viewing() -> Option<String> {
-    VIEWING.lock().unwrap().clone()
-}
 
 /// Whether the home screen is in front and focused (a chat open behind the lock screen is not being read).
 fn focused(env: &mut JNIEnv) -> bool {
@@ -368,7 +364,7 @@ fn status(ui: &HomeScreen) {
 /// Whether chat is set up (the PC gave its key): read at the start and whenever the app comes back.
 fn ready(ui: &HomeScreen) {
     let c = ui.global::<Chats>();
-    let ready = crate::fake_chat::on() || android::with(|env, act| settings::chat_key(env, act)).flatten().is_some();
+    let ready = android::with(|env, act| settings::chat_key(env, act)).flatten().is_some();
     if c.get_ready() != ready {
         c.set_ready(ready);
     }
@@ -450,8 +446,6 @@ pub fn wire(ui: &HomeScreen) -> Tracker {
             s.drop_empty(id);
         });
     });
-    // PREVIEW: the PC played here with debug.callme.fake (the test emulator only; fake_chat.rs)
-    crate::fake_chat::set(crate::stage::prop(c"debug.callme.fake", 2) > 0);
     let c = ui.global::<Chats>();
     MSGS.with(|m| c.set_msgs(ModelRc::from(m.clone())));
     ROWS.with(|m| c.set_rows(ModelRc::from(m.clone())));
@@ -581,11 +575,7 @@ pub fn wire(ui: &HomeScreen) -> Tracker {
         move || {
             let Some(ui) = ui.upgrade() else { return };
             let chat = current(&ui);
-            if crate::fake_chat::on() {
-                crate::fake_chat::pick(&chat);
-            } else {
-                android::with(|env, act| attach::open(env, act, &chat));
-            }
+            android::with(|env, act| attach::open(env, act, &chat));
         }
     });
     c.on_unpick({

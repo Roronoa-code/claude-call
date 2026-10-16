@@ -1,17 +1,11 @@
 // PREVIEW (branch preview/home-stage, stage.rs): the world Clawd and Null stand in, one backdrop per stage, drawn by
 // art/live3d/stages.py with their camera: 500 x 1400 logical px, centred, with the pair's feet line 640 px from its
 // top. Larger than any phone, so it always fills the screen round them.
-import { Toys } from "toys.slint";
-
-export global Look {
-    // what shows past the backdrop's edges, and under it before it loads
-    out property <color> bg: Toys.stage == 1 ? #010101 : Toys.stage == 2 ? #050302 : Toys.stage == 3 ? #04050b : Toys.stage == 4 ? #0a090c : #111214;
-}
 
 export component StageBack inherits Rectangle {
     in property <length> feet; // the pair's feet line, from the top of this element
-    if Toys.stage > 0: Image {
-        source: Toys.stage == 1 ? @image-url("stage/spot.png") : Toys.stage == 2 ? @image-url("stage/desk.png") : Toys.stage == 3 ? @image-url("stage/moon.png") : @image-url("stage/record.png");
+    Image {
+        source: @image-url("stage/spot.png");
         x: (root.width - 500px) / 2;
         y: root.feet - 640px;
         width: 500px;

@@ -18,8 +18,6 @@ mod engine;
 #[cfg(target_os = "android")]
 mod faces;
 #[cfg(target_os = "android")]
-mod fake_chat; // PREVIEW: the PC played on the test emulator
-#[cfg(target_os = "android")]
 mod inbox;
 #[cfg(target_os = "android")]
 mod jx;
@@ -40,7 +38,7 @@ mod widget;
 mod alive;
 mod cast;
 mod chats;
-mod stage; // PREVIEW: the home stage's worlds
+mod stage;
 mod view;
 
 slint::include_modules!();

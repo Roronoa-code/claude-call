@@ -8,23 +8,15 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// `fake` (preview only): 0, or keep the mode chosen on this screen (1) and also pretend setup isn't finished and a
-/// chat is unread (2).
-fn refresh(ui: &HomeScreen, fake: usize, first: bool) {
+fn refresh(ui: &HomeScreen) {
     let home = ui.global::<Home>();
     let read = android::with(|env, act| {
         Ok((settings::missing(env, act)?, settings::setup_line(env, act)?, settings::mode(env, act)?))
     });
     if let Some((missing, line, mode)) = read {
-        let missing = if fake == 2 { "Notifications, Microphone".to_string() } else { missing };
-        if fake == 2 {
-            ui.global::<Chats>().set_unread(true); // and a chat with something new
-        }
         home.set_ready(missing.is_empty());
         home.set_setup_text(line.into());
-        if fake == 0 || first {
-            home.set_mode(mode.into());
-        }
+        home.set_mode(mode.into());
     }
     // An agent's question waiting (the chat list's rows, inbox.rs): the line under the mode names it. Its words stay
     // when it goes, so they fade out rather than vanish.
@@ -102,18 +94,13 @@ const PAIR_SF: f32 = 2.75;
 pub fn run(app: android_activity::AndroidApp) {
     let ui = HomeScreen::new().expect("home screen");
     let home = ui.global::<Home>();
-    // PREVIEW (test emulator): `debug.callme.fake` set keeps mode changes and the Call button on this screen only
-    // (nothing stored, published or asked of the PC), and plays the one-time hint on every start.
-    let fake = stage::prop(c"debug.callme.fake", 2);
     home.on_set_mode({
         let ui = ui.as_weak();
         move |m| {
             if let Some(ui) = ui.upgrade() {
                 ui.global::<Home>().set_mode(m.clone()); // at once; the phone and PC follow
             }
-            if fake == 0 {
-                android::with(|env, act| settings::choose(env, act, &m));
-            }
+            android::with(|env, act| settings::choose(env, act, &m));
         }
     });
     home.on_set_up(|| {
@@ -132,13 +119,6 @@ pub fn run(app: android_activity::AndroidApp) {
             if let Some(ui) = ui.upgrade() {
                 ui.global::<Home>().set_no_answer(false);
             }
-            if fake > 0 {
-                requested_at.set(Some(Instant::now()));
-                if let Some(ui) = ui.upgrade() {
-                    ui.global::<Home>().set_requested(true);
-                }
-                return;
-            }
             if let Some(topic) = android::with(|env, act| settings::topic(env, act)) {
                 crate::net::request_call(topic, agent.to_string());
                 requested_at.set(Some(Instant::now()));
@@ -156,7 +136,7 @@ pub fn run(app: android_activity::AndroidApp) {
     home.on_backable(|on| {
         android::with(|env, act| env.call_method(act, "backable", "(Z)V", &[jni::objects::JValue::Bool(on as u8)]).map(drop));
     });
-    refresh(&ui, fake, true);
+    refresh(&ui);
     let mut chats = crate::inbox::wire(&ui);
 
     // The vinyl Clawd and Null live on the home screen in 3D, drawn by the GPU (alive.rs, live_gl.rs): blinks,
@@ -168,7 +148,7 @@ pub fn run(app: android_activity::AndroidApp) {
         move |who| pair.borrow_mut().hop(who == "codex", start.elapsed().as_secs_f32())
     });
     // A drag on Null rolls his face through the modes, a light tick at each; letting go keeps the one he shows.
-    let hint = Rc::new(Cell::new((fake > 0 || android::with(settings::hinted) == Some(false)).then_some(0.0f32)));
+    let hint = Rc::new(Cell::new((android::with(settings::hinted) == Some(false)).then_some(0.0f32)));
     ui.global::<Toys>().on_roll({
         let (pair, ui, hint) = (pair.clone(), ui.as_weak(), hint.clone());
         move |dy, phase| {
@@ -200,14 +180,11 @@ pub fn run(app: android_activity::AndroidApp) {
     });
     let scene = Rc::new(std::cell::RefCell::new(live_gl::Scene::new(4)));
     let [small, big] = faces::sizes();
-    // PREVIEW: the stage they stand in (stage.rs); its floor is drawn under each picture, so the textures are taller.
-    let v = stage::pick();
-    let st = &stage::STAGES[v];
+    let st = &stage::SPOT;
     let who = [cast::Who::Clawd(cast::Mat::Vinyl), cast::Who::Null];
     let below = who.map(|w| st.below(w));
     {
         let t = ui.global::<Toys>();
-        t.set_stage(v as i32);
         t.set_k(st.k);
         t.set_clawd_below(below[0]);
         t.set_null_below(below[1]);
@@ -285,9 +262,9 @@ pub fn run(app: android_activity::AndroidApp) {
             // Permissions granted in Settings, or a mode changed elsewhere, show up within a second.
             if last_refresh.elapsed() > Duration::from_secs(1) {
                 last_refresh = Instant::now();
-                refresh(&ui, fake, false);
+                refresh(&ui);
             }
-            let wait = Duration::from_secs(if fake > 0 { 6 } else { 90 });
+            let wait = Duration::from_secs(90);
             if let Some(t) = requested_at.get() {
                 let rang = ring::RINGS.load(std::sync::atomic::Ordering::Relaxed) != rings_at.get() || service::active_link().is_some();
                 if rang || t.elapsed() > wait {
@@ -319,9 +296,7 @@ pub fn run(app: android_activity::AndroidApp) {
                 } else {
                     hint.set(None);
                     home.set_hint(false);
-                    if fake == 0 {
-                        android::with(settings::set_hinted);
-                    }
+                    android::with(settings::set_hinted);
                 }
             }
             let mode = settings::MODES.iter().position(|m| *m == home.get_mode().as_str()).unwrap_or(2);
@@ -339,7 +314,7 @@ pub fn run(app: android_activity::AndroidApp) {
             let ease = 1.0 - (-(now - last_now) * 12.0).exp(); // about 250 ms, as the opacity it replaces
             last_now = now;
             for (i, c) in [&p.clawd, &p.null].into_iter().enumerate() {
-                let want = if v == 0 || (i == 1) == codex { 1.0 } else { 0.5 };
+                let want = if (i == 1) == codex { 1.0 } else { 0.5 };
                 let dimming = (lit[i] - want).abs() > 0.002;
                 lit[i] = if dimming { lit[i] + (want - lit[i]) * ease } else { want };
                 if show && (!shown || dimming || alive::due(c, drawn[i], now)) {

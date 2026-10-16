@@ -247,7 +247,7 @@ pub fn failed(chat: &str) -> bool {
     matches!(&*PICK.lock().unwrap(), Some((c, Pick::Failed(_))) if c == chat)
 }
 
-/// A pick under way for `chat` (also PREVIEW, fake_chat.rs); a pick in another chat's box stays as it is.
+/// A pick under way for `chat`; a pick in another chat's box stays as it is.
 pub fn set_loading(chat: &str) {
     *PICK.lock().unwrap() = Some((chat.to_string(), Pick::Loading));
     inbox::changed();

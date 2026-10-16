@@ -9,51 +9,15 @@ pub struct Stage {
     pub shadow: [f32; 4], // uShadow: strength, softness, fade at the floor's front (logical px), bounce from the floor
 }
 
-const fn s(k: f32, floor: f32, stage: [f32; 4], key: [f32; 4], key_col: [f32; 4], shadow: [f32; 4]) -> Stage {
-    Stage { k, floor, stage, key, key_col, shadow }
-}
-
-pub static STAGES: [Stage; 5] = [
-    s(1.0, 0.0, [0.0; 4], [0.0; 4], [0.0; 4], [0.0; 4]),
-    // spot: one cone of light straight down on a glossy black floor
-    s(1.08, 110.0, [0.32, 0.0, 0.08, 3.0], [0.0, 1.0, 0.15, 0.2], [-0.05, -0.12, -0.2, -0.45], [0.65, 3.0, 30.0, 0.35]),
-    // desk: a walnut desk under a warm lamp; its front edge cuts the reflections
-    s(1.0, 60.0, [0.32, 0.0, 0.08, 2.2], [-0.4, 0.7, 0.42, 0.3], [0.1, -0.05, -0.2, -0.3], [0.5, 4.0, 3.0, 0.2]),
-    // moon: a night room, moonlight through a window over the floor and up the wall
-    s(0.9, 110.0, [0.30, 0.0, 0.08, 2.6], [0.22, 0.72, 0.66, -0.2], [-0.3, -0.12, 0.1, -0.35], [0.6, 6.0, 30.0, 0.15]),
-    // record: a black vinyl record floating in the dark
-    s(0.84, 70.0, [0.0; 4], [-0.3, 1.0, 0.45, 0.6], [0.04, -0.02, -0.08, -0.3], [0.45, 4.0, 20.0, 0.1]),
-];
-
-/// The stage picked with `debug.callme.stage`, or 1 (Spotlight, Mani's pick).
-#[cfg(target_os = "android")]
-pub fn pick() -> usize {
-    prop_or(c"debug.callme.stage", 1, STAGES.len() - 1)
-}
-
-/// A preview's number from an Android system property (0 when unset), at most `max`.
-#[cfg(target_os = "android")]
-pub fn prop(name: &std::ffi::CStr, max: usize) -> usize {
-    prop_or(name, 0, max)
-}
-
-/// A preview's number from an Android system property (`default` when unset), at most `max`.
-#[cfg(target_os = "android")]
-pub fn prop_or(name: &std::ffi::CStr, default: usize, max: usize) -> usize {
-    let v = prop_text(name);
-    if v.is_empty() { default } else { v.trim().parse::<usize>().unwrap_or(0).min(max) }
-}
-
-/// An Android system property's text ("" when unset).
-#[cfg(target_os = "android")]
-pub fn prop_text(name: &std::ffi::CStr) -> String {
-    unsafe extern "C" {
-        fn __system_property_get(name: *const std::ffi::c_char, value: *mut std::ffi::c_char) -> std::ffi::c_int;
-    }
-    let mut buf = [0 as std::ffi::c_char; 92]; // PROP_VALUE_MAX
-    let n = unsafe { __system_property_get(name.as_ptr(), buf.as_mut_ptr()) };
-    if n <= 0 { String::new() } else { unsafe { std::ffi::CStr::from_ptr(buf.as_ptr()) }.to_string_lossy().into_owned() }
-}
+// spot: one cone of light straight down on a glossy black floor
+pub static SPOT: Stage = Stage {
+    k: 1.08,
+    floor: 110.0,
+    stage: [0.32, 0.0, 0.08, 3.0],
+    key: [0.0, 1.0, 0.15, 0.2],
+    key_col: [-0.05, -0.12, -0.2, -0.45],
+    shadow: [0.65, 3.0, 30.0, 0.35],
+};
 
 // Each character's camera is turned round the floor's vertical from the backdrop's square-on view (clawd_cast.frag,
 // null.frag), so the key light is turned the same way to fall on them from where it falls on the backdrop.

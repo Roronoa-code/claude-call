@@ -37,8 +37,7 @@
             <meta-data android:name="android.app.lib_name" android:value="callme_phone" />
         </activity>
 
-        <!-- Other apps can't open the call screen: only this app (its notifications) and adb, which holds DUMP
-             (the phone check, examples/phone_check.rs). -->
+        <!-- Other apps can't open the call screen: only this app (its notifications) and adb, which holds DUMP. -->
         <activity
             android:name=".CallActivity"
             android:exported="true"
