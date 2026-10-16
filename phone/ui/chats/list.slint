@@ -48,7 +48,16 @@ export component ChatList inherits Rectangle {
             background: nb.pressed ? #9a4e36 : Ink.me;
             animate background { duration: 160ms; easing: T.out; }
             Icon { d: Icons.plus; x: 10px; y: 10px; stroke: #fff8f5; }
-            nb := TouchArea { clicked => { Chats.picker = true; } }
+            // 44px to see, 48px to touch
+            nb := TouchArea {
+                x: -2px;
+                y: -2px;
+                width: 48px;
+                height: 48px;
+                accessible-role: button;
+                accessible-label: "New chat";
+                clicked => { Chats.picker = true; }
+            }
         }
     }
     Flickable {
@@ -119,7 +128,7 @@ export component ChatList inherits Rectangle {
                             wrap: word-wrap;
                         }
                     }
-                    if h.busy: Shimmer { text: "Thinking"; font-size: 13px; base: #9a9aa3; }
+                    if h.busy: Shimmer { text: h.think; font-size: 13px; base: #9a9aa3; }
                     if !h.busy: Text { text: h.time == "now" ? "Just now" : h.time + " ago"; font-size: 13px; color: #9a9aa3; }
                 }
             }
@@ -209,8 +218,20 @@ export component ChatList inherits Rectangle {
                         vertical-alignment: center;
                     }
                     if r.unread: Count { x: parent.width - self.width - 14px; y: 30px; n: max(1, r.count); }
-                    // and where it stands: the answer's start, or what's happening
-                    if !r.busy && !r.asks: Text {
+                    // and where it stands: what waits in its text box, the answer's start, or what's happening
+                    if r.draft != "": Text {
+                        x: 84px;
+                        y: 54px;
+                        width: parent.width - 84px - 14px;
+                        height: 18px;
+                        text: "Draft: " + r.draft;
+                        font-size: 13px;
+                        color: Ink.warm;
+                        overflow: elide;
+                        vertical-alignment: center;
+                    }
+                    if r.draft == "" && !r.busy && r.think != "": Text { x: 84px; y: 54px; width: parent.width - 84px - 14px; height: 18px; text: r.think; font-size: 13px; color: #9a9aa3; overflow: elide; vertical-alignment: center; }
+                    if r.draft == "" && !r.busy && !r.asks && r.think == "": Text {
                         x: 84px;
                         y: 54px;
                         width: parent.width - 84px - 14px;
@@ -221,8 +242,8 @@ export component ChatList inherits Rectangle {
                         overflow: elide;
                         vertical-alignment: center;
                     }
-                    if r.asks: Text { x: 84px; y: 54px; width: parent.width - 84px - 14px; height: 18px; text: r.choices.length == 0 ? "Waiting for your answer" : "Waiting for your answer · " + r.choices.length + (r.choices.length == 1 ? " choice" : " choices"); font-size: 13px; color: Ink.warm; overflow: elide; vertical-alignment: center; }
-                    if r.busy: Shimmer { x: 84px; y: 54px; height: 18px; text: "Thinking it through"; font-size: 13px; base: #a08a80; vertical-alignment: center; }
+                    if r.draft == "" && r.asks: Text { x: 84px; y: 54px; width: parent.width - 84px - 14px; height: 18px; text: r.choices.length == 0 ? "Waiting for your answer" : "Waiting for your answer · " + r.choices.length + (r.choices.length == 1 ? " choice" : " choices"); font-size: 13px; color: Ink.warm; overflow: elide; vertical-alignment: center; }
+                    if r.draft == "" && r.busy: Shimmer { x: 84px; y: 54px; height: 18px; text: r.think; font-size: 13px; base: #a08a80; vertical-alignment: center; }
                 }
             }
         }

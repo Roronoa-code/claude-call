@@ -8,6 +8,7 @@ import { Figure, Floor } from "still.slint";
 import { Shimmer } from "msg.slint";
 import { Log } from "log.slint";
 import { Composer } from "field.slint";
+import { PhotoView } from "photo.slint";
 
 export component ChatThread inherits Rectangle {
     in property <length> kb; // the keyboard over the window, frame by frame as it slides (home.slint)
@@ -16,7 +17,11 @@ export component ChatThread inherits Rectangle {
     background: Ink.bg;
     property <length> bottom: self.height - max(root.kb, Home.sab) - 10px;
     // the character's room beside the field (a new chat's stands big in the middle until the first message)
-    property <length> pal: Chats.readonly || Chats.empty ? 0px : 76px;
+    // No text box: the updates thread, or a question that has its answer (or expired): one plain line instead.
+    property <bool> bare: Chats.readonly || Chats.ended != "";
+    property <bool> ended: Chats.ended != "";
+    changed ended => { if (self.ended) { field.blur(); } }
+    property <length> pal: bare || Chats.empty ? 0px : 76px;
     animate pal { duration: 320ms; easing: T.out; }
     // Pull down to close: on the header, or anywhere on the thread while it is at its top. With the keyboard up, a
     // pull only puts it away (the field and the sheet never slide at once); the next one closes. Past 30% of the
@@ -84,9 +89,9 @@ export component ChatThread inherits Rectangle {
             width: parent.width;
             // The thread ends at the field's foot, so the keyboard is never inside it: Slint's own scroll limits
             // (which leave out what the keyboard covers) then match ours; it runs on under the field and its fade.
-            height: Chats.readonly ? parent.height - self.y : field.y + field.height - self.y;
+            height: root.bare ? parent.height - self.y : field.y + field.height - self.y;
             side: 14px;
-            pad-bottom: Chats.readonly ? Home.sab + 28px : field.height + 18px;
+            pad-bottom: Chats.readonly ? Home.sab + 28px : root.ended ? parent.height - field.y + 10px : field.height + 18px;
             tapped => { field.blur(); } // a tap on the thread puts the keyboard away (what is typed stays)
             // my last message's receipt (Sending…, Sent, Delivered, Read), staying put while the PC thinks below it
             if Chats.status != "": HorizontalLayout {
@@ -102,16 +107,24 @@ export component ChatThread inherits Rectangle {
                         font-weight: Chats.action == "retry" ? 600 : 400;
                         vertical-alignment: center;
                     }
-                    TouchArea { enabled: Chats.action == "retry"; clicked => { Chats.retry(); } }
+                    // the whole row is 48px to touch
+                    TouchArea {
+                        y: -13px;
+                        height: 48px;
+                        enabled: Chats.action == "retry";
+                        accessible-role: button;
+                        accessible-label: Chats.status;
+                        clicked => { Chats.retry(""); }
+                    }
                 }
             }
-            if Chats.action == "stop": Rectangle {
+            if Chats.waiting: Rectangle {
                 property <float> k: 0;
                 init => { self.k = 1; }
                 animate k { duration: 420ms; easing: T.out; }
                 height: 46px;
                 opacity: k;
-                Shimmer { x: 6px; y: 22px + (1 - parent.k) * 6px; text: Chats.short + " is thinking"; font-size: 14.5px; base: #8a8c93; }
+                Shimmer { x: 6px; y: 22px + (1 - parent.k) * 6px; text: Chats.thinking; font-size: 14.5px; base: #8a8c93; }
             }
         }
         // A new chat: its character big in the middle, inviting the first message.
@@ -179,7 +192,7 @@ export component ChatThread inherits Rectangle {
                 height: 60px;
                 BackButton { }
                 Text {
-                    property <bool> alone: Chats.title == "" && !Chats.waiting;
+                    property <bool> alone: Chats.title == "" && Chats.think == "";
                     x: 60px;
                     y: alone ? 0px : 9px;
                     width: parent.width - 120px;
@@ -197,7 +210,7 @@ export component ChatThread inherits Rectangle {
                     y: 31px;
                     width: parent.width - 120px;
                     height: 18px;
-                    text: Chats.waiting ? "Thinking…" : Chats.title;
+                    text: Chats.think != "" ? Chats.think : Chats.title;
                     font-size: 13px;
                     color: Chats.waiting || Chats.ask == "waiting" ? Ink.warm : Ink.muted;
                     horizontal-alignment: center;
@@ -218,7 +231,7 @@ export component ChatThread inherits Rectangle {
     // The character, standing by the field (it rides up with the keyboard). A tap: a hop.
     // One character at a time: in a new chat it stands big in the middle; after the first message it appears here
     // only once the big one has gone.
-    if !Chats.readonly: Rectangle {
+    if !root.bare: Rectangle {
         property <bool> stand: !Chats.empty;
         opacity: stand ? 1 : 0;
         animate opacity { duration: stand ? 220ms : 0ms; delay: stand ? 320ms : 0ms; }
@@ -246,7 +259,7 @@ export component ChatThread inherits Rectangle {
         TouchArea { clicked => { Chats.poke(); } }
     }
     field := Composer {
-        visible: !Chats.readonly;
+        visible: !root.bare;
         x: 8px + root.pal;
         width: parent.width - 20px - root.pal;
         y: root.bottom - self.height;
@@ -275,33 +288,42 @@ export component ChatThread inherits Rectangle {
             Icon { d: "M12 5.5V18 M6 12.5l6 6l6 -6"; x: 8px; y: 8px; width: 20px; height: 20px; stroke: Ink.text2; stroke-width: 2px; }
         }
         if log.fresh: Rectangle { x: 33px; y: 7px; width: 9px; height: 9px; border-radius: 4.5px; background: Ink.warm; }
-        down := TouchArea { enabled: parent.show; clicked => { log.to-latest(); } }
-    }
-    Rectangle {
-        property <float> k: Chats.viewing ? 1 : 0;
-        animate k { duration: Chats.viewing ? 340ms : 220ms; easing: Chats.viewing ? T.out : T.close; }
-        visible: k > 0.01;
-        background: black;
-        opacity: k;
-        TouchArea { clicked => { Chats.viewing = false; } }
-        Image {
-            y: Home.sat;
-            width: parent.width;
-            height: parent.height - Home.sat - Home.sab;
-            source: Chats.full;
-            image-fit: contain;
-            transform-origin: { x: self.width / 2, y: self.height / 2 };
-            transform-scale: 0.94 + 0.06 * parent.k;
-        }
-        Rectangle {
-            x: 12px;
-            y: Home.sat + 8px;
-            width: 44px;
-            height: 44px;
-            border-radius: 22px;
-            background: #1a1a1dcc;
-            Icon { d: Icons.close; x: 10px; y: 10px; }
-            TouchArea { clicked => { Chats.viewing = false; } }
+        down := TouchArea {
+            enabled: parent.show;
+            accessible-role: button;
+            accessible-label: "Latest";
+            clicked => { log.to-latest(); }
         }
     }
+    // An answered or expired question: one plain line where the text box was.
+    if root.ended: Text {
+        x: 28px;
+        y: field.y;
+        width: parent.width - 56px;
+        height: 56px;
+        text: Chats.ended;
+        font-size: 14px;
+        color: Ink.muted;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        wrap: word-wrap;
+    }
+    // A message that couldn't be kept to send: said just above the text box for a few seconds (what is typed stays).
+    if !root.bare: Text {
+        property <bool> on: Chats.trouble != "";
+        x: field.x + 14px;
+        y: field.y - 30px + (on ? 0px : 4px);
+        width: field.width - 28px - 48px;
+        height: 22px;
+        text: Chats.trouble;
+        font-size: 13px;
+        font-weight: 600;
+        color: #ec8a6f;
+        vertical-alignment: center;
+        overflow: elide;
+        opacity: on ? 1 : 0;
+        animate opacity, y { duration: 220ms; easing: T.out; }
+    }
+    Timer { interval: 4s; running: Chats.trouble != ""; triggered => { Chats.trouble = ""; } }
+    PhotoView { }
 }

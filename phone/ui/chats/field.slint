@@ -1,6 +1,8 @@
 // The text box of a chat: + (attach), the field, and Send / Stop (44px, a 48px touch area). The field grows a line at
 // a time up to six, then scrolls inside; Enter starts a new line, Send sends. A word the keyboard is still composing
-// is sent with the message, where it stands, and looks like normal text.
+// is sent with the message, where it stands, and looks like normal text. What is typed belongs to its chat: it is
+// there again when the chat opens (inbox.rs keeps it, even when the app is closed), and a chat opened in its place
+// brings its own. Near the length limit the box says how much is left; over it, Send rests.
 import { T, Icon, Icons } from "../parts.slint";
 import { Home } from "../home_parts.slint";
 import { Chats, Ink, IconButton } from "../chat.slint";
@@ -10,10 +12,28 @@ export component Composer inherits Rectangle {
     in property <length> radius: 28px;
     in property <color> go-color: Ink.me;
     property <string> draft;
+    property <string> chat; // whose text box this is
+    init => {
+        root.chat = Chats.current;
+        root.draft = Chats.draft;
+    }
+    changed draft => { Chats.keep-draft(root.chat, root.draft); }
+    // Another chat opened in place of this one (a notification): its own text box, keyboard down.
+    property <string> now-chat: Chats.current;
+    changed now-chat => {
+        if (self.now-chat != "" && self.now-chat != self.chat) {
+            input.clear-focus();
+            self.chat = self.now-chat;
+            self.draft = Chats.draft;
+        }
+    }
+    // how much more fits (negative: too long), shown from 200 before the limit
+    property <int> left: Chats.room(root.draft + input.preedit-text);
+    property <bool> near: left < 200;
     property <bool> picked-media: Chats.pick == "image" || Chats.pick == "video";
     property <bool> has-pick: Chats.pick != "" && Chats.ready;
     property <bool> composing; // the keyboard is still putting a word together (not in draft yet)
-    property <bool> can-send: Chats.pick != "loading" && (draft != "" || composing || picked-media);
+    property <bool> can-send: Chats.pick != "loading" && (draft != "" || composing || picked-media) && left >= 0;
     property <bool> can-stop: Chats.action == "stop" && !can-send;
     property <length> pick-h: has-pick ? (picked-media ? 76px : 48px) : 0px;
     animate pick-h { duration: 300ms; easing: T.out; }
@@ -77,6 +97,7 @@ export component Composer inherits Rectangle {
             y: (min(parent.height, 64px) - self.height) / 2;
             icon: Icons.close;
             stroke: Ink.muted;
+            label: "Remove";
             clicked => { Chats.unpick(); }
         }
     }
@@ -89,7 +110,7 @@ export component Composer inherits Rectangle {
         padding-right: 6px;
         Rectangle {
             width: 48px;
-            IconButton { y: parent.height - 52px; icon: Icons.plus; stroke: Ink.text2; clicked => { Chats.attach(); } }
+            IconButton { y: parent.height - 52px; icon: Icons.plus; stroke: Ink.text2; label: "Attach a photo or video"; clicked => { Chats.attach(); } }
         }
         FocusScope {
             horizontal-stretch: 1;
@@ -133,9 +154,10 @@ export component Composer inherits Rectangle {
                     // Sends what is on screen: the keyboard's word in progress goes in where it stands (inbox.rs).
                     // Then the keyboard's side of the field is emptied too (chat.slint, fix/1015), which also takes
                     // away Android's caret handle left hanging under an emptied field.
+                    // Emptied only once the message is kept to send; if it couldn't be, it all stays (thread.slint
+                    // says so).
                     function send-all() {
-                        if (root.can-send) {
-                            Chats.send-composed(root.draft, self.preedit-text, self.cursor-position-byte-offset);
+                        if (root.can-send && Chats.send-composed(root.draft, self.preedit-text, self.cursor-position-byte-offset)) {
                             root.draft = "";
                             Chats.clear-field();
                         }
@@ -163,9 +185,19 @@ export component Composer inherits Rectangle {
                 }
             }
         }
-        // Send (warm once there is something to send), or Stop while the PC works and nothing is typed.
+        // Send (warm once there is something to send), or Stop while the PC works and nothing is typed. Near the
+        // limit, how much is left sits over it (the box is tall by then).
         Rectangle {
             width: 48px;
+            if root.near: Text {
+                y: parent.height - 52px - self.height - 2px;
+                width: parent.width;
+                text: root.left >= 0 ? root.left + "\nleft" : (-root.left) + "\nover";
+                font-size: 11.5px;
+                font-weight: root.left >= 0 ? 400 : 600;
+                color: root.left >= 0 ? Ink.muted : #ec8a6f;
+                horizontal-alignment: center;
+            }
             Rectangle {
                 x: 2px;
                 y: parent.height - 50px;
@@ -201,6 +233,8 @@ export component Composer inherits Rectangle {
                 y: parent.height - 52px;
                 height: 48px;
                 enabled: root.can-send || root.can-stop;
+                accessible-role: button;
+                accessible-label: root.can-stop ? "Stop" : "Send";
                 clicked => {
                     if (root.can-stop) { Chats.stop(); } else { input.send-all(); }
                 }

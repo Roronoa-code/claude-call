@@ -75,6 +75,20 @@ export component Log inherits Flickable {
     changed room => { root.sync(); }
     changed body => { root.sync(); }
     changed far => { if (!self.far) { self.fresh = false; self.fresh-at = -1px; } }
+    // Another chat put in place of this one (a notification tapped while it was open): its thread is simply there,
+    // at its end, nothing rising in.
+    property <string> chat: Chats.current;
+    changed chat => {
+        if (self.chat == "") { return; }
+        self.settled = false;
+        self.gliding = false;
+        self.hold = -1px;
+        self.fresh = false;
+        self.fresh-at = -1px;
+        self.content-y = self.stick;
+        self.seen-room = self.room;
+        self.seen-body = self.body;
+    }
     // A finger on the thread stops any glide and the answer's hold.
     flicked => {
         root.gliding = false;
@@ -110,6 +124,7 @@ export component Log inherits Flickable {
         for m in Chats.msgs: Piece {
             m: m;
             settled: root.settled;
+            tapped => { root.tapped(); }
             landed(y) => {
                 root.hold = y;
                 if (root.far) { root.fresh-at = y; }

@@ -97,7 +97,13 @@ export component SlideRow inherits Rectangle {
             Text { y: parent.height / 2 + 8px; width: parent.width; text: "Delete"; font-size: 12.5px; font-weight: 600; color: #fff8f5; horizontal-alignment: center; }
             del := TouchArea {
                 enabled: Chats.revealed == root.id && !root.away;
-                clicked => { Chats.revealed = ""; Chats.leaving = root.id; }
+                accessible-role: button;
+                accessible-label: "Delete";
+                clicked => {
+                    Chats.revealed = "";
+                    Chats.leaving = root.id;
+                    Chats.tick(); // a delete committed
+                }
             }
         }
         Rectangle {
@@ -144,7 +150,15 @@ export component UndoBar inherits Rectangle {
         background: undo.pressed ? #ffffff14 : #ffffff00;
         animate background { duration: 140ms; easing: T.out; }
         Text { text: "Undo"; font-size: 15px; font-weight: 600; color: Ink.warm; }
-        undo := TouchArea { enabled: Chats.deleted != ""; clicked => { Chats.undo(); } }
+        // 44px to see, 48px to touch
+        undo := TouchArea {
+            y: -2px;
+            height: 48px;
+            enabled: Chats.deleted != "";
+            accessible-role: button;
+            accessible-label: "Undo";
+            clicked => { Chats.undo(); }
+        }
     }
 }
 

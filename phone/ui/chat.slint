@@ -8,13 +8,19 @@ import "fonts/JetBrainsMonoNL-Regular.ttf";
 // asks: an agent's question waiting for my answer.
 export struct ChatRow { id: string, name: string, face: string, preview: string, time: string, unread: bool, busy: bool, asks: bool,
     // a waiting question's answers, my last message, how many unread, and the group a row starts ("" none)
-    choices: [string], topic: string, count: int, head: string }
+    choices: [string], topic: string, count: int, head: string,
+    // what is typed (or picked) in its text box and not sent ("Draft: …"), and where the PC is with my last message
+    // ("Thinking", "Thinking · 3 min", "Queued")
+    draft: string, think: string }
 // One piece of the thread (inbox.rs thread). kind: "" my text bubble; "note" a quiet line (downloading, couldn't load,
 // stopped); "image" or "video" a card (pic, ratio = height / width) that opens the file at path when tapped; the
 // PC's text as blocks: "p", "h", "li" (mark "1." or "•", level 0 or 1), "quote" (all with their inline markdown in
 // body) or "code" (text, mark its language); under an agent's question, a "choice" (an answer to tap; mark "on": the
 // one I sent) and a "tag" (a small grey word, "Expired"). gap: px of room above it; n: its place in its message (the
-// arrival's stagger); anchor: the first block of the newest answer.
+// arrival's stagger); anchor: the first block of the newest answer. line: its message's id (long-press copies it);
+// links: its words hold a link (the long-press then stays off them). "unsent": a quiet line under an earlier message of
+// mine that didn't go (mark "retry": tap to retry); "again": a "Send again" chip under the PC's failed answer (mark: a
+// caption); a "note" with mark "refetch" fetches its photo again (path: its link).
 export struct ChatMsg {
     me: bool,
     text: string,
@@ -29,6 +35,8 @@ export struct ChatMsg {
     n: int,
     anchor: bool,
     last: bool, // the last piece of its message
+    line: string,
+    links: bool,
 }
 
 // The chats' own colours: near-black like the home stage, one warm tone for me.
@@ -73,6 +81,12 @@ export global Chats {
     in property <int> big-h;
     in property <int> big-th;
     callback poke(); // a tap on the character: a hop
+    in property <string> think; // the header's word on the PC: "Thinking", "Thinking · 3 min", "Queued" ("" none)
+    in property <string> thinking; // ...and the thread's line while it works: "Opus is thinking · 3 min"
+    // An answered or expired question: one plain line where the text box was ("" : the box).
+    in property <string> ended;
+    // Why a message couldn't be kept to send ("Couldn't save your message. Try again."), for a few seconds.
+    in-out property <string> trouble;
     in property <string> status; // the small line under my last message
     in property <string> action; // what it allows: "retry" (tap it) or "stop" (the PC is working: Stop in the field)
     in property <bool> ready: true; // false until the PC has set chat up
@@ -103,13 +117,21 @@ export global Chats {
     callback new-chat(string, string); // agent, model
     // What is in the field, the keyboard's word still in progress and where it stands (a byte offset into the
     // field's text): sent as one message, with what is picked, if anything (inbox.rs).
-    callback send-composed(string, string, int);
+    // True once it is kept to send: only then does the field empty (what is typed is never lost).
+    callback send-composed(string, string, int) -> bool;
+    in property <string> draft; // the open chat's text box as it was left (inbox.rs keeps it per chat)
+    callback keep-draft(string, string); // chat, text: the text box changed
+    pure callback room(string) -> int; // how much more fits (chats.rs room); negative: too long
+    callback copy(string, bool, int); // a long-press: the message (line, mine), and which piece of it (n)
+    callback again(string); // "Send again": my message (line) as a new one
+    callback refetch(string); // a photo that couldn't be loaded, by its link: fetched again
     callback clear-field(); // empties the keyboard's side of the field (Shell.kt clearField)
     callback stop(); // a bare "stop", never with what is picked
-    callback retry();
+    callback retry(string); // a message of mine that didn't go, by its id ("" : the last)
     callback attach(); // opens the photo and video picker
     callback unpick();
     callback open-media(string, string); // path, kind: a photo opens full screen here, a video in the video player
+    callback sharpen(); // the photo open full screen is zoomed in: decoded again, sharper
     // Deleting a chat: a row slid (or long-pressed) open shows Delete; a tapped Delete slides the row out and closes
     // the gap, then the chat goes (delete-chat). For a few seconds "Chat deleted · Undo" can bring it back.
     in-out property <string> revealed; // the row slid open to show Delete ("" none)
@@ -137,9 +159,13 @@ export global Chats {
 export component IconButton {
     in property <string> icon;
     in property <brush> stroke: Ink.text;
+    in property <string> label; // what it does, for TalkBack
     callback clicked;
     width: 48px;
     height: 48px;
+    accessible-role: button;
+    accessible-label: label;
+    accessible-action-default => { root.clicked(); }
     Rectangle {
         width: 40px;
         height: 40px;
@@ -156,6 +182,7 @@ export component BackButton inherits IconButton {
     x: 4px;
     y: 6px;
     icon: Icons.back;
+    label: "Back";
     clicked => { Chats.back(); }
 }
 

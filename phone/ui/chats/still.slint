@@ -6,6 +6,7 @@ export component Pic inherits Image {
     in property <string> face;
     in property <string> pose: "idle";
     image-fit: fill;
+    accessible-role: none; // a character is decoration: TalkBack skips it
     source: face == "null" ? (pose == "think" ? @image-url("faces/null-think.png") : pose == "happy" ? @image-url("faces/null-happy.png") : @image-url("faces/null-idle.png"))
         : face == "haiku" ? (pose == "think" ? @image-url("faces/haiku-think.png") : pose == "happy" ? @image-url("faces/haiku-happy.png") : @image-url("faces/haiku-idle.png"))
         : face == "sonnet" ? (pose == "think" ? @image-url("faces/sonnet-think.png") : pose == "happy" ? @image-url("faces/sonnet-happy.png") : @image-url("faces/sonnet-idle.png"))
@@ -37,6 +38,7 @@ component Picture {
         height: root.fh * root.s * 1px;
     }
     if root.live: Image {
+        accessible-role: none;
         source: root.source;
         source-clip-x: 0;
         source-clip-y: root.th - root.lh;

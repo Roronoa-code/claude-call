@@ -14,10 +14,36 @@ export component Shimmer inherits Text {
     color: @linear-gradient(90deg, base 0%, base max(0, s - 0.3) * 100%, #f4f1ef max(0, min(1, s)) * 100%, base min(1, s + 0.3) * 100%, base 100%);
 }
 
+// A press held still for 450 ms (a move of more than 10px, or the thread taking the drag, cancels it): `held` with
+// where the finger is. `fired`: the press became a hold (its release is not a tap).
+component Hold inherits TouchArea {
+    callback held(length, length);
+    out property <bool> fired;
+    property <bool> off;
+    changed pressed => {
+        if (self.pressed) {
+            self.fired = false;
+            self.off = false;
+        }
+    }
+    moved => {
+        if (Math.abs(self.mouse-x - self.pressed-x) > 10px || Math.abs(self.mouse-y - self.pressed-y) > 10px) { self.off = true; }
+    }
+    Timer {
+        interval: 450ms;
+        running: root.pressed && !root.fired && !root.off;
+        triggered => {
+            root.fired = true;
+            root.held(root.pressed-x, root.pressed-y);
+        }
+    }
+}
+
 export component Piece inherits Rectangle {
     in property <ChatMsg> m;
     in property <bool> settled; // rows that arrive once the thread is up rise in
     callback landed(length); // an answer's first piece arrived: its y, to keep in view (-1: follow the end)
+    callback tapped(); // a tap on it that isn't a long-press (the thread's own tap: the keyboard goes)
     property <length> prose-size: 16px;
     property <color> card-bg: #18181b;
     property <bool> bubble: m.me && m.kind == "";
@@ -26,6 +52,12 @@ export component Piece inherits Rectangle {
     property <bool> media: m.kind == "image" || m.kind == "video";
     property <bool> quiet: m.kind == "note";
     property <bool> choice: m.kind == "choice";
+    property <bool> unsent: m.kind == "unsent"; // an earlier message of mine that didn't go
+    property <bool> again: m.kind == "again"; // "Send again"
+    property <bool> refetch: quiet && m.mark == "refetch"; // a photo to fetch again
+    // A long-press copies: my bubble, the agent's words, code, quiet lines. Words with a link keep the press for the
+    // link (StyledText takes every press on itself), so there the long-press works around them.
+    property <bool> copyable: bubble || (carded && (prose || code || (quiet && !refetch)));
     // The agent's pieces sit on its card, the first and last with room above and below.
     property <bool> carded: !m.me;
     property <length> inset: carded ? 18px : 0px;
@@ -38,14 +70,17 @@ export component Piece inherits Rectangle {
     property <length> media-w: min(inner * (m.me ? 0.74 : 0.86), 300px);
     property <length> bubble-w: min(inner * 0.8, said.preferred-width + 32px);
     property <length> h: bubble ? said.preferred-height + 22px
-        : choice ? 50px
+        : choice ? max(50px, cwords.preferred-height + 28px)
         : m.kind == "tag" ? 18px
+        : unsent ? 22px
+        : again ? 40px
         : prose ? words.preferred-height
         : code ? lines.preferred-height + (m.mark != "" ? 45px : 26px)
         : media ? self.media-w * ratio
         : quiet ? hush.preferred-height + 19px : 0px;
     property <float> k: 0;
-    animate k { duration: settled ? 460ms : 0ms; delay: settled ? m.n * 70ms : 0ms; easing: T.out; }
+    // a long answer's later pieces follow at most 6 steps behind its first, so none waits seconds to show
+    animate k { duration: settled ? 460ms : 0ms; delay: settled ? min(m.n, 6) * 70ms : 0ms; easing: T.out; }
     init => {
         // the newest answer's start stays in view as it lands; a message of mine goes back to following the end
         if (settled && m.anchor) {
@@ -56,6 +91,23 @@ export component Piece inherits Rectangle {
         self.k = 1;
     }
     height: top + pad-top + h + pad-bottom;
+    // The long-press: where it was, and since when ("Copied" rises there and fades).
+    property <length> copy-x;
+    property <length> copy-y;
+    property <duration> copy-t;
+    property <bool> copying;
+    function hold(x: length, y: length) {
+        root.copy-x = x;
+        root.copy-y = y;
+        root.copy-t = animation-tick();
+        root.copying = true;
+        Chats.copy(m.line, m.me, m.n);
+    }
+    Timer { interval: 1100ms; running: root.copying; triggered => { root.copying = false; } }
+    property <length> hold-x: bubble ? inset + inner - bubble-w : 0px;
+    property <length> hold-w: bubble ? bubble-w : root.width;
+    // the choice's words, measured: a long one wraps and its button grows
+    cwords := Text { visible: false; width: root.inner - 60px; text: choice ? m.text : ""; font-size: 16px; font-weight: 600; wrap: word-wrap; }
     // The card behind the agent's turn, joined across its pieces.
     if carded: Rectangle {
         y: m.n == 0 ? root.top : 0px;
@@ -66,6 +118,14 @@ export component Piece inherits Rectangle {
         border-bottom-left-radius: m.last ? 22px : 0px;
         border-bottom-right-radius: m.last ? 22px : 0px;
         opacity: k;
+    }
+    if copyable && m.links: Hold {
+        x: root.hold-x;
+        y: root.top;
+        width: root.hold-w;
+        height: root.height - root.top;
+        held(x, y) => { root.hold(self.x + x, self.y + y); }
+        clicked => { if (!self.fired) { root.tapped(); } }
     }
     Rectangle {
         x: inset;
@@ -149,15 +209,64 @@ export component Piece inherits Rectangle {
             width: min(parent.width, self.preferred-width + 28px) - 28px;
             text: quiet ? m.text : "";
             font-size: 14px;
-            color: Ink.muted;
+            color: refetch ? #ec8a6f : Ink.muted;
             wrap: word-wrap;
+        }
+        // "Couldn't load this photo · Tap to retry": the whole line (48px high) fetches it again.
+        if refetch: TouchArea {
+            y: (parent.height - self.height) / 2;
+            height: max(48px, parent.height);
+            accessible-role: button;
+            accessible-label: m.text;
+            clicked => { Chats.refetch(m.path); }
+        }
+        // An earlier message of mine that didn't go: "Not sent · Tap to retry" (or retrying by itself), under it on
+        // the right like the status line; its touch area 48px high.
+        if unsent: Text {
+            x: parent.width - self.width;
+            width: self.preferred-width;
+            height: 22px;
+            text: m.text;
+            font-size: 13px;
+            color: m.mark == "retry" ? #ec8a6f : Ink.muted;
+            font-weight: m.mark == "retry" ? 600 : 400;
+            vertical-alignment: center;
+            TouchArea {
+                y: -13px;
+                height: 48px;
+                enabled: m.mark == "retry";
+                accessible-role: button;
+                accessible-label: m.text;
+                clicked => { Chats.retry(m.line); }
+            }
+        }
+        // "Send again" under the PC's failed (or missed) answer to my last message: it goes as a new message.
+        if again: Rectangle {
+            x: 0px;
+            width: again-text.preferred-width + 36px;
+            height: 40px;
+            border-radius: 20px;
+            background: again-tap.pressed ? #3a3a40 : #26262b;
+            animate background { duration: 160ms; easing: T.out; }
+            transform-origin: { x: self.width / 2, y: self.height / 2 };
+            transform-scale: again-tap.pressed ? 0.97 : 1;
+            animate transform-scale { duration: 140ms; easing: T.out; }
+            again-text := Text { text: m.text; font-size: 15px; font-weight: 600; color: Ink.text; }
+            again-tap := TouchArea {
+                y: -4px;
+                height: 48px;
+                enabled: Chats.ready;
+                accessible-role: button;
+                accessible-label: m.text;
+                clicked => { Chats.again(m.line); }
+            }
         }
         // An answer the agent offers: a full-width button, sent as my message when tapped. Once answered (or
         // expired) they rest faded, the one I sent filled in with a tick.
         if choice: Rectangle {
             property <bool> live: Chats.ask == "waiting" && Chats.ready;
             property <bool> on: m.mark == "on";
-            height: 50px;
+            height: parent.height;
             border-radius: 16px;
             background: on ? Ink.me : tap.pressed ? #3a3a40 : live ? #26262b : #ffffff00;
             border-width: live || on ? 0px : 1px;
@@ -176,7 +285,7 @@ export component Piece inherits Rectangle {
                 font-weight: 600;
                 color: on ? #fff8f5 : live ? Ink.text : Ink.text2;
                 vertical-alignment: center;
-                overflow: elide;
+                wrap: word-wrap;
             }
             Path {
                 x: parent.width - 34px;
@@ -193,6 +302,8 @@ export component Piece inherits Rectangle {
             }
             tap := TouchArea {
                 enabled: parent.live;
+                accessible-role: button;
+                accessible-label: m.text;
                 clicked => { Chats.choose(m.text); }
             }
         }
@@ -233,5 +344,28 @@ export component Piece inherits Rectangle {
             }
             TouchArea { clicked => { Chats.open-media(m.path, m.kind); } }
         }
+    }
+    if copyable && !m.links: Hold {
+        x: root.hold-x;
+        y: root.top;
+        width: root.hold-w;
+        height: root.height - root.top;
+        held(x, y) => { root.hold(self.x + x, self.y + y); }
+        clicked => { if (!self.fired) { root.tapped(); } }
+    }
+    // "Copied", just above the finger: it rises a little and fades.
+    if root.copying: Rectangle {
+        property <float> e: clamp((animation-tick() - root.copy-t) / 1100ms, 0, 1);
+        property <float> rise: 1 - (1 - e) * (1 - e) * (1 - e);
+        width: copied.preferred-width + 28px;
+        height: 32px;
+        x: clamp(root.copy-x - self.width / 2, 0px, root.width - self.width);
+        y: root.copy-y - 72px - 14px * rise;
+        border-radius: 16px;
+        background: Ink.raised;
+        border-width: 1px;
+        border-color: Ink.hair;
+        opacity: e < 0.12 ? e / 0.12 : e > 0.7 ? (1 - e) / 0.3 : 1;
+        copied := Text { text: "Copied"; font-size: 13.5px; font-weight: 600; color: Ink.text; }
     }
 }

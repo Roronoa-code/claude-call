@@ -1,0 +1,200 @@
+// A photo open full screen, over black. A tap closes it (after a moment, in case it is a double tap), and so does a
+// swipe down: the photo follows the finger and the black fades with it; let go past a fifth of the screen (or flick)
+// and it closes from there, else it settles back. A double tap zooms 2.5x at that point (again: back to whole),
+// pinching zooms (1x to 4x) and, zoomed in, a drag moves around it. Once zoomed it is decoded again, sharper.
+import { T, Icon, Icons } from "../parts.slint";
+import { Home } from "../home_parts.slint";
+import { Chats } from "../chat.slint";
+
+export component PhotoView inherits Rectangle {
+    property <float> k: Chats.viewing ? 1 : 0;
+    animate k { duration: Chats.viewing ? 340ms : 220ms; easing: Chats.viewing ? T.out : T.close; }
+    visible: k > 0.01;
+    // The photo's room, and the photo as it fits there (contain).
+    property <length> w: root.width;
+    property <length> h: root.height - Home.sat - Home.sab;
+    property <length> cx: w / 2;
+    property <length> cy: Home.sat + h / 2;
+    property <float> ratio: Chats.full.width > 0 ? Chats.full.height / Chats.full.width : 1;
+    property <length> fw: min(w, h / ratio);
+    property <length> fh: min(h, w * ratio);
+    // Zoom, how far it is moved (from the middle), and how far it is pulled down to close.
+    property <float> zoom: 1;
+    property <length> ox;
+    property <length> oy;
+    property <length> drop;
+    property <bool> free; // let go: these settle on the curve; held: they follow the fingers exactly
+    animate zoom, ox, oy, drop { duration: free ? 300ms : 0ms; easing: T.out; }
+    // how far it may move at zoom s: none while it fits
+    function bx(s: float) -> length { return max(0px, (fw * s - w) / 2); }
+    function by(s: float) -> length { return max(0px, (fh * s - h) / 2); }
+    // Zoomed at the point (px, py) to s, that point staying where it is (then kept inside the edges).
+    function zoom-at(px: length, py: length, s: float) {
+        root.free = true;
+        root.ox = clamp((px - cx) * (1 - s), -bx(s), bx(s));
+        root.oy = clamp((py - cy) * (1 - s), -by(s), by(s));
+        root.zoom = s;
+        root.sharpen-soon = s > 1.2;
+    }
+    function settle() {
+        let s = zoom < 1.02 ? 1 : min(zoom, 4);
+        root.free = true;
+        root.zoom = s;
+        root.ox = clamp(ox, -bx(s), bx(s));
+        root.oy = clamp(oy, -by(s), by(s));
+        root.sharpen-soon = s > 1.2;
+    }
+    property <bool> sharpen-soon;
+    property <bool> sharp;
+    Timer {
+        interval: 360ms; // once the zoom has settled: a decode never stalls a moving frame
+        running: root.sharpen-soon;
+        triggered => {
+            root.sharpen-soon = false;
+            if (!root.sharp) {
+                root.sharp = true;
+                Chats.sharpen();
+            }
+        }
+    }
+    changed k => {
+        if (self.k == 0) {
+            // closed: the next photo opens whole and in place
+            self.free = false;
+            self.zoom = 1;
+            self.ox = 0;
+            self.oy = 0;
+            self.drop = 0;
+            self.sharp = false;
+        }
+    }
+    function close() {
+        root.tap = false;
+        Chats.viewing = false;
+    }
+    property <float> pulled: clamp(drop / (h * 0.5), 0, 1);
+    Rectangle { background: black; opacity: root.k * (1 - 0.85 * root.pulled); }
+    Image {
+        x: root.ox;
+        y: Home.sat + root.oy + root.drop;
+        width: root.w;
+        height: root.h;
+        source: Chats.full;
+        image-fit: contain;
+        transform-origin: { x: self.width / 2, y: self.height / 2 };
+        transform-scale: root.zoom * (0.94 + 0.06 * root.k) * (1 - 0.12 * root.pulled);
+        opacity: root.k;
+    }
+    // Gestures: pinch (two fingers), and one finger for taps, a swipe down, or moving around a zoomed photo.
+    property <float> z0;
+    property <length> ox0;
+    property <length> oy0;
+    property <Point> g0;
+    property <bool> pinched; // this touch became a pinch: its taps and drags don't count
+    property <string> mode; // what the finger's drag does: "" not yet, "pan", "drop" or "none"
+    property <length> last-y;
+    property <duration> last-t;
+    property <float> speed; // px per ms, down
+    property <bool> tap; // a single tap waiting to see if a second one comes
+    Timer { interval: 300ms; running: root.tap; triggered => { root.close(); } }
+    ScaleRotateGestureHandler {
+        enabled: Chats.viewing;
+        started => {
+            root.pinched = true;
+            root.tap = false;
+            root.free = false;
+            root.z0 = root.zoom;
+            root.ox0 = root.ox;
+            root.oy0 = root.oy;
+            root.g0 = self.center;
+        }
+        updated => {
+            let s = clamp(root.z0 * self.scale, 0.85, 4.5);
+            // the point first under the fingers stays under them
+            root.ox = self.center.x - root.cx - (root.g0.x - root.cx - root.ox0) * s / root.z0;
+            root.oy = self.center.y - root.cy - (root.g0.y - root.cy - root.oy0) * s / root.z0;
+            root.zoom = s;
+        }
+        ended => { root.settle(); }
+        cancelled => { root.settle(); }
+        touch := TouchArea {
+            enabled: Chats.viewing;
+            pointer-event(e) => {
+                if (e.kind == PointerEventKind.down) {
+                    root.pinched = false;
+                    root.mode = "";
+                    root.ox0 = root.ox;
+                    root.oy0 = root.oy;
+                } else if (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) {
+                    if (root.mode == "drop") {
+                        let fresh = animation-tick() - root.last-t < 100ms; // a finger held still has no speed left
+                        if (e.kind == PointerEventKind.up && (root.drop > root.h * 0.2 || (fresh && root.speed > 0.9 && root.drop > 0px))) {
+                            root.close(); // from where it is: the photo fades on down there
+                        } else {
+                            root.free = true;
+                            root.drop = 0;
+                        }
+                    } else if (root.mode == "pan") {
+                        root.free = true;
+                    }
+                }
+            }
+            moved => {
+                if (root.pinched) { return; }
+                let dx = self.mouse-x - self.pressed-x;
+                let dy = self.mouse-y - self.pressed-y;
+                if (root.mode == "" && (Math.abs(dx) > 10px || Math.abs(dy) > 10px)) {
+                    root.free = false;
+                    root.mode = root.zoom > 1.01 ? "pan" : dy > 0 && Math.abs(dy) > Math.abs(dx) ? "drop" : "none";
+                    root.last-y = dy;
+                    root.last-t = animation-tick();
+                    root.speed = 0;
+                }
+                if (root.mode == "pan") {
+                    root.ox = clamp(root.ox0 + dx, -root.bx(root.zoom), root.bx(root.zoom));
+                    root.oy = clamp(root.oy0 + dy, -root.by(root.zoom), root.by(root.zoom));
+                } else if (root.mode == "drop") {
+                    let t = animation-tick();
+                    if (t - root.last-t >= 8ms) {
+                        root.speed = (dy - root.last-y) / 1px / ((t - root.last-t) / 1ms);
+                        root.last-y = dy;
+                        root.last-t = t;
+                    }
+                    root.drop = max(0px, dy);
+                }
+            }
+            clicked => {
+                if (root.mode == "" && !root.pinched) { root.tap = true; }
+            }
+            double-clicked => {
+                if (root.pinched) { return; }
+                root.tap = false;
+                if (root.zoom > 1.01) {
+                    root.zoom-at(root.cx, root.cy, 1);
+                } else {
+                    root.zoom-at(self.mouse-x, self.mouse-y, 2.5);
+                }
+            }
+        }
+    }
+    // Close: 44px to see, 48px to touch.
+    Rectangle {
+        x: 12px;
+        y: Home.sat + 8px;
+        width: 44px;
+        height: 44px;
+        border-radius: 22px;
+        background: #1a1a1dcc;
+        opacity: root.k * (1 - root.pulled);
+        Icon { d: Icons.close; x: 10px; y: 10px; }
+        TouchArea {
+            x: -2px;
+            y: -2px;
+            width: 48px;
+            height: 48px;
+            accessible-role: button;
+            accessible-label: "Close";
+            clicked => { root.close(); }
+        }
+    }
+}

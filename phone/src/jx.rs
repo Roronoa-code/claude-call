@@ -124,3 +124,13 @@ pub fn density(env: &mut JNIEnv, ctx: &JObject) -> Result<f32> {
 pub fn now_ms() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64
 }
+
+/// Puts `text` on the clipboard (plain text).
+pub fn copy(env: &mut JNIEnv, ctx: &JObject, text: &str) -> Result<()> {
+    let cm = service(env, ctx, "clipboard")?;
+    let (label, t) = (s(env, "Claude Call")?, s(env, text)?);
+    let sig = "(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)Landroid/content/ClipData;";
+    let clip = env.call_static_method("android/content/ClipData", "newPlainText", sig, &[JValue::Object(&label), JValue::Object(&t)])?.l()?;
+    env.call_method(&cm, "setPrimaryClip", "(Landroid/content/ClipData;)V", &[JValue::Object(&clip)])?;
+    Ok(())
+}

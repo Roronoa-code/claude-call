@@ -37,9 +37,10 @@ const ANSWERS: [&str; 2] = [
     "Done. `config.toml` now points at B:, and a clean release build took **2 min 04 s**.",
 ];
 
-/// My message, added as `add` says, then played out: sent, worked on, answered (or stopped, for "stop").
-pub fn post(chat: &str, add: impl FnOnce(&mut Store) -> Option<String>) {
-    let Some(msg) = inbox::update(add).flatten() else { return };
+/// My message, added as `add` says, then played out: sent, worked on, answered (or stopped, for "stop"). True once
+/// it is kept.
+pub fn post(chat: &str, add: impl FnOnce(&mut Store) -> Option<String>) -> bool {
+    let Some(msg) = inbox::update(add).flatten() else { return false };
     inbox::changed();
     let chat = chat.to_string();
     thread::spawn(move || {
@@ -81,12 +82,14 @@ pub fn post(chat: &str, add: impl FnOnce(&mut Store) -> Option<String>) {
             reply("done", ANSWERS[n % ANSWERS.len()], &msg);
         }
     });
+    true
 }
 
 /// + : filesDir/pick.jpg as if picked in the system picker (a moment "Getting it ready…" first).
-pub fn pick() {
+pub fn pick(chat: &str) {
     let Some(dir) = inbox::media_dir() else { return };
-    attach::set_loading();
+    attach::set_loading(chat);
+    let chat = chat.to_string();
     thread::spawn(move || {
         thread::sleep(Duration::from_millis(900));
         let file = dir.with_file_name("pick.jpg");
@@ -97,6 +100,6 @@ pub fn pick() {
             std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(&path, &b)).map_err(|_| "Couldn't save that file".to_string())?;
             Ok(chats::Media { path: path.to_string_lossy().into_owned(), ..m })
         });
-        attach::set_result(m);
+        attach::set_result(&chat, m);
     });
 }
