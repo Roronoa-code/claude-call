@@ -76,13 +76,13 @@
         <FrameLayout android:id="@+id/tile_none" android:layout_width="0dp" android:layout_height="match_parent"
             android:layout_weight="1" android:padding="4dp" android:background="@drawable/widget_tile"
             android:foreground="?android:attr/selectableItemBackground" android:clipToOutline="true"
-            android:contentDescription="None">
+            android:contentDescription="Quiet">
             <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent"
                 android:orientation="vertical" android:gravity="center">
                 <ImageView android:id="@+id/icon_none" android:layout_width="20dp" android:layout_height="20dp"
                     android:src="@drawable/glyph_none" android:importantForAccessibility="no" />
                 <TextView android:id="@+id/label_none" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp" android:text="None" android:textSize="14sp" android:fontFamily="sans-serif"
+                    android:layout_marginTop="6dp" android:text="Quiet" android:textSize="14sp" android:fontFamily="sans-serif"
                     android:textFontWeight="650" android:textColor="#8CFFFFFF" android:maxLines="1" android:importantForAccessibility="no" />
             </LinearLayout>
         </FrameLayout>

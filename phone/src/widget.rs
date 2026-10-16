@@ -10,17 +10,18 @@ use jni::{
     objects::{JObject, JValue},
 };
 
-/// id, tile label, wide card's title and line (copy and colours from the approved widget preview).
+/// id, tile label, wide card's title (the home screen's names, home_parts.slint) and line. The tile labels are set
+/// in res/layout.
 const MODES: [(&str, &str, &str, &str); 4] = [
     ("call", "Calls", "Calls only", "Claude can call you"),
     ("text", "Texts", "Texts only", "Claude can message you"),
     ("both", "Both", "Calls and texts", "Claude can call or message you"),
-    ("none", "None", "Do not disturb", "Claude saves its questions"),
+    ("none", "Quiet", "Quiet for now", "Claude saves its questions"),
 ];
-/// The Sleep modes have no tile (set in the app); the wide card still says which is on, with the None tile's art.
+/// The Sleep modes have no tile (set in the app); the wide card still says which is on, with the Quiet tile's art.
 const SLEEP: [(&str, &str, &str, &str); 2] = [
-    ("wake", "None", "Asleep, wake me", "Calls ring until you pick up"),
-    ("sleep", "None", "Asleep", "Claude decides and keeps working"),
+    ("wake", "Quiet", "Asleep, wake me", "Calls ring until you pick up"),
+    ("sleep", "Quiet", "Asleep", "Claude decides and keeps working"),
 ];
 const WHITE: i32 = 0xFFFFFFFFu32 as i32;
 const DIM: i32 = 0x8CFFFFFFu32 as i32; // white at 55%
@@ -166,16 +167,35 @@ fn build<'a>(env: &mut JNIEnv<'a>, ctx: &JObject, wide: bool, size: Option<(f32,
         let at = settings::mode_changed_at(env, ctx)?;
         call(env, &v, "setViewVisibility", "(II)V", &[JValue::Int(hero_since), JValue::Int(if at > 0 { 0 } else { 8 })])?;
         if at > 0 {
-            let h24 = env.call_static_method("android/text/format/DateFormat", "is24HourFormat", "(Landroid/content/Context;)Z", &[JValue::Object(ctx)])?.z()?;
-            let pattern = s(env, if h24 { "H:mm" } else { "h:mm a" })?;
-            let sig = "(Ljava/lang/CharSequence;J)Ljava/lang/CharSequence;";
-            let t = env.call_static_method("android/text/format/DateFormat", "format", sig, &[JValue::Object(&pattern), JValue::Long(at)])?.l()?;
-            let t = env.call_method(&t, "toString", "()Ljava/lang/String;", &[])?.l()?;
-            let t = jx::string(env, t)?.unwrap_or_default();
+            let t = since(env, ctx, at)?;
             text(env, &v, "setTextViewText", hero_since, &format!("Changed {t}"))?;
         }
+        // The card's left half opens the app; the tiles change the mode.
+        let home = jx::intent(env, ctx, "MainActivity")?;
+        let open = jx::pending(env, ctx, "getActivity", 20, &home)?;
+        call(env, &v, "setOnClickPendingIntent", "(ILandroid/app/PendingIntent;)V", &[JValue::Int(hero), JValue::Object(&open)])?;
     }
     Ok(v)
+}
+
+/// When the mode changed, short enough for the card: the time today, "yesterday", else the date ("14 Oct").
+fn since(env: &mut JNIEnv, ctx: &JObject, at: i64) -> Result<String> {
+    let today = |env: &mut JNIEnv, t: i64| env.call_static_method("android/text/format/DateUtils", "isToday", "(J)Z", &[JValue::Long(t)])?.z();
+    let pattern = if today(env, at)? {
+        let h24 = env.call_static_method("android/text/format/DateFormat", "is24HourFormat", "(Landroid/content/Context;)Z", &[JValue::Object(ctx)])?.z()?;
+        s(env, if h24 { "H:mm" } else { "h:mm a" })?
+    } else if today(env, at + 86_400_000)? {
+        return Ok("yesterday".into());
+    } else {
+        let locale = env.call_static_method("java/util/Locale", "getDefault", "()Ljava/util/Locale;", &[])?.l()?;
+        let skeleton = s(env, "dMMM")?;
+        let sig = "(Ljava/util/Locale;Ljava/lang/String;)Ljava/lang/String;";
+        env.call_static_method("android/text/format/DateFormat", "getBestDateTimePattern", sig, &[JValue::Object(&locale), JValue::Object(&skeleton)])?.l()?
+    };
+    let sig = "(Ljava/lang/CharSequence;J)Ljava/lang/CharSequence;";
+    let t = env.call_static_method("android/text/format/DateFormat", "format", sig, &[JValue::Object(&pattern), JValue::Long(at)])?.l()?;
+    let t = env.call_method(&t, "toString", "()Ljava/lang/String;", &[])?.l()?;
+    Ok(jx::string(env, t)?.unwrap_or_default())
 }
 
 /// A tile tap: ModeTap (not exported, so only this app's own taps can change the mode).

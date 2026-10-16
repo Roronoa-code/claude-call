@@ -47,12 +47,12 @@
         <FrameLayout android:id="@+id/tile_none" android:layout_width="0dp" android:layout_height="match_parent"
             android:layout_weight="1" android:paddingStart="12dp" android:paddingTop="12dp" android:paddingEnd="12dp" android:paddingBottom="10dp" android:background="@drawable/widget_tile"
             android:foreground="?android:attr/selectableItemBackground" android:clipToOutline="true"
-            android:contentDescription="None">
+            android:contentDescription="Quiet">
             <ImageView android:id="@+id/icon_none" android:layout_width="22dp" android:layout_height="22dp"
                 android:layout_gravity="top|start" android:src="@drawable/glyph_none"
                 android:importantForAccessibility="no" />
             <TextView android:id="@+id/label_none" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:layout_gravity="bottom|start" android:text="None" android:textSize="14sp" android:fontFamily="sans-serif"
+                android:layout_gravity="bottom|start" android:text="Quiet" android:textSize="14sp" android:fontFamily="sans-serif"
                 android:textFontWeight="650" android:textColor="#8CFFFFFF" android:maxLines="1" android:importantForAccessibility="no" />
         </FrameLayout>
     </LinearLayout>
