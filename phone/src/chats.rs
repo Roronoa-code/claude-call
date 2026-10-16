@@ -31,6 +31,10 @@ pub struct Line {
     pub media: Vec<Media>, // photos and videos sent with the PC's answer, in part order
     pub choices: Vec<String>, // an agent's question: the answers it offers as buttons
     pub seen: String,
+    /// Mine: when it was first sent (a retry gives `at` a fresh time; 0 in files from before: `at`), and how many times
+    /// it has been retried by itself since it last failed for good (auto-retry's backoff).
+    pub first: i64,
+    pub tries: u32,
 }
 
 /// The biggest photo or video the phone fetches (the PC sends up to this; ntfy.sh holds up to 15 MB).
@@ -154,6 +158,11 @@ pub struct Chat {
     /// read-only). `asked`: when the PC sent it (ms, the PC's clock).
     pub kind: String,
     pub asked: i64,
+    /// What is typed in its text box and the photo or video picked to go with it, kept with the chat (and the file).
+    pub draft: String,
+    pub pick: Option<Media>,
+    /// When it was deleted (ms): hidden, but kept (replies still land in it) until Undo is over; 0 = not deleted.
+    pub deleted: i64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq)]
@@ -288,17 +297,42 @@ pub fn label(c: &Chat) -> String {
     }
 }
 
-/// An agent's question: "waiting" for my answer, "answered" or "expired" (unanswered after ASK_FOR); "" for any
-/// other chat. A message of mine answers it unless it didn't go or the PC turned it away as failed (a photo it
-/// couldn't get: the question still waits).
+/// An agent's question: "waiting" for my answer, "sending" (my answer is on its way: not yet taken by the PC),
+/// "answered" or "expired" (unanswered after ASK_FOR); "" for any other chat. A message of mine answers it unless it
+/// failed for good or the PC turned it away as failed (a photo it couldn't get: the question still waits).
 pub fn ask_state(c: &Chat, now: i64) -> &'static str {
     let failed = |id: &str| c.lines.iter().any(|l| !l.me && l.id == id && l.state == "failed");
+    let answers = || c.lines.iter().filter(|l| l.me && unsent(l, now) != "failed" && !failed(&l.id));
+    // taken: the PC said so (a receipt, working, its reply), or "sent" a minute ago (a PC without receipts)
+    let taken = |l: &Line| !l.seen.is_empty() || !matches!(l.state.as_str(), "sending" | "not_sent" | "sent") || now - l.since > 60_000;
     match c.kind.as_str() {
-        "ask" if c.lines.iter().any(|l| l.me && l.state != "not_sent" && !failed(&l.id)) => "answered",
+        "ask" if answers().any(|l| unsent(l, now) == "" && taken(l)) => "answered",
+        "ask" if answers().next().is_some() => "sending",
         "ask" if now - c.asked > ASK_FOR => "expired",
         "ask" => "waiting",
         _ => "",
     }
+}
+
+/// How long my message keeps retrying by itself after it failed to go (the PC takes messages up to 30 min old).
+pub const AUTO_FOR: i64 = 25 * 60_000;
+
+/// One of my messages that did not go: "waiting" (it retries by itself, AUTO_FOR from when it was first sent) or
+/// "failed" (Tap to retry); "" when it went or is still going.
+pub fn unsent(l: &Line, now: i64) -> &'static str {
+    let limit = if l.media.is_empty() { 15_000 } else { 120_000 }; // a photo or video goes up first, which takes longer
+    let stuck = l.state == "not_sent" || l.state == "sending" && now - l.since >= limit;
+    let first = if l.first > 0 { l.first } else { l.at };
+    match () {
+        _ if !l.me || !stuck => "",
+        _ if now - first < AUTO_FOR => "waiting",
+        _ => "failed",
+    }
+}
+
+/// When a message that did not go is tried again by itself: 15 s, 30 s, 60 s, then every 2 min.
+fn backoff(tries: u32) -> i64 {
+    15_000 << tries.min(3)
 }
 
 /// Its character (actor.slint): clawd, haiku, sonnet, opus or null.
@@ -306,9 +340,20 @@ pub fn face(agent: &str, model: Option<&str>) -> &'static str {
     crate::cast::Who::named(&format!("{agent} {}", model.unwrap_or(""))).face()
 }
 
-/// Whether the PC is still on my last message (sent, or being worked on).
+/// Whether the PC is working on my last message (it said so: sent or queued is not thinking yet).
 pub fn waiting(c: &Chat) -> bool {
-    c.lines.iter().rev().find(|l| l.me).is_some_and(|l| matches!(l.state.as_str(), "sending" | "sent" | "working"))
+    c.lines.iter().rev().find(|l| l.me).is_some_and(|l| l.state == "working")
+}
+
+/// Where the PC is with my last message, in the list's words: "Thinking", "Thinking · 3 min" after a minute,
+/// "Queued" (behind another job in the chat); "" otherwise.
+pub fn think(c: &Chat, now: i64) -> String {
+    match c.lines.iter().rev().find(|l| l.me) {
+        Some(l) if l.state == "working" && now - l.since >= 60_000 => format!("Thinking · {}", ago(now - l.since)),
+        Some(l) if l.state == "working" => "Thinking".into(),
+        Some(l) if l.state == "queued" => "Queued".into(),
+        _ => String::new(),
+    }
 }
 
 /// How long ago, short.
@@ -451,12 +496,16 @@ pub fn composed(draft: &str, word: &str, at: usize) -> String {
 /// The small grey line under my last message, and what tapping it does ("stop", "retry" or nothing).
 pub fn status(c: &Chat, now: i64) -> (&'static str, &'static str) {
     let Some(l) = c.lines.iter().rev().find(|l| l.me) else { return ("", "") };
-    let age = now - l.since;
-    match l.state.as_str() {
-        // A photo or video goes up first, which takes longer.
-        "sending" if age < if l.media.is_empty() { 15_000 } else { 120_000 } => ("Sending…", ""),
-        "sending" | "not_sent" => ("Failed · Tap to retry", "retry"),
-        "sent" | "working" => {
+    // its answer has started to come but a part is missing (the PC is asked again: inbox.rs)
+    let partial = c.lines.iter().any(|x| !x.me && x.id == l.id && x.state == "partial" && now - x.at > 3000);
+    match (l.state.as_str(), unsent(l, now)) {
+        (_, "waiting") => ("Waiting for connection…", ""),
+        (_, "failed") => ("Failed · Tap to retry", "retry"),
+        ("sending", _) => ("Sending…", ""),
+        _ if partial => ("Receiving reply…", if l.state == "working" { "stop" } else { "" }),
+        ("queued", _) => ("Queued", "stop"),
+        ("sent", _) if l.seen.is_empty() && now - l.since > 60_000 => ("Sent · the PC hasn't picked it up yet", ""),
+        ("sent" | "working", _) => {
             // the PC working on it proves it arrived, even from a PC that sends no receipts
             let seen = match l.seen.as_str() {
                 "read" => "Read",
@@ -467,6 +516,61 @@ pub fn status(c: &Chat, now: i64) -> (&'static str, &'static str) {
         }
         _ => ("", ""),
     }
+}
+
+/// An answer's text as plain text to copy: blocks one per paragraph, list items with their marks, code exactly as
+/// written, links as "text (address)", no bold or code marks.
+pub fn plain(text: &str) -> String {
+    let flat = |t: &str| {
+        let t = t.replace("**", "").replace('`', "");
+        // [text](address) -> text (address)
+        let mut out = String::new();
+        let mut rest = t.as_str();
+        while let Some(open) = rest.find('[') {
+            let Some(mid) = rest[open..].find("](").map(|i| open + i) else { break };
+            let Some(end) = rest[mid..].find(')').map(|i| mid + i) else { break };
+            out.push_str(&rest[..open]);
+            out.push_str(&format!("{} ({})", &rest[open + 1..mid], &rest[mid + 2..end]));
+            rest = &rest[end + 1..];
+        }
+        out + rest
+    };
+    let parts: Vec<String> = blocks(text)
+        .iter()
+        .map(|b| match b.kind {
+            "code" => b.text.clone(),
+            "li" => format!("{}{} {}", "  ".repeat(b.level as usize), b.mark, flat(&b.text)),
+            _ => flat(&b.text),
+        })
+        .collect();
+    parts.join("\n\n")
+}
+
+/// What a long-press on a piece of the thread copies: my message's text; a code block of the PC's alone (piece `n`
+/// of its message, exactly as written); anything else of the PC's: its whole message as plain text.
+pub fn copy_text(c: &Chat, line: &str, me: bool, n: usize) -> Option<String> {
+    let l = c.lines.iter().find(|l| l.me == me && l.id == line)?;
+    let text = match blocks(&l.text).get(n) {
+        _ if me => l.text.clone(),
+        Some(b) if b.kind == "code" => b.text.clone(),
+        _ if l.text.is_empty() => shown(l),
+        _ => plain(&l.text),
+    };
+    (!text.is_empty()).then_some(text)
+}
+
+/// Whether a block's text has a link in it (its long-press then stays off the words, so the link still opens).
+pub fn has_link(text: &str) -> bool {
+    let t = inline(text);
+    t.contains("<http") || t.contains("](")
+}
+
+/// How much more fits in a message (the field shows it near the end): the text's bytes against MAX_TEXT, and its
+/// escaped size against what the signed message leaves room for. Negative: that much too long.
+pub fn room(text: &str) -> i64 {
+    let t = text.trim();
+    let json = serde_json::to_string(t).map_or(0, |j| j.len() - 2);
+    (MAX_TEXT as i64 - t.len() as i64).min((MAX_BODY - 500) as i64 - 2 - json as i64)
 }
 
 fn cut(s: &str, n: usize) -> &str {
@@ -527,8 +631,45 @@ impl Store {
         }
         c.updated = at;
         let media = media.into_iter().map(|m| Media { part: 1, url: String::new(), ..m }).collect();
-        c.lines.push(Line { id: msg.clone(), me: true, text: text.into(), at, since: at, state: "sending".into(), media, ..Line::default() });
+        c.lines.push(Line { id: msg.clone(), me: true, text: text.into(), at, since: at, first: at, state: "sending".into(), media, ..Line::default() });
         Some(msg)
+    }
+
+    /// Sends what is in a chat's text box: `text` with the photo or video picked there; its draft and pick go once
+    /// the message is in (the caller saves both in one write, so nothing is lost if that fails).
+    pub fn send(&mut self, chat: &str, text: &str) -> Option<String> {
+        let media = self.get(chat)?.pick.clone();
+        let msg = self.add_mine(chat, text, media)?;
+        let c = self.get_mut(chat)?;
+        (c.draft, c.pick) = (String::new(), None);
+        Some(msg)
+    }
+
+    /// Sends one of my messages again as a new message (its text and file): after the PC failed or missed it.
+    pub fn again(&mut self, chat: &str, msg: &str) -> Option<String> {
+        let l = self.get(chat)?.lines.iter().find(|l| l.me && l.id == msg)?.clone();
+        self.add_mine(chat, &l.text, l.media.first().cloned())
+    }
+
+    pub fn set_draft(&mut self, chat: &str, text: &str) {
+        if let Some(c) = self.get_mut(chat).filter(|c| c.draft != text) {
+            c.draft = text.into();
+        }
+    }
+
+    pub fn set_pick(&mut self, chat: &str, m: Option<Media>) -> bool {
+        self.get_mut(chat).map(|c| c.pick = m).is_some()
+    }
+
+    /// Whether any chat uses the file at `path` (a message's, or one picked to send).
+    pub fn uses(&self, path: &str) -> bool {
+        self.chats.iter().any(|c| c.pick.as_ref().is_some_and(|m| m.path == path) || c.lines.iter().flat_map(|l| &l.media).any(|m| m.path == path))
+    }
+
+    /// A chat I opened and left with nothing in it (no lines, no draft, no pick): taken out quietly.
+    pub fn drop_empty(&mut self, chat: &str) -> bool {
+        let empty = self.get(chat).is_some_and(|c| c.kind.is_empty() && c.lines.is_empty() && c.draft.trim().is_empty() && c.pick.is_none() && c.deleted == 0);
+        empty && self.remove(chat).is_some()
     }
 
     /// The signed message for one of my lines; a retry sends the very same one. None while its file has no link yet.
@@ -568,17 +709,48 @@ impl Store {
         }
     }
 
-    /// Back to "sending" for the last of my messages that did not go; returns its id.
-    pub fn retry(&mut self, chat: &str) -> Option<String> {
-        let l = self.get_mut(chat)?.lines.iter_mut().rev().find(|l| l.me)?;
+    /// Back to "sending" for one of my messages that did not go (`msg`, or "" for my last one); returns its id. Tapped
+    /// (`by_hand`), it gets a fresh AUTO_FOR of retrying by itself; else it counts one more try for the backoff.
+    pub fn retry(&mut self, chat: &str, msg: &str, by_hand: bool) -> Option<String> {
+        let c = self.get_mut(chat)?;
+        let l = if msg.is_empty() { c.lines.iter_mut().rev().find(|l| l.me) } else { c.lines.iter_mut().find(|l| l.me && l.id == msg) }?;
         if !matches!(l.state.as_str(), "sending" | "not_sent") {
             return None;
         }
         // A fresh time, so a retry long after the first try isn't turned away as too old (same id: no double run), and
         // its file goes up again (ntfy keeps a file only 3 hours).
-        (l.state, l.since, l.at) = ("sending".into(), now(), now());
+        let now = now();
+        (l.state, l.since, l.at) = ("sending".into(), now, now);
+        if l.first == 0 {
+            l.first = now;
+        }
+        if by_hand {
+            (l.first, l.tries) = (now, 0);
+        } else {
+            l.tries += 1;
+        }
         l.media.iter_mut().for_each(|m| m.url.clear());
         Some(l.id.clone())
+    }
+
+    /// My messages that didn't go and are due to be tried again by themselves (chat, message).
+    pub fn due(&self, now: i64) -> Vec<(String, String)> {
+        let due = |l: &Line| unsent(l, now) == "waiting" && now >= l.since + backoff(l.tries);
+        self.chats.iter().filter(|c| c.deleted == 0).flat_map(|c| c.lines.iter().filter(|l| due(l)).map(|l| (c.id.clone(), l.id.clone()))).collect()
+    }
+
+    /// My messages whose answer is missing a part (the PC is asked again: it replays a recorded answer), from 15 s
+    /// after its first part came until 30 min.
+    pub fn stalled(&self, now: i64) -> Vec<(String, String)> {
+        let mut out = vec![];
+        for c in &self.chats {
+            for l in c.lines.iter().filter(|l| !l.me && l.state == "partial" && (15_000..30 * 60_000).contains(&(now - l.at))) {
+                if c.lines.iter().any(|m| m.me && m.id == l.id) {
+                    out.push((c.id.clone(), l.id.clone()));
+                }
+            }
+        }
+        out
     }
 
     /// Photos and videos still to fetch (each link once).
@@ -599,8 +771,38 @@ impl Store {
         }
     }
 
+    /// A photo or video that couldn't be fetched, fetched again (tapped, while its link still works).
+    pub fn refetch(&mut self, url: &str) -> bool {
+        let mut any = false;
+        for m in self.chats.iter_mut().flat_map(|c| &mut c.lines).flat_map(|l| &mut l.media).filter(|m| m.url == url && m.state == "failed") {
+            m.state = "loading".into();
+            any = true;
+        }
+        any
+    }
+
+    /// Deletes a chat for now: hidden, its replies still land, until Undo (undelete) or purge.
+    pub fn delete(&mut self, chat: &str, now: i64) -> bool {
+        self.get_mut(chat).filter(|c| c.deleted == 0).map(|c| c.deleted = now).is_some()
+    }
+
+    pub fn undelete(&mut self, chat: &str) -> bool {
+        self.get_mut(chat).filter(|c| c.deleted != 0).map(|c| c.deleted = 0).is_some()
+    }
+
+    /// The chats deleted at or before `before`, gone for good (their Undo is over); returned for their files.
+    pub fn purge(&mut self, before: i64) -> Vec<Chat> {
+        let ids: Vec<String> = self.chats.iter().filter(|c| c.deleted != 0 && c.deleted <= before).map(|c| c.id.clone()).collect();
+        ids.iter().filter_map(|id| self.remove(id)).map(|(_, c)| c).collect()
+    }
+
+    /// The chat Undo brings back: the newest still deleted.
+    pub fn undoable(&self) -> Option<&Chat> {
+        self.chats.iter().filter(|c| c.deleted != 0).max_by_key(|c| c.deleted)
+    }
+
     /// Takes a chat out (the PC's late replies to it then find nothing and are dropped); returns its place and the
-    /// chat, for Undo.
+    /// chat.
     pub fn remove(&mut self, chat: &str) -> Option<(usize, Chat)> {
         let i = self.chats.iter().position(|c| c.id == chat)?;
         let gone = self.chats.remove(i);
@@ -613,20 +815,13 @@ impl Store {
         Some((i, gone))
     }
 
-    /// Undo: the removed chat back where it was, exactly as it was.
-    pub fn restore(&mut self, at: usize, chat: Chat) {
-        if self.get(&chat.id).is_none() {
-            self.gone.retain(|g| !chat.lines.iter().any(|l| *g == format!("{}/{}", chat.id, l.id)));
-            self.chats.insert(at.min(self.chats.len()), chat);
-        }
-    }
-
-    /// A removed chat's saved files that no chat left uses, by file name (they all live in one folder, named by their
-    /// sha256, so the same file sent twice is shared).
+    /// A removed chat's saved files (its messages' and its pick) that no chat left uses, by file name (they all live
+    /// in one folder, named by their sha256, so the same file sent twice is shared).
     pub fn unused_files(&self, gone: &Chat) -> Vec<String> {
         let file = |m: &Media| Path::new(&m.path).file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
-        let used: std::collections::HashSet<String> = self.chats.iter().flat_map(|c| &c.lines).flat_map(|l| &l.media).map(file).collect();
-        let mut out: Vec<String> = gone.lines.iter().flat_map(|l| &l.media).map(file).filter(|f| !f.is_empty() && !used.contains(f)).collect();
+        let all = |c: &Chat| c.lines.iter().flat_map(|l| &l.media).chain(&c.pick).map(file).collect::<Vec<_>>();
+        let used: std::collections::HashSet<String> = self.chats.iter().flat_map(all).collect();
+        let mut out: Vec<String> = all(gone).into_iter().filter(|f| !f.is_empty() && !used.contains(f)).collect();
         out.sort();
         out.dedup();
         out
@@ -645,10 +840,13 @@ impl Store {
         let c = self.get_mut(chat).filter(|_| v["v"] == 1)?;
         let mine = c.lines.iter().position(|l| l.me && l.id == re)?;
         let now = now();
-        if state == "working" {
+        // Progress, not an answer: queued (behind another job in the chat), then working. Any state this phone doesn't
+        // know is not taken as an answer either (it once showed as a finished "Done.").
+        if !matches!(state, "done" | "failed" | "stopped" | "missed") {
             let l = &mut c.lines[mine];
-            if matches!(l.state.as_str(), "sending" | "sent" | "not_sent") {
-                (l.state, l.since) = ("working".into(), now);
+            let from: &[&str] = if state == "working" { &["sending", "sent", "not_sent", "queued"] } else { &["sending", "sent", "not_sent"] };
+            if matches!(state, "working" | "queued") && from.contains(&l.state.as_str()) {
+                (l.state, l.since) = (state.into(), now);
             }
             return None;
         }
@@ -676,7 +874,8 @@ impl Store {
             return None;
         }
         c.unread += 1;
-        Some((c.id.clone(), label(c), shown))
+        // a chat deleted a moment ago keeps what comes (Undo brings it back with it), without a notification
+        (c.deleted == 0).then(|| (c.id.clone(), label(c), shown))
     }
 
     /// The PC's read receipt for one of my messages: only ever moves forward (delivered, then read); a receipt for a
@@ -746,7 +945,8 @@ impl Store {
             return None;
         }
         c.unread += 1;
-        Some((c.id.clone(), label(c), shown))
+        // a chat deleted a moment ago keeps what comes (Undo brings it back with it), without a notification
+        (c.deleted == 0).then(|| (c.id.clone(), label(c), shown))
     }
 }
 

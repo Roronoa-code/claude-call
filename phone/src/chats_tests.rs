@@ -179,30 +179,37 @@ fn answers_split_into_blocks() {
 }
 
 #[test]
-fn delete_undo_and_late_reply() {
+fn delete_undo_keeps_late_replies_and_purge_frees_files() {
     let (mut s, c, m) = store();
     let pic = |path: &str| Media { path: path.into(), state: "ready".into(), ..Media::default() };
     s.get_mut(&c).unwrap().lines[0].media = vec![pic("/m/shared.jpg"), pic("/m/only.jpg")];
+    s.get_mut(&c).unwrap().pick = Some(pic("/m/picked.jpg"));
     let other = s.new_chat("codex", None);
     let m2 = s.add_mine(&other, "hi", Some(pic("/other/spelling/shared.jpg"))).unwrap();
     s.apply_reply(&reply(&c, &m, "working", "", 1, 1), None);
-    let before = s.clone();
 
-    let (at, gone) = s.remove(&c).unwrap();
-    assert_eq!((at, s.chats.len(), s.get(&c)), (0, 1, None));
-    assert_eq!(s.unused_files(&gone), vec!["only.jpg".to_string()], "a file the other chat uses stays");
-    assert!(s.remove(&c).is_none());
-    // the PC answers the deleted (busy) chat late: dropped, nothing comes back
+    assert!(s.delete(&c, 1000));
+    assert!(!s.delete(&c, 2000), "once");
+    assert_eq!(s.undoable().unwrap().id, c);
+    // the PC answers while Undo is still up: kept (no notification), and back with Undo
     assert!(s.apply_reply(&reply(&c, &m, "done", "late", 1, 1), None).is_none());
-    assert!(s.apply_reply(&reply(&c, &m, "working", "", 1, 1), None).is_none());
-    assert!(s.get(&c).is_none() && s.chats.len() == 1);
+    assert!(s.undelete(&c));
+    assert_eq!(s.get(&c).unwrap().lines[1].text, "late");
+    assert_eq!(s.get(&c).unwrap().unread, 1);
 
-    s.restore(at, gone.clone());
-    assert_eq!(s, before, "undo puts it back exactly, in its place");
-    s.restore(at, gone);
-    assert_eq!(s.chats.len(), 2, "never twice");
-    // once back, its replies land again
-    assert!(s.apply_reply(&reply(&c, &m, "done", "back", 1, 1), None).is_some());
+    // two deletes in a row: each keeps its own time; the first going for good leaves the second undoable
+    assert!(s.delete(&c, 1000) && s.delete(&other, 4000));
+    assert_eq!(s.undoable().unwrap().id, other, "Undo brings back the newest");
+    let gone = s.purge(999);
+    assert!(gone.is_empty(), "not before its time");
+    let gone = s.purge(1000);
+    assert_eq!(gone.len(), 1);
+    assert_eq!((s.get(&c), s.undoable().map(|c| c.id.clone())), (None, Some(other.clone())));
+    assert_eq!(s.unused_files(&gone[0]), vec!["only.jpg".to_string(), "picked.jpg".to_string()], "a file the other chat uses stays");
+    // gone for good: its replies are dropped
+    assert!(s.apply_reply(&reply(&c, &m, "done", "later", 1, 1), None).is_none());
+    assert!(s.get(&c).is_none());
+    assert!(s.undelete(&other));
     assert!(s.apply_reply(&reply(&other, &m2, "done", "ok", 1, 1), None).is_some());
 }
 
@@ -249,7 +256,7 @@ fn a_photo_goes_up_first_then_the_signed_message_carries_it() {
     let l = &s.get(&c2).unwrap().lines[0];
     assert_eq!(v["sig"], sign("k", &c2, &m, "codex", None, l.at, "", l.media.first()).as_str());
     s.sent(&c2, &m, false);
-    assert_eq!(s.retry(&c2), Some(m.clone()));
+    assert_eq!(s.retry(&c2, "", true), Some(m.clone()));
     assert!(s.to_upload(&c2, &m).is_some(), "a retry uploads again");
     assert!(s.downloads().is_empty(), "my own file is never fetched");
     let m2 = s.add_mine(&c, &"\"".repeat(5000), Some(Media::picked(b"abc", "video/webm").unwrap())).unwrap();
@@ -270,8 +277,8 @@ fn body_fits_at_the_cap_and_retry_resends_the_same() {
     let m = s.add_mine(&c, "retry me", None).unwrap();
     let first = s.body(&c, &m, "k");
     s.sent(&c, &m, false);
-    assert_eq!(status(s.get(&c).unwrap(), now()).1, "retry");
-    assert_eq!(s.retry(&c), Some(m.clone()));
+    assert_eq!(unsent(s.get(&c).unwrap().lines.last().unwrap(), now()), "waiting");
+    assert_eq!(s.retry(&c, "", true), Some(m.clone()));
     assert_eq!(s.body(&c, &m, "k"), first);
     assert!(s.add_mine(&c, "  ", None).is_none());
 }
@@ -341,7 +348,7 @@ fn an_ask_opens_its_own_thread_once() {
     let m = s.add_mine("ask-r1", "Blue 💙", None).unwrap();
     let v: Value = serde_json::from_str(&s.body("ask-r1", &m, "k").unwrap()).unwrap();
     assert_eq!((v["agent"].as_str(), v["model"].is_null(), v["chat"].as_str()), (Some("claude"), true, Some("ask-r1")));
-    assert_eq!(ask_state(s.get("ask-r1").unwrap(), now()), "answered");
+    assert_eq!(ask_state(s.get("ask-r1").unwrap(), now()), "sending", "until the PC takes it");
     assert_eq!(s.get("ask-r1").unwrap().title, "Wéather app ☀️", "the title stays the task's");
     let got = s.apply_reply(&reply("ask-r1", &m, "done", "Got it.", 1, 1), None).unwrap();
     assert_eq!((got.1.as_str(), got.2.as_str()), ("Wéather app ☀️", "Got it."));
@@ -357,9 +364,11 @@ fn a_failed_or_unsent_answer_leaves_the_question_waiting() {
     s.apply_note(&note("ask-r1", "r1", "ask", &["Yes"], "Ship it?", 1, 1), None);
     let m = s.add_mine("ask-r1", "Yes", None).unwrap();
     s.sent("ask-r1", &m, false);
-    assert_eq!(ask_state(s.get("ask-r1").unwrap(), now()), "waiting", "not sent");
-    s.retry("ask-r1");
+    s.chats[0].lines[1].first -= AUTO_FOR;
+    assert_eq!(ask_state(s.get("ask-r1").unwrap(), now()), "waiting", "not sent, for good");
+    s.retry("ask-r1", "", true);
     s.sent("ask-r1", &m, true);
+    s.apply_receipt(&receipt("ask-r1", &m, "delivered"));
     assert_eq!(ask_state(s.get("ask-r1").unwrap(), now()), "answered");
     s.apply_reply(&reply("ask-r1", &m, "failed", "I couldn't get the photo you sent. Send it again.", 1, 1), None);
     assert_eq!(ask_state(s.get("ask-r1").unwrap(), now()), "waiting", "the PC couldn't take it");
@@ -432,14 +441,15 @@ fn a_deleted_thread_stays_deleted_and_undo_brings_it_back() {
     s.apply_note(&ask, None);
     s.apply_note(&note("updates", "n1", "note", &[], "Built.", 1, 1), None);
     let before = s.clone();
-    let (at, gone) = s.remove("ask-r1").unwrap();
+    assert!(s.delete("ask-r1", 1));
+    s.undelete("ask-r1");
+    assert_eq!(s, before, "undo puts it back exactly");
+    s.delete("ask-r1", 1);
+    assert_eq!(s.purge(1).len(), 1);
     // its last part and a resend of the whole note arrive late: dropped, the thread doesn't come back
     assert!(s.apply_note(&note("ask-r1", "r1", "ask", &["Yes"], "!", 2, 2), None).is_none());
     assert!(s.apply_note(&ask, None).is_none());
     assert!(s.get("ask-r1").is_none());
-    s.restore(at, gone);
-    assert_eq!(s, before, "undo puts it back exactly");
-    assert!(s.apply_note(&note("ask-r1", "r1", "ask", &["Yes"], "!", 2, 2), None).is_some(), "once back, its notes land again");
     // updates: the old notes' replays are dropped, a new update opens the thread again
     s.remove("updates").unwrap();
     assert!(s.apply_note(&note("updates", "n1", "note", &[], "Built.", 1, 1), None).is_none());
@@ -447,7 +457,7 @@ fn a_deleted_thread_stays_deleted_and_undo_brings_it_back() {
     assert_eq!(s.get("updates").unwrap().lines.len(), 1);
     // my own chats leave no trace
     s.remove(&mine).unwrap();
-    assert_eq!(s.gone, vec!["updates/n1".to_string()]);
+    assert_eq!(s.gone, vec!["ask-r1/r1".to_string(), "updates/n1".to_string()]);
 }
 
 fn receipt(chat: &str, re: &str, state: &str) -> Value {
@@ -510,20 +520,22 @@ fn receipts_step_the_status_forward_only() {
     assert_eq!(Store::load(&path).unwrap().get(&c).unwrap().lines[0].seen, "read");
     std::fs::remove_file(&path).unwrap();
     let old: Store = serde_json::from_str(r#"{"chats":[{"id":"c1","lines":[{"id":"m1","me":true,"state":"sent"}]}]}"#).unwrap();
-    assert_eq!(status(&old.chats[0], now()), ("Sent", ""));
+    assert_eq!(status(&old.chats[0], now()), ("Sent · the PC hasn't picked it up yet", ""), "no receipt for long");
 }
 
 #[test]
 fn a_receipt_proves_a_failed_send_went() {
     let (mut s, c, m) = store();
     s.sent(&c, &m, false);
-    assert_eq!(status(s.get(&c).unwrap(), now()), ("Failed · Tap to retry", "retry"));
+    assert_eq!(status(s.get(&c).unwrap(), now()), ("Waiting for connection…", ""));
     assert!(s.apply_receipt(&receipt(&c, &m, "delivered")));
     assert_eq!(status(s.get(&c).unwrap(), now()), ("Delivered", ""));
-    assert_eq!(s.retry(&c), None, "nothing to retry");
-    // a send that never finished shows as failed after a while
+    assert_eq!(s.retry(&c, "", true), None, "nothing to retry");
+    // a send that never finished is retried after a while, and fails once AUTO_FOR is over
     let (mut s, c, _) = store();
     s.chats[0].lines[0].since -= 16_000;
+    assert_eq!(status(s.get(&c).unwrap(), now()), ("Waiting for connection…", ""));
+    s.chats[0].lines[0].first -= AUTO_FOR;
     assert_eq!(status(s.get(&c).unwrap(), now()), ("Failed · Tap to retry", "retry"));
     // only my latest message carries the line
     let m2 = s.add_mine(&c, "again", None).unwrap();
@@ -544,4 +556,196 @@ fn composed_word_goes_where_the_cursor_is() {
     assert_eq!(composed("hello world", "big ", 6), "hello big world");
     assert_eq!(composed("héllo", "x", 2), "hxéllo"); // inside é: back to its start
     assert_eq!(composed("hi", "", 99), "hi");
+}
+
+#[test]
+fn thinking_only_once_the_pc_works_and_queued_is_not_an_answer() {
+    let (mut s, c, m) = store();
+    let chat = |s: &Store| s.get(&c).unwrap().clone();
+    s.sent(&c, &m, true);
+    assert!(!waiting(&chat(&s)), "sent is not thinking");
+    assert_eq!(think(&chat(&s), now()), "");
+    assert!(s.apply_reply(&reply(&c, &m, "queued", "", 1, 1), None).is_none());
+    assert_eq!((chat(&s).lines.len(), chat(&s).lines[0].state.as_str()), (1, "queued"), "queued: no Done. line");
+    assert_eq!(status(&chat(&s), now()), ("Queued", "stop"));
+    assert_eq!(think(&chat(&s), now()), "Queued");
+    assert!(!waiting(&chat(&s)));
+    assert!(s.apply_reply(&reply(&c, &m, "thinking-hard", "", 1, 1), None).is_none(), "unknown state");
+    assert_eq!(chat(&s).lines.len(), 1, "an unknown state is never a final line");
+    s.apply_reply(&reply(&c, &m, "working", "", 1, 1), None);
+    assert!(waiting(&chat(&s)));
+    assert_eq!(think(&chat(&s), now()), "Thinking");
+    s.chats[0].lines[0].since -= 3 * 60_000;
+    assert_eq!(think(&chat(&s), now()), "Thinking · 3 min");
+    // a working message never goes back to queued
+    s.apply_reply(&reply(&c, &m, "queued", "", 1, 1), None);
+    assert_eq!(chat(&s).lines[0].state, "working");
+}
+
+#[test]
+fn sent_but_not_picked_up_and_receiving_a_reply() {
+    let (mut s, c, m) = store();
+    s.sent(&c, &m, true);
+    s.chats[0].lines[0].since -= 61_000;
+    assert_eq!(status(&s.chats[0], now()), ("Sent · the PC hasn't picked it up yet", ""));
+    s.apply_receipt(&receipt(&c, &m, "delivered"));
+    assert_eq!(status(&s.chats[0], now()), ("Delivered", ""));
+    s.apply_reply(&reply(&c, &m, "working", "", 1, 1), None);
+    s.apply_reply(&reply(&c, &m, "done", "first half ", 1, 2), None);
+    assert_eq!(status(&s.chats[0], now()), ("Delivered", "stop"), "a part just came: no notice yet");
+    assert!(s.stalled(now()).is_empty());
+    s.chats[0].lines[1].at -= 20_000;
+    assert_eq!(status(&s.chats[0], now()), ("Receiving reply…", "stop"));
+    assert_eq!(s.stalled(now()), vec![(c.clone(), m.clone())], "the PC is asked again");
+    s.apply_reply(&reply(&c, &m, "done", "second", 2, 2), None);
+    assert_eq!(status(&s.chats[0], now()), ("", ""));
+    assert!(s.stalled(now()).is_empty());
+}
+
+#[test]
+fn unsent_messages_retry_by_themselves_then_fail() {
+    let (mut s, c, m) = store();
+    s.sent(&c, &m, false);
+    let t = now();
+    assert_eq!(status(&s.chats[0], t), ("Waiting for connection…", ""));
+    assert!(s.due(t).is_empty(), "not straight away");
+    assert_eq!(s.due(t + 15_000), vec![(c.clone(), m.clone())]);
+    assert_eq!(s.retry(&c, &m, false), Some(m.clone()));
+    assert_eq!(s.chats[0].lines[0].tries, 1);
+    s.sent(&c, &m, false);
+    assert!(s.due(now() + 15_000).is_empty(), "backs off");
+    assert_eq!(s.due(now() + 30_000).len(), 1);
+    // past AUTO_FOR from the first send: failed, tap to retry; a tap starts over
+    s.chats[0].lines[0].first -= AUTO_FOR;
+    assert_eq!(status(&s.chats[0], now()), ("Failed · Tap to retry", "retry"));
+    assert!(s.due(now() + 600_000).is_empty());
+    s.retry(&c, "", true);
+    s.sent(&c, &m, false);
+    assert_eq!(status(&s.chats[0], now()), ("Waiting for connection…", ""));
+    // an earlier message is retried by its own id
+    let m2 = s.add_mine(&c, "second", None).unwrap();
+    s.sent(&c, &m2, true);
+    assert_eq!(s.retry(&c, &m, true), Some(m.clone()));
+    assert_eq!(s.retry(&c, &m2, true), None, "it went");
+    // a file from before these fields: first falls back to its time
+    let old: Store = serde_json::from_str(r#"{"chats":[{"id":"c1","lines":[{"id":"m1","me":true,"state":"not_sent","at":1,"since":1}]}]}"#).unwrap();
+    assert_eq!(status(&old.chats[0], now()), ("Failed · Tap to retry", "retry"));
+}
+
+#[test]
+fn drafts_and_picks_belong_to_their_chat_and_go_with_the_send() {
+    let (mut s, a, _) = store();
+    let b = s.new_chat("codex", None);
+    let pic = Media { path: "/m/p.jpg".into(), ..Media::picked(b"abc", "image/jpeg").unwrap() };
+    s.set_draft(&a, "half a thought");
+    assert!(s.set_pick(&a, Some(pic.clone())));
+    assert_eq!((s.get(&b).unwrap().draft.as_str(), s.get(&b).unwrap().pick.is_none()), ("", true), "B's box stays empty");
+    assert!(s.uses("/m/p.jpg"));
+    let path = std::env::temp_dir().join(format!("callme-drafts-{}.json", std::process::id()));
+    s.save(&path).unwrap();
+    let back = Store::load(&path).unwrap();
+    std::fs::remove_file(&path).unwrap();
+    assert_eq!(back.get(&a).unwrap().draft, "half a thought", "survives the app being closed");
+    assert_eq!(back.get(&a).unwrap().pick, Some(pic.clone()));
+    let msg = s.send(&a, "half a thought, done").unwrap();
+    let chat = s.get(&a).unwrap();
+    assert_eq!((chat.draft.as_str(), chat.pick.is_none()), ("", true));
+    let l = chat.lines.iter().find(|l| l.id == msg).unwrap();
+    assert_eq!((l.text.as_str(), l.media[0].path.as_str()), ("half a thought, done", "/m/p.jpg"));
+    assert!(s.send(&b, "  ").is_none(), "nothing to send: nothing changes");
+}
+
+#[test]
+fn only_empty_chats_of_mine_go_quietly() {
+    let mut s = Store::default();
+    let empty = s.new_chat("claude", Some("opus-5.5"));
+    let drafted = s.new_chat("claude", None);
+    s.set_draft(&drafted, "later");
+    s.apply_note(&note("ask-q", "q", "ask", &[], "?", 1, 1), None);
+    let ask = "ask-q".to_string();
+    s.get_mut(&ask).unwrap().lines.clear();
+    assert!(s.drop_empty(&empty));
+    assert!(!s.drop_empty(&drafted), "a draft keeps it");
+    assert!(!s.drop_empty(&ask), "a thread the PC started stays");
+    let (mut s, c, _) = store();
+    assert!(!s.drop_empty(&c), "it has a message");
+    assert!(s.gone.is_empty());
+}
+
+#[test]
+fn an_answer_shows_as_sending_until_the_pc_takes_it() {
+    let mut s = Store::default();
+    s.apply_note(&note("ask-r", "r", "ask", &["Yes"], "Ship it?", 1, 1), None);
+    let m = s.add_mine("ask-r", "Yes", None).unwrap();
+    let st = |s: &Store| ask_state(s.get("ask-r").unwrap(), now());
+    assert_eq!(st(&s), "sending");
+    s.sent("ask-r", &m, true);
+    assert_eq!(st(&s), "sending", "sent, not yet taken");
+    s.apply_receipt(&receipt("ask-r", &m, "delivered"));
+    assert_eq!(st(&s), "answered");
+    // never acknowledged (a PC without receipts): answered after a minute, not stuck
+    let mut s2 = Store::default();
+    s2.apply_note(&note("ask-r", "r", "ask", &["Yes"], "Ship it?", 1, 1), None);
+    let m2 = s2.add_mine("ask-r", "Yes", None).unwrap();
+    s2.sent("ask-r", &m2, true);
+    s2.chats[0].lines[1].since -= 61_000;
+    assert_eq!(st(&s2), "answered");
+    // failed for good: the choices come back
+    s2.chats[0].lines[1].state = "not_sent".into();
+    assert_eq!(st(&s2), "sending", "still retrying by itself");
+    s2.chats[0].lines[1].first -= AUTO_FOR;
+    assert_eq!(st(&s2), "waiting");
+}
+
+#[test]
+fn copy_plain_text_and_code_exactly() {
+    let (mut s, c, m) = store();
+    let answer = "Run **this**:\n\n```sh\n  cargo  build\t--release\n```\n\n- see [docs](https://a.dev) and `x`\n  - nested";
+    s.apply_reply(&reply(&c, &m, "done", answer, 1, 1), None);
+    let chat = s.get(&c).unwrap();
+    assert_eq!(copy_text(chat, &m, true, 0).unwrap(), "hello");
+    assert_eq!(copy_text(chat, &m, false, 1).unwrap(), "  cargo  build\t--release", "code: exact whitespace");
+    assert_eq!(copy_text(chat, &m, false, 0).unwrap(), "Run this:\n\n  cargo  build\t--release\n\n• see docs (https://a.dev) and x\n\n  • nested");
+    assert!(!copy_text(chat, &m, false, 0).unwrap().contains('\u{200b}'));
+    assert!(copy_text(chat, "nope", false, 0).is_none());
+    assert!(has_link("see https://a.dev") && has_link("[a](b)") && !has_link("`https://in.code`") && !has_link("plain"));
+}
+
+#[test]
+fn room_counts_the_signed_payload() {
+    assert_eq!(room("hi"), 2798);
+    assert_eq!(room(&"x".repeat(2800)), 0);
+    assert!(room(&"x".repeat(2801)) < 0);
+    assert_eq!(room(&"é".repeat(1400)), 0, "bytes, not characters");
+    // quotes grow when escaped: the signed message is the limit
+    assert!(room(&"\"".repeat(1800)) < 0);
+    let (mut s, c, _) = store();
+    let fits = "\"".repeat(1749);
+    assert!(room(&fits) >= 0);
+    let m = s.add_mine(&c, &fits, None).unwrap();
+    assert_eq!(s.get(&c).unwrap().lines.iter().find(|l| l.id == m).unwrap().text, fits, "what room allows is sent whole");
+}
+
+#[test]
+fn failed_media_can_be_fetched_again() {
+    let (mut s, c, m) = store();
+    let mut v = reply(&c, &m, "done", "", 1, 1);
+    v["att"] = att();
+    s.apply_reply(&v, None);
+    let url = s.downloads()[0].url.clone();
+    s.media_done(&url, None);
+    assert!(s.downloads().is_empty());
+    assert!(s.refetch(&url));
+    assert_eq!(s.downloads().len(), 1);
+    assert!(!s.refetch(&url), "only a failed one");
+}
+
+#[test]
+fn send_again_makes_a_new_message_with_the_same_text() {
+    let (mut s, c, m) = store();
+    s.apply_reply(&reply(&c, &m, "failed", "That didn't finish.", 1, 1), None);
+    let m2 = s.again(&c, &m).unwrap();
+    assert_ne!(m2, m);
+    let l = s.get(&c).unwrap().lines.last().unwrap();
+    assert_eq!((l.text.as_str(), l.state.as_str(), l.me), ("hello", "sending", true));
 }
