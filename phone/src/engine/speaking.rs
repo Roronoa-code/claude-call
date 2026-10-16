@@ -65,7 +65,7 @@ impl Engine {
                 if from == 0 {
                     return false;
                 }
-                break; // a later 404 = the line was replaced
+                break;
             }
             let rate: u32 = r.headers().get("x-sample-rate").and_then(|v| v.to_str().ok()?.parse().ok()).unwrap_or(24_000);
             let last = r.headers().get("x-done").is_some_and(|v| v == "1");

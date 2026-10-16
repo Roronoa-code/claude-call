@@ -151,11 +151,6 @@ export component Composer inherits Rectangle {
                     }
                     // A sent or emptied field keeps nothing selected.
                     changed text => { if (self.text == "") { self.set-selection-offsets(0, 0); } }
-                    // Sends what is on screen: the keyboard's word in progress goes in where it stands (inbox.rs).
-                    // Then the keyboard's side of the field is emptied too (chat.slint, fix/1015), which also takes
-                    // away Android's caret handle left hanging under an emptied field.
-                    // Emptied only once the message is kept to send; if it couldn't be, it all stays (thread.slint
-                    // says so).
                     function send-all() {
                         if (root.can-send && Chats.send-composed(root.draft, self.preedit-text, self.cursor-position-byte-offset)) {
                             root.draft = "";

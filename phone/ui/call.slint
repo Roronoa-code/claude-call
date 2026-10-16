@@ -632,7 +632,6 @@ export component CallScreen inherits Window {
         animate opacity { duration: Call.placed && !root.closed ? 180ms : 500ms; easing: T.close; }
     }
 
-    // Focus once the field has grown into view (Android won't raise the keyboard for a field still clipped away).
     focusSoon := Timer { interval: 220ms; running: false; triggered => { self.running = false; if (root.typing && Call.look == 0) { input.focus(); } } }
     changed typing => { if (self.typing) { focusSoon.running = true; } else if (Call.look == 0) { input.clear-focus(); } }
     // A new caption crossfades in over the old one; the same caption (more words said) updates in place.

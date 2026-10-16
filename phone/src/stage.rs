@@ -1,8 +1,3 @@
-//! PREVIEW (branch preview/home-stage, not for main): the world Clawd and Null stand in on the home screen, one of
-//! four stages picked at run time with `adb shell setprop debug.callme.stage <n>` and a restart of the app (0, or
-//! unset: the stage as it shipped). Each stage is a backdrop (ui/stage/<name>.png, drawn by art/live3d/stages.py,
-//! which has these same numbers) plus how the shaders light the pair in it: their scale, the key light and its cast
-//! shadow, and a floor that mirrors them.
 use crate::cast::{Uniforms, Who};
 
 pub struct Stage {

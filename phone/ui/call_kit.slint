@@ -278,7 +278,6 @@ export component Sheets inherits Rectangle {
             }
         }
     }
-    // Focus once the field has grown into view (Android won't raise the keyboard for a field still clipped away).
     focusSoon := Timer { interval: 220ms; running: false; triggered => { self.running = false; if (Call.typing) { input.focus(); } } }
     property <bool> typing: Call.typing;
     changed typing => { if (self.typing) { focusSoon.running = true; } else { input.clear-focus(); } }

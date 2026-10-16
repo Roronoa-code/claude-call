@@ -5,8 +5,6 @@
 export struct Cap { key: int, label: string, text: string, lit: string, size: int, tone: string, orb: bool, said: string, fresh: string, rest: string }
 // A transcript row.
 export struct Msg { me: bool, text: string, lit: string, said: string, fresh: string, rest: string }
-// Round 2 (preview/call-screen-2) fades each word in as it is said: `said` (with a space after it), the newest word `fresh`, then
-// `rest`, the words not yet said (with a space before it).
 
 export global T {
     out property <color> bg: #111214;

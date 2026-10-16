@@ -92,10 +92,6 @@ pub(super) fn fetch_media() {
     }
 }
 
-/// Every second: my messages that didn't go are tried again by themselves (with a growing wait), and the PC is asked
-/// again about an answer missing a part, or my answer to a question it hasn't taken (the same signed message: the PC
-/// replays its recorded reply, or takes it now; it never runs anything twice). Called by the home screen and by the
-/// listener (net.rs), so a Reply sent from a notification is retried with the app closed.
 pub fn auto(env: &mut JNIEnv, ctx: &JObject) -> Result<()> {
     if crate::fake_chat::on() {
         return Ok(());
