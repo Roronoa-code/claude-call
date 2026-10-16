@@ -17,4 +17,4 @@ tokio = { version = "1", features = ["full"] }
 strip = true
 
 [workspace]
-members = ["phone"]
+members = ["phone", "phone/hosttest"]

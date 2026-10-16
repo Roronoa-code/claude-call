@@ -1043,6 +1043,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "hosttest"
+version = "0.1.0"
+dependencies = [
+ "hmac",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "htmlparser"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
