@@ -239,7 +239,7 @@ export component HomeScreen inherits Window {
     Rectangle {
         background: #000000;
         opacity: Chats.picker ? 0.55 : 0;
-        animate opacity { duration: Chats.picker ? 300ms : Chats.current != "" ? 0ms : 220ms; easing: T.out; }
+        animate opacity { duration: Chats.picker ? 310ms : Chats.current != "" ? 0ms : 270ms; easing: T.out; }
     }
     if Chats.picker: TouchArea {
         clicked => { Chats.picker = false; }
@@ -247,19 +247,49 @@ export component HomeScreen inherits Window {
 
     Rectangle {
         opacity: Chats.current == "" ? 1 : 0;
-        Morph {
-            open: Chats.picker;
-            panel: #1c1c20;
-            fx: root.width - 60px;
-            fy: Home.sat + 6px;
-            fsize: 48px;
-            tw: root.width - 24px;
-            tx: 12px;
-            th: 166px;
-            ty: Home.sat + 58px;
-            radius: 26px;
-            face: Icons.plus;
-            NewChat { width: parent.width; height: parent.height; }
+        // Unfold: the panel opens down from under the header at full size; the + turns into ×.
+        Rectangle {
+            property <float> fold: Chats.picker ? 1 : 0;
+            animate fold { duration: Chats.picker ? 385ms : 255ms; delay: Chats.picker ? 0ms : 85ms; easing: Chats.picker ? T.spring : T.close; }
+            visible: Chats.picker || self.fold > 0.002;
+            x: 12px;
+            y: Home.sat + 58px;
+            width: root.width - 24px;
+            height: 166px * self.fold;
+            border-radius: 26px;
+            background: #1c1c20;
+            clip: true;
+            TouchArea { }
+            NewChat { y: 0; width: parent.width; height: 166px; shown: Chats.picker; }
+        }
+        Rectangle {
+            property <float> k: Chats.picker ? 1 : 0;
+            animate k { duration: 340ms; easing: Chats.picker ? T.spring : T.out; }
+            visible: Chats.picker || self.k > 0.002;
+            x: root.width - 60px;
+            y: Home.sat + 2px;
+            width: 44px;
+            height: 44px;
+            border-radius: 22px;
+            background: Ink.me.mix(#2a2a30, 1 - min(1, self.k));
+            Icon {
+                d: Icons.plus;
+                x: 10px;
+                y: 10px;
+                stroke: #fff8f5;
+                transform-origin: { x: self.width / 2, y: self.height / 2 };
+                transform-rotation: 45deg * parent.k;
+            }
+            TouchArea {
+                x: -2px;
+                y: -2px;
+                width: 48px;
+                height: 48px;
+                enabled: Chats.picker;
+                accessible-role: button;
+                accessible-label: "Close new chat";
+                clicked => { Chats.picker = false; }
+            }
         }
     }
 }

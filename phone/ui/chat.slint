@@ -159,14 +159,28 @@ export component BackButton inherits IconButton {
 }
 
 export component NewChat {
+    in property <bool> shown: true;
+    // One clock for the whole unfold, so the characters can be staggered (ms since opening or closing began).
+    property <float> clock: root.shown ? 1 : 0;
+    animate clock { duration: root.shown ? 620ms : 340ms; easing: linear; }
+    property <float> opened-ms: root.clock * 620;
+    property <float> closed-ms: (1 - root.clock) * 340;
+    pure function out(u: float) -> float { return 1 - Math.pow(1 - clamp(u, 0, 1), 4); }
     VerticalLayout {
         padding: 10px;
         padding-top: 14px;
         spacing: 6px;
-        Text { x: 8px; text: "New chat"; font-size: 14px; font-weight: 600; color: Ink.muted; }
+        Text {
+            x: 8px;
+            text: "New chat";
+            font-size: 14px;
+            font-weight: 600;
+            color: Ink.muted;
+            opacity: root.shown ? root.out((root.opened-ms - 75) / 185) : 1 - root.out(root.closed-ms / 120);
+        }
         HorizontalLayout {
             spacing: 4px;
-            for a in [
+            for a[i] in [
                 { face: "haiku", name: "Haiku", agent: "claude", model: "haiku-5.5" },
                 { face: "sonnet", name: "Sonnet", agent: "claude", model: "sonnet-5.5" },
                 { face: "opus", name: "Opus", agent: "claude", model: "opus-5.5" },
@@ -176,15 +190,24 @@ export component NewChat {
                 border-radius: 18px;
                 background: tile.pressed ? #ffffff12 : #ffffff00;
                 animate background { duration: 160ms; easing: T.out; }
-                Actor { y: -8px; height: 96px; face: a.face; k: a.face == "null" ? 0.3 : 0.33; }
-                Text {
-                    y: 90px;
-                    width: parent.width;
-                    text: a.name;
-                    font-size: 15px;
-                    font-weight: 600;
-                    color: Ink.text;
-                    horizontal-alignment: center;
+                // Characters drop in one after another as the panel unfolds, and lift out in reverse.
+                property <float> drop: clamp((root.opened-ms - 100 - i * 46) / 285, 0, 1);
+                property <float> lift: clamp((root.closed-ms - (3 - i) * 17) / 102, 0, 1);
+                Rectangle {
+                    y: root.shown ? -18px * Math.pow(1 - parent.drop, 3.5) : -10px * root.out(parent.lift);
+                    opacity: root.shown ? root.out(parent.drop * 2.2) : 1 - root.out(parent.lift);
+                    transform-origin: { x: self.width / 2, y: self.height };
+                    transform-scale-y: root.shown ? 1 - 0.08 * Math.sin(180deg * clamp((parent.drop - 0.35) / 0.4, 0, 1)) : 1;
+                    Actor { y: -8px; height: 96px; face: a.face; k: a.face == "null" ? 0.3 : 0.33; }
+                    Text {
+                        y: 90px;
+                        width: parent.width;
+                        text: a.name;
+                        font-size: 15px;
+                        font-weight: 600;
+                        color: Ink.text;
+                        horizontal-alignment: center;
+                    }
                 }
                 tile := TouchArea {
                     clicked => {
