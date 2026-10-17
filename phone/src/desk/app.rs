@@ -34,7 +34,10 @@ fn fonts() {
 
 pub fn desktop_main() {
     fonts();
-    let select = |gl: fn(BackendSelector) -> BackendSelector| gl(BackendSelector::new().backend_name("winit".into()).renderer_name("skia-opengl".into())).select();
+    let select = |gl: fn(BackendSelector) -> BackendSelector| gl(BackendSelector::new().backend_name("winit".into()).renderer_name("skia-opengl".into())
+        .with_winit_window_attributes_hook(|attributes| attributes.with_window_icon(Some(
+            slint::winit_030::winit::window::Icon::from_rgba(include_bytes!("../../ui/icon/claude-call.rgba").to_vec(), 64, 64).expect("64x64 window icon")
+        )))).select();
     if select(|b| b.require_opengl_es_with_version(3, 0)).is_err() {
         select(|b| b.require_opengl_with_version(3, 3)).expect("no OpenGL 3.3 or ES 3.0");
     }

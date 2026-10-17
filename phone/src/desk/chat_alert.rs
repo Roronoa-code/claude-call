@@ -12,8 +12,14 @@ const APP: &str = "ClaudeCall.Desktop";
 // An unpackaged app can only toast under an ID registered in the user's classes.
 pub fn register() {
     let name: Vec<u16> = crate::desk_os::TITLE.encode_utf16().chain([0]).collect();
+    let icon = crate::android::data_dir().join("claude-call.png");
+    let icon_saved = std::fs::write(&icon, include_bytes!("../../ui/icon/claude-call.png")).is_ok();
+    let icon: Vec<u16> = icon.to_string_lossy().encode_utf16().chain([0]).collect();
     unsafe {
         let _ = RegSetKeyValueW(HKEY_CURRENT_USER, w!(r"Software\Classes\AppUserModelId\ClaudeCall.Desktop"), w!("DisplayName"), REG_SZ.0, Some(name.as_ptr().cast()), (name.len() * 2) as u32);
+        if icon_saved {
+            let _ = RegSetKeyValueW(HKEY_CURRENT_USER, w!(r"Software\Classes\AppUserModelId\ClaudeCall.Desktop"), w!("IconUri"), REG_SZ.0, Some(icon.as_ptr().cast()), (icon.len() * 2) as u32);
+        }
         let _ = SetCurrentProcessExplicitAppUserModelID(&HSTRING::from(APP));
     }
 }
