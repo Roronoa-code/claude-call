@@ -146,7 +146,7 @@ impl Store {
 
     pub fn due(&self, now: i64) -> Vec<(String, String)> {
         let clock_went_back = |since: i64| since > now;
-        let due = |l: &Line| unsent(l, now) == Unsent::Waiting && (now >= l.since + backoff(l.tries) || clock_went_back(l.since));
+        let due = |l: &Line| !l.mirrored && unsent(l, now) == Unsent::Waiting && (now >= l.since + backoff(l.tries) || clock_went_back(l.since));
         self.chats.iter().filter(|c| c.deleted == 0).flat_map(|c| c.lines.iter().filter(|l| due(l)).map(|l| (c.id.clone(), l.id.clone()))).collect()
     }
 
@@ -154,7 +154,7 @@ impl Store {
         let mut out = vec![];
         for c in self.chats.iter().filter(|c| c.deleted == 0) {
             for l in c.lines.iter().filter(|l| !l.me && l.state == State::Partial && (15_000..30 * 60_000).contains(&(now - l.at))) {
-                if c.lines.iter().any(|m| m.me && m.id == l.id) {
+                if c.lines.iter().any(|m| m.me && !m.mirrored && m.id == l.id) {
                     out.push((c.id.clone(), l.id.clone()));
                 }
             }
@@ -165,7 +165,7 @@ impl Store {
     pub fn unanswered(&self, now: i64) -> Vec<(String, String, i64)> {
         let mut out = vec![];
         for c in self.chats.iter().filter(|c| c.deleted == 0 && ask_state(c, now) == Ask::Sending) {
-            for l in c.lines.iter().filter(|l| l.me && l.state == State::Sent && now - l.since >= 60_000) {
+            for l in c.lines.iter().filter(|l| l.me && !l.mirrored && l.state == State::Sent && now - l.since >= 60_000) {
                 if !c.lines.iter().any(|x| !x.me && x.id == l.id) {
                     out.push((c.id.clone(), l.id.clone(), l.since));
                 }
@@ -219,11 +219,13 @@ impl Store {
     pub fn remove(&mut self, chat: &str) -> Option<(usize, Chat)> {
         let i = self.chats.iter().position(|c| c.id == chat)?;
         let gone = self.chats.remove(i);
-        if gone.kind != Kind::Chat {
+        if gone.kind == Kind::Chat {
+            self.gone.push(format!("{chat}/"));
+        } else {
             self.gone.extend(gone.lines.iter().filter(|l| !l.me).map(|l| format!("{}/{}", gone.id, l.id)));
-            let extra = self.gone.len().saturating_sub(GONE_KEEP);
-            self.gone.drain(..extra);
         }
+        let extra = self.gone.len().saturating_sub(GONE_KEEP);
+        self.gone.drain(..extra);
         Some((i, gone))
     }
 
@@ -262,11 +264,46 @@ impl Store {
         Some(Answered { chat: c, msg, too_long: false })
     }
 
+    pub fn apply_mine(&mut self, v: &Value) -> Option<()> {
+        let id = |s: &str| (1..=40).contains(&s.len()) && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+        let (chat, msg, agent, text, at) = (v["chat"].as_str()?, v["msg"].as_str()?, v["agent"].as_str()?, v["text"].as_str()?, v["ts"].as_i64()?);
+        let model = match v.get("model") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(m)) if m.len() <= 100 && m.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c)) => Some(m.clone()),
+            _ => return None,
+        };
+        let media = match v.get("att") {
+            None => vec![],
+            Some(a) => vec![Media::from(a, 1)?],
+        };
+        if v["v"] != 1 || !id(chat) || !id(msg) || !matches!(agent, "claude" | "codex") || at <= 0
+            || text.len() > MAX_TEXT || (text.trim().is_empty() && media.is_empty()) || self.gone.iter().any(|g| *g == format!("{chat}/")) {
+            return None;
+        }
+        if self.get(chat).is_some_and(|c| c.agent != agent || c.model != model) { return None }
+        if self.get(chat).is_none() {
+            // Ask replies need their original question; do not turn them into ordinary chats.
+            if !chat.starts_with('c') { return None }
+            let title = if text.trim().is_empty() { if media[0].video() { "Video" } else { "Photo" }.into() }
+                else { text.lines().next().unwrap_or("").chars().take(120).collect() };
+            self.chats.push(Chat { id: chat.into(), agent: agent.into(), model, title, ..Chat::default() });
+        }
+        let c = self.get_mut(chat)?;
+        if c.lines.iter().any(|l| l.me && l.id == msg) { return None }
+        c.updated = c.updated.max(at);
+        let line = Line { id: msg.into(), me: true, mirrored: true, text: text.into(), at, since: at, first: at, state: State::Sent, media, ..Line::default() };
+        c.lines.push(line);
+        Some(())
+    }
+
     pub fn apply_reply(&mut self, v: &Value, open: Option<&str>) -> Option<(String, String, String)> {
+        self.reply_at(v, open, now())
+    }
+
+    pub fn reply_at(&mut self, v: &Value, open: Option<&str>, now: i64) -> Option<(String, String, String)> {
         let (chat, re, state) = (v["chat"].as_str()?, v["re"].as_str()?, v["state"].as_str()?);
         let c = self.get_mut(chat).filter(|_| v["v"] == 1)?;
         let mine = c.lines.iter().position(|l| l.me && l.id == re)?;
-        let now = now();
         let state = wire::<State>(state);
         let Some(state @ (State::Done | State::Failed | State::Stopped | State::Missed)) = state else {
             let l = &mut c.lines[mine];
@@ -299,7 +336,7 @@ impl Store {
         l.at = now;
         let shown = shown(l);
         c.lines[mine].state = State::Answered;
-        c.updated = now;
+        c.updated = c.updated.max(now);
         if open == Some(chat) {
             return None;
         }
@@ -341,7 +378,7 @@ impl Store {
         if !ok || self.gone.iter().any(|g| *g == format!("{chat}/{note}")) {
             return None;
         }
-        let now = now();
+        let now = ts;
         if self.get(chat).is_none() {
             let c = Chat { id: chat.into(), agent: "claude".into(), title: title.into(), kind: kind?, asked: ts, updated: now, ..Chat::default() };
             self.chats.push(c);
@@ -361,7 +398,7 @@ impl Store {
         }
         l.at = now;
         let shown = shown(l);
-        c.updated = now;
+        c.updated = c.updated.max(now);
         if open == Some(chat) {
             return None;
         }

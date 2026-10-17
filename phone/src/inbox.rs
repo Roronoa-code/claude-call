@@ -100,24 +100,30 @@ pub(crate) fn saved_draft(chat: &str) -> Option<String> {
 }
 
 
-pub fn reply_arrived(env: &mut JNIEnv, ctx: &JObject, body: &str) -> Result<()> {
-    arrived(env, ctx, body, "reply", chats::reply_signed, Store::apply_reply)
+pub fn mine_arrived(env: &mut JNIEnv, ctx: &JObject, body: &str) -> Result<()> {
+    arrived(env, ctx, body, false, "message", chats::mine_signed, |s, v, _| {
+        s.apply_mine(v);
+        None
+    })
 }
 
-pub fn note_arrived(env: &mut JNIEnv, ctx: &JObject, body: &str) -> Result<()> {
-    arrived(env, ctx, body, "note", chats::note_signed, Store::apply_note)
+pub fn reply_arrived(env: &mut JNIEnv, ctx: &JObject, body: &str, at: i64, notify: bool) -> Result<()> {
+    arrived(env, ctx, body, notify, "reply", chats::reply_signed, |s, v, open| s.reply_at(v, open, at))
+}
+
+pub fn note_arrived(env: &mut JNIEnv, ctx: &JObject, body: &str, notify: bool) -> Result<()> {
+    arrived(env, ctx, body, notify, "note", chats::note_signed, Store::apply_note)
 }
 
 pub fn receipt_arrived(env: &mut JNIEnv, ctx: &JObject, body: &str) -> Result<()> {
-    arrived(env, ctx, body, "receipt", chats::receipt_signed, |s, v, _| {
+    arrived(env, ctx, body, false, "receipt", chats::receipt_signed, |s, v, _| {
         s.apply_receipt(v);
         None
     })
 }
 
-type Apply = fn(&mut Store, &Value, Option<&str>) -> Option<(String, String, String)>;
-
-fn arrived(env: &mut JNIEnv, ctx: &JObject, body: &str, what: &str, signed: fn(&str, &Value) -> bool, apply: Apply) -> Result<()> {
+fn arrived(env: &mut JNIEnv, ctx: &JObject, body: &str, notify: bool, what: &str, signed: fn(&str, &Value) -> bool,
+    apply: impl FnOnce(&mut Store, &Value, Option<&str>) -> Option<(String, String, String)>) -> Result<()> {
     path(env, ctx)?;
     let Ok(v) = serde_json::from_str::<Value>(body) else { return Ok(()) };
     let Some(key) = settings::chat_key(env, ctx)? else { return Ok(()) };
@@ -129,6 +135,7 @@ fn arrived(env: &mut JNIEnv, ctx: &JObject, body: &str, what: &str, signed: fn(&
     let note = update(|s| apply(s, &v, open.as_deref())).flatten();
     changed();
     fetch_media();
+    if !notify { return Ok(()) }
     let Some((chat, name, text)) = note else { return Ok(()) };
     chat_alert::notify(env, ctx, &chat, &name, &text)
 }
@@ -562,4 +569,39 @@ pub fn wire(ui: &HomeScreen) -> Tracker {
     });
     fetch_media();
     Tracker { version: u64::MAX, ..Tracker::default() }
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "requires fresh isolated CALLME_DESK_DATA and CALLME_CONFIG with chatKey test-key"]
+    fn signed_cached_conversation_is_saved_without_notifications() {
+        let dir = PathBuf::from(std::env::var_os("CALLME_DESK_DATA").expect("isolated data directory"));
+        assert!(std::env::var_os("CALLME_CONFIG").is_some());
+        assert!(!dir.join("chats.json").exists(), "never overwrite an existing history fixture");
+        android::with(|env, ctx| {
+            assert_eq!(settings::chat_key(env, ctx)?.as_deref(), Some("test-key"));
+            let message = serde_json::json!({"v":1,"chat":"c1","msg":"m1","agent":"claude","model":"haiku-5.5","ts":1700000000000i64,
+                "text":"héllo 👋","sig":"ab529206c0c5da8e9c12efc38dac2b71aacc25df75a33f8d9c1b230be8b2f44e"});
+            let mut forged = message.clone();
+            forged["text"] = serde_json::json!("forged message");
+            mine_arrived(env, ctx, &forged.to_string())?;
+            assert_eq!(read(|s| s.chats.len()), Some(0));
+            mine_arrived(env, ctx, &message.to_string())?;
+            mine_arrived(env, ctx, &message.to_string())?;
+            let reply = serde_json::json!({"v":1,"chat":"c1","re":"m1","state":"done","text":"héllo 👋","part":1,"parts":1,
+                "sig":"260ceed955ae169bfb04cb73eff4e7d7a7faf95ca2abf61ab69fd69e8f1100be"});
+            reply_arrived(env, ctx, &reply.to_string(), 1700000001000, false)?;
+            Ok(())
+        }).expect("receive path");
+        let saved = Store::load(&dir.join("chats.json")).unwrap();
+        let chat = saved.get("c1").unwrap();
+        assert_eq!(chat.lines.len(), 2);
+        assert!(chat.lines[0].mirrored);
+        assert_eq!(chat.lines[0].state, chats::State::Answered);
+        assert_eq!(chat.lines[1].state, chats::State::Done);
+        assert_eq!(chat.lines[1].at, 1700000001000);
+    }
 }

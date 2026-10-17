@@ -21,14 +21,14 @@ pub fn stop() {
 const CALL_FRESH_S: i64 = 75;
 const CATCH_UP_MAX_S: i64 = 12 * 3600;
 
-fn start_since(cursor: i64) -> String {
-    let now = crate::jx::now_ms() / 1000;
-    if cursor > 0 { (cursor - 5).max(now - CATCH_UP_MAX_S).to_string() } else { format!("{CALL_FRESH_S}s") }
+fn start_since(cursor: i64, now: i64) -> String {
+    if cursor > 0 { (cursor - 5).max(now - CATCH_UP_MAX_S).to_string() } else { (now - CATCH_UP_MAX_S).to_string() }
 }
 
 pub fn listen(env: &mut JNIEnv, ctx: &JObject, topic: String, generation: u64) {
     let alive = move || GEN.load(Ordering::Relaxed) == generation;
-    let since = start_since(crate::settings::cursor(env, ctx).unwrap_or(0));
+    let started = crate::jx::now_ms() / 1000;
+    let since = start_since(crate::settings::cursor(env, ctx).unwrap_or(0), started);
     let (tx, rx) = std::sync::mpsc::channel::<Value>();
     let task = RT.spawn(async move {
         let (mut last_id, mut backoff) = (None::<String>, 2u64);
@@ -79,8 +79,9 @@ pub fn listen(env: &mut JNIEnv, ctx: &JObject, topic: String, generation: u64) {
             Some("Claude is calling") if crate::jx::now_ms() - at < CALL_FRESH_S * 1000 && link.starts_with("https://") => {
                 crate::ring::ring(env, ctx, &link, &text)
             }
-            Some("Chat reply") => crate::inbox::reply_arrived(env, ctx, &text),
-            Some("Chat note") => crate::inbox::note_arrived(env, ctx, &text),
+            Some("Chat") => crate::inbox::mine_arrived(env, ctx, &text),
+            Some("Chat reply") => crate::inbox::reply_arrived(env, ctx, &text, at, at / 1000 >= started),
+            Some("Chat note") => crate::inbox::note_arrived(env, ctx, &text, at / 1000 >= started),
             Some("Chat receipt") => crate::inbox::receipt_arrived(env, ctx, &text),
             _ => Ok(()),
         });
@@ -153,4 +154,15 @@ pub fn latest_mode_blocking(topic: &str) -> Option<(String, i64)> {
             .last()
             .map(|m| (m["message"].as_str().unwrap_or("").trim().to_string(), m["time"].as_i64().unwrap_or(0) * 1000))
     })
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn first_start_catches_up_and_existing_cursors_stay_bounded() {
+        let now = 100_000;
+        assert_eq!(super::start_since(0, now), "56800");
+        assert_eq!(super::start_since(99_000, now), "98995");
+        assert_eq!(super::start_since(1, now), "56800");
+    }
 }

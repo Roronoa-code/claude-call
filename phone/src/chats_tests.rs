@@ -300,7 +300,7 @@ fn a_deleted_thread_stays_deleted_and_undo_brings_it_back() {
     assert!(s.apply_note(&note("updates", "n2", "note", &[], "Deployed.", 1, 1), None).is_some());
     assert_eq!(s.get("updates").unwrap().lines.len(), 1);
     s.remove(&mine).unwrap();
-    assert_eq!(s.gone, vec!["ask-r1/r1".to_string(), "updates/n1".to_string()]);
+    assert_eq!(s.gone, vec!["ask-r1/r1".to_string(), "updates/n1".to_string(), format!("{mine}/")]);
 }
 
 fn receipt(chat: &str, re: &str, state: &str) -> Value {

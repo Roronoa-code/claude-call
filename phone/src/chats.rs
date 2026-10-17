@@ -105,6 +105,8 @@ pub fn wire<T: serde::de::DeserializeOwned>(s: &str) -> Option<T> {
 pub struct Line {
     pub id: String,
     pub me: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub mirrored: bool,
     pub text: String,
     pub at: i64,
     pub since: i64,
@@ -328,6 +330,16 @@ fn att_signed(v: &Value) -> Result<Option<String>, ()> {
 }
 
 /// Anyone who learns the topic can post to it.
+pub fn mine_signed(key: &str, v: &Value) -> bool {
+    let s = |k: &str| v[k].as_str().unwrap_or("");
+    let base = format!("{}\n{}\n{}\n{}\n{}\n{}", s("chat"), s("msg"), s("agent"), s("model"), v["ts"].as_i64().unwrap_or(-1), s("text"));
+    match att_signed(v) {
+        Ok(Some(att)) => verify(key, v, &format!("v2\n{base}{att}")),
+        Ok(None) => verify(key, v, &format!("v1\n{base}")),
+        Err(()) => false,
+    }
+}
+
 pub fn reply_signed(key: &str, v: &Value) -> bool {
     let (n, s) = (|k: &str| v[k].as_i64().unwrap_or(-1), |k: &str| v[k].as_str().unwrap_or(""));
     let base = format!("{}\n{}\n{}\n{}\n{}\n{}", s("chat"), s("re"), s("state"), s("text"), n("part"), n("parts"));
@@ -576,3 +588,7 @@ pub fn after_answer(c: &Chat, tried: bool, kept: bool, now: i64) -> AfterAnswer 
 #[cfg(test)]
 #[path = "chats_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "chats_sync_tests.rs"]
+mod sync_tests;
