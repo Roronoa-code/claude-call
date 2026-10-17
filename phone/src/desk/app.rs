@@ -10,7 +10,30 @@ thread_local! {
 
 const SIZE: LogicalSize = LogicalSize { width: 412.0, height: 892.0 };
 
+const FONTS: [(&str, &[u8]); 6] = [
+    ("Roboto-Regular.ttf", include_bytes!("../../ui/fonts/Roboto-Regular.ttf")),
+    ("Roboto-Italic.ttf", include_bytes!("../../ui/fonts/Roboto-Italic.ttf")),
+    ("Roboto-Medium.ttf", include_bytes!("../../ui/fonts/Roboto-Medium.ttf")),
+    ("Roboto-Bold.ttf", include_bytes!("../../ui/fonts/Roboto-Bold.ttf")),
+    ("Roboto-Black.ttf", include_bytes!("../../ui/fonts/Roboto-Black.ttf")),
+    ("Roboto-BlackItalic.ttf", include_bytes!("../../ui/fonts/Roboto-BlackItalic.ttf")),
+];
+
+// Android draws with Roboto; Slint only takes extra default fonts from files on disk.
+fn fonts() {
+    let dir = android::data_dir().join("fonts");
+    let _ = std::fs::create_dir_all(&dir);
+    for (name, data) in FONTS {
+        let path = dir.join(name);
+        if std::fs::metadata(&path).map(|m| m.len()).ok() != Some(data.len() as u64) {
+            let _ = std::fs::write(&path, data);
+        }
+    }
+    unsafe { std::env::set_var("SLINT_FONT_PATH", &dir) };
+}
+
 pub fn desktop_main() {
+    fonts();
     let select = |gl: fn(BackendSelector) -> BackendSelector| gl(BackendSelector::new().backend_name("winit".into()).renderer_name("skia-opengl".into())).select();
     if select(|b| b.require_opengl_es_with_version(3, 0)).is_err() {
         select(|b| b.require_opengl_with_version(3, 3)).expect("no OpenGL 3.3 or ES 3.0");
