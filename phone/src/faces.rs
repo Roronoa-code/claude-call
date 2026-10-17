@@ -38,6 +38,26 @@ impl Faces {
         self.casts.iter_mut().for_each(|c| c.hop(now));
     }
 
+    pub fn typed(&mut self, text: &str, now: f32) {
+        let c = &mut self.casts[0];
+        match text {
+            "" => {}
+            "\n" => {
+                c.hop(now);
+                c.glance(0.3, 0.85, now + 1.3);
+            }
+            t => {
+                c.glance(0.45, -0.8, now + 2.2);
+                if t.ends_with(' ') {
+                    c.nod(now);
+                } else {
+                    c.sway(0.12);
+                }
+            }
+        }
+        self.quiet_from = self.quiet_from.max(now + 2.4);
+    }
+
     pub fn tick(&mut self, ui: &HomeScreen, slots: &mut [Slot], now: f32, sf: f32) -> bool {
         let c = ui.global::<Chats>();
         if c.get_open() && c.get_current().is_empty() && !c.get_picker() {

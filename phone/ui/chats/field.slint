@@ -208,11 +208,15 @@ export component Composer inherits Rectangle {
                             self.set-selection-offsets(self.cursor-position-byte-offset, self.cursor-position-byte-offset);
                         }
                     }
-                    changed text => { if (self.text == "") { self.set-selection-offsets(0, 0); } }
+                    changed text => {
+                        if (self.text == "") { self.set-selection-offsets(0, 0); }
+                        if (self.has-focus) { Chats.typed(self.text); }
+                    }
                     function send-all() {
                         if (root.can-send && Chats.send-composed(root.draft, self.preedit-text, self.cursor-position-byte-offset)) {
                             root.draft = "";
                             Chats.clear-field();
+                            Chats.typed("\n");
                         }
                     }
                     changed has-focus => { Home.typing = self.has-focus; root.focused = self.has-focus; }

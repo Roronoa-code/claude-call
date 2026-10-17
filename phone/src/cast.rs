@@ -164,6 +164,9 @@ pub struct Cast {
     asleep_for: f32,
     finger: Option<(f32, f32)>,
     finger_up: Option<f32>,
+    glance: Option<(f32, f32, f32)>,
+    stretch_until: f32,
+    wipe_until: f32,
     happy: Spring,
     happy_until: f32,
     think: Spring,
@@ -223,6 +226,9 @@ impl Cast {
             asleep_for: 0.0,
             finger: None,
             finger_up: None,
+            glance: None,
+            stretch_until: 0.0,
+            wipe_until: 0.0,
             happy: Spring::default(),
             happy_until: 0.0,
             think: Spring::default(),
@@ -323,6 +329,40 @@ impl Cast {
         self.finger_up = if down { None } else { Some(now) };
     }
 
+    pub fn glance(&mut self, gx: f32, gy: f32, until: f32) {
+        self.glance = Some((gx, gy, until));
+    }
+
+    pub fn unglance(&mut self) {
+        self.glance = None;
+    }
+
+    pub fn beam(&mut self, until: f32) {
+        self.happy_until = self.happy_until.max(until);
+    }
+
+    pub fn sway(&mut self, v: f32) {
+        self.lean.v += v;
+    }
+
+    pub fn perk(&mut self) {
+        self.ant.stretch.v += 2.4;
+        self.ant.forward.v -= 1.6;
+        self.arms.0.v += 1.2;
+        self.arms.1.v += 1.2;
+    }
+
+    pub fn stretch(&mut self, now: f32, for_s: f32) {
+        self.stretch_until = now + for_s;
+        self.happy_until = self.happy_until.max(now + for_s);
+    }
+
+    pub fn wipe(&mut self, now: f32, for_s: f32) {
+        self.wipe_until = now + for_s;
+        self.blink_until = now + for_s * 0.6;
+        self.head.roll.v += 1.5;
+    }
+
     fn schedule(&mut self, now: f32) {
         let st = self.state;
         let null = self.who == Who::Null;
@@ -417,6 +457,7 @@ impl Cast {
         }
         if null && now >= self.next_tap && now >= self.tap_until {
             let typing = match st {
+                _ if now < self.wipe_until => 1.0,
                 State::Think => 1.0,
                 State::Idle => 0.12,
                 _ => 0.0,
@@ -447,7 +488,12 @@ impl Cast {
         }
 
         let (mut gx, mut gy) = (self.gaze.0 + self.jitter.0, self.gaze.1 + self.jitter.1);
-        if let Some((x, y)) = self.finger {
+        if self.glance.is_some_and(|g| now >= g.2) {
+            self.glance = None;
+        }
+        if let Some((x, y, _)) = self.glance {
+            (gx, gy) = (x, y);
+        } else if let Some((x, y)) = self.finger {
             (gx, gy) = ((x / 140.0).clamp(-1.0, 1.0), (-y / 170.0).clamp(-1.0, 1.0));
         }
         let happy = self.happy_until > now || st == State::Happy;
@@ -470,7 +516,8 @@ impl Cast {
             State::Sleep => (arm_l, arm_r) = (f.arm_rest - 0.15, f.arm_rest - 0.15),
             _ => {}
         }
-        if happy {
+        let stretching = now < self.stretch_until;
+        if happy || stretching {
             (arm_l, arm_r) = (arm_up, arm_up);
         }
         if now < self.arm_kick.until {
@@ -485,7 +532,7 @@ impl Cast {
             State::Idle => 3.2,
         } * (1.0 + 0.12 * (now * 0.23).sin() * (now * 0.071 + 1.3).cos());
         let sway = 0.012 * (now * 0.9).sin() + 0.008 * (now * 0.37 + 1.0).sin() + 0.005 * (now * 1.71 + 2.0).sin();
-        let squash_to = if self.launch_at.is_some() { 0.86 } else if self.y > 0.0 { 1.06 } else { 1.0 + 0.025 * speaking - 0.03 * nod };
+        let squash_to = if self.launch_at.is_some() { 0.86 } else if self.y > 0.0 { 1.06 } else if stretching { 1.09 } else { 1.0 + 0.025 * speaking - 0.03 * nod };
         let (head_roll_to, head_nod_to) = match st {
             State::Think => (0.1 * gx.signum(), if gy < 0.0 { 0.22 } else { -0.08 }),
             State::Sleep => (0.06, 0.2),
@@ -568,7 +615,7 @@ impl Cast {
 
     pub fn moving(&self) -> bool {
         let springs = [&self.squash, &self.look.0, &self.look.1, &self.open, &self.happy, &self.arms.0, &self.arms.1, &self.ant.side, &self.voice, &self.nod];
-        self.y > 0.0 || self.finger.is_some() || self.state == State::Talk || self.roll != 0.0 || springs.iter().any(|s| s.v.abs() > 0.05)
+        self.y > 0.0 || self.finger.is_some() || self.glance.is_some() || self.t < self.stretch_until || self.t < self.wipe_until || self.state == State::Talk || self.roll != 0.0 || springs.iter().any(|s| s.v.abs() > 0.05)
     }
 
     pub fn uniforms(&self) -> Uniforms {

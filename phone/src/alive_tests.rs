@@ -95,3 +95,40 @@ fn wheel_steps_one_mode_per_notch_and_stops_at_the_ends() {
     }
     assert_eq!(chosen, Some(5));
 }
+
+#[test]
+fn dozes_after_two_idle_minutes_and_wakes_on_input() {
+    let (mut p, mut now) = settled_at(2);
+    while now < DOZE_AFTER + 2.0 {
+        now += 0.05;
+        p.tick(now, 2);
+    }
+    assert!(p.dozing());
+    assert_eq!(p.clawd.state(), State::Sleep);
+    p.active(now);
+    now += FRAME;
+    p.tick(now, 2);
+    assert!(!p.dozing());
+    assert_ne!(p.clawd.state(), State::Sleep);
+}
+
+#[test]
+fn idle_life_plays_while_awake_but_not_while_hovering_call() {
+    let (mut p, mut now) = settled_at(2);
+    p.hover_call(true, now);
+    for _ in 0..(60.0 / 0.05) as usize {
+        now += 0.05;
+        p.tick(now, 2);
+        p.active(now);
+    }
+    assert!(p.script.is_empty());
+    p.hover_call(false, now);
+    let mut played = false;
+    for _ in 0..(100.0 / 0.05) as usize {
+        now += 0.05;
+        p.tick(now, 2);
+        p.active(now);
+        played |= !p.script.is_empty();
+    }
+    assert!(played);
+}

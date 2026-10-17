@@ -42,6 +42,19 @@ pub fn due(c: &Cast, last: f32, now: f32) -> bool {
 }
 
 const WAKE_FOR: f32 = 8.0;
+const DOZE_AFTER: f32 = 120.0;
+const NOTICE_EVERY: (f32, f32) = (45.0, 90.0);
+const BEAT_EVERY: (f32, f32) = (150.0, 300.0);
+
+#[derive(Clone, Copy)]
+enum Beat {
+    Glance(bool, f32, f32, f32),
+    Beam(bool, f32),
+    Hop(bool),
+    Sway(bool, f32),
+    Stretch(f32),
+    Wipe(f32),
+}
 
 pub const STEP: f32 = 48.0;
 const LAST: f32 = 5.0;
@@ -118,6 +131,13 @@ pub struct Pair {
     pending: bool,
     spread: Roll,
     last: f32,
+    active_at: f32,
+    dozing: bool,
+    hovering: bool,
+    script: Vec<(f32, Beat)>,
+    next_notice: f32,
+    next_beat: f32,
+    beats: usize,
 }
 
 impl Pair {
@@ -140,6 +160,13 @@ impl Pair {
             pending: false,
             spread: Roll::still(0.0),
             last: 0.0,
+            active_at: 0.0,
+            dozing: false,
+            hovering: false,
+            script: Vec::new(),
+            next_notice: 30.0,
+            next_beat: 90.0,
+            beats: 0,
         }
     }
 
@@ -150,7 +177,92 @@ impl Pair {
         (self.rng % 10_000) as f32 / 10_000.0
     }
 
+    pub fn active(&mut self, now: f32) {
+        self.active_at = now;
+        if self.dozing {
+            self.dozing = false;
+            self.script.clear();
+            for c in [&mut self.clawd, &mut self.null] {
+                c.set_state(State::Idle);
+                c.hop(now);
+            }
+        }
+    }
+
+    pub fn dozing(&self) -> bool {
+        self.dozing
+    }
+
+    pub fn hover_call(&mut self, on: bool, now: f32) {
+        self.active(now);
+        if on == self.hovering {
+            return;
+        }
+        self.hovering = on;
+        if on {
+            self.script.clear();
+            self.clawd.glance(0.45, -0.95, f32::MAX);
+            self.null.glance(-0.4, -0.95, f32::MAX);
+            self.clawd.sway(0.35);
+            self.null.perk();
+        } else {
+            self.clawd.unglance();
+            self.null.unglance();
+        }
+    }
+
+    pub fn call_pressed(&mut self, now: f32) {
+        self.active(now);
+        self.clawd.hop(now);
+        self.script.push((now + 0.12, Beat::Hop(true)));
+    }
+
+    fn cast(&mut self, null: bool) -> &mut Cast {
+        if null { &mut self.null } else { &mut self.clawd }
+    }
+
+    fn play(&mut self, now: f32) {
+        let mut due = Vec::new();
+        self.script.retain(|&(at, b)| if at <= now { due.push(b); false } else { true });
+        for b in due {
+            match b {
+                Beat::Glance(n, x, y, for_s) => self.cast(n).glance(x, y, now + for_s),
+                Beat::Beam(n, for_s) => self.cast(n).beam(now + for_s),
+                Beat::Hop(n) => self.cast(n).hop(now),
+                Beat::Sway(n, v) => self.cast(n).sway(v),
+                Beat::Stretch(for_s) => self.clawd.stretch(now, for_s),
+                Beat::Wipe(for_s) => self.null.wipe(now, for_s),
+            }
+        }
+    }
+
+    fn idle_life(&mut self, now: f32) {
+        let calm = self.clawd.state() == State::Idle && self.null.state() == State::Idle;
+        if self.dozing || self.hovering || self.dial.is_some() || !self.script.is_empty() || !calm {
+            return;
+        }
+        if now >= self.next_beat {
+            self.next_beat = now + BEAT_EVERY.0 + self.rand() * (BEAT_EVERY.1 - BEAT_EVERY.0);
+            self.next_notice = self.next_notice.max(now + 20.0);
+            self.beats += 1;
+            self.script = match self.beats % 3 {
+                1 => vec![(now, Beat::Stretch(1.2))],
+                2 => vec![(now, Beat::Wipe(0.7)), (now + 0.75, Beat::Beam(true, 1.0))],
+                _ => (0..6).map(|i| (now + i as f32 * 0.09, Beat::Sway(false, if i % 2 == 0 { -2.4 } else { 2.4 }))).collect(),
+            };
+        } else if now >= self.next_notice {
+            self.next_notice = now + NOTICE_EVERY.0 + self.rand() * (NOTICE_EVERY.1 - NOTICE_EVERY.0);
+            self.script = vec![
+                (now, Beat::Glance(false, 0.95, -0.05, 2.6)),
+                (now + 0.55, Beat::Glance(true, -0.95, 0.0, 2.0)),
+                (now + 0.95, Beat::Beam(true, 1.4)),
+                (now + 1.25, Beat::Hop(false)),
+            ];
+        }
+    }
+
     pub fn hop(&mut self, codex: bool, now: f32) {
+        self.active(now);
         if codex {
             self.awake_until.1 = now + WAKE_FOR;
             self.null.hop(now);
@@ -161,11 +273,13 @@ impl Pair {
     }
 
     pub fn point(&mut self, x: f32, y: f32, null_dx: f32, down: bool, now: f32) {
+        self.active(now);
         self.clawd.point(x, y, down, now);
         self.null.point(x - null_dx, y, down, now);
     }
 
     pub fn drag(&mut self, dy: f32, now: f32) -> usize {
+        self.active(now);
         let from = self.dial.map_or(self.roll.place, |d| d.from);
         let mut p = from + dy / STEP;
         let give = |x: f32| 0.3 * (1.0 - (-x / 0.3).exp());
@@ -238,6 +352,12 @@ impl Pair {
         }
         self.null.roll = (self.roll.place - self.shown as f32).clamp(-0.5, 0.5);
         let settled = now - self.shown_at >= DWELL;
+        if !self.dozing && self.shown < 5 && self.dial.is_none() && !self.hovering && now - self.active_at > DOZE_AFTER {
+            self.dozing = true;
+            self.script.clear();
+        }
+        self.idle_life(now);
+        self.play(now);
         if now - self.shown_at >= LATE {
             self.copy = self.shown;
         }
@@ -260,6 +380,7 @@ impl Pair {
             _ if awake => (State::Idle, Hold::default()),
             _ => (State::Sleep, Hold { dim: 0.85, ..Hold::default() }),
         };
+        let (state, hold) = if self.dozing { (State::Sleep, Hold { dim: 0.85, ..Hold::default() }) } else { (state, hold) };
         let n = &mut self.null;
         n.set_hold(hold);
         n.attend(m == 0 || m == 4);
@@ -292,6 +413,7 @@ impl Pair {
             _ if awake => (State::Idle, Hold::default()),
             _ => (State::Sleep, Hold::default()),
         };
+        let (state, hold) = if self.dozing { (State::Sleep, Hold::default()) } else { (state, hold) };
         let c = &mut self.clawd;
         c.set_hold(hold);
         c.attend(m == 0);

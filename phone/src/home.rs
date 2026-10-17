@@ -76,6 +76,7 @@ fn follow_fast(fast: &Rc<slint::Timer>, ui: &HomeScreen, swiping: &Rc<Cell<bool>
 
 const MAX_PAIR_PX_PER_DP: f32 = 2.75;
 const LIGHT_EASE_RATE: f32 = 12.0;
+const DOZE_LIGHT: f32 = 0.72;
 
 pub struct Open {
     pub ui: HomeScreen,
@@ -210,9 +211,22 @@ pub fn open() -> Open {
     ui.global::<Toys>().on_step({
         let pair = pair.clone();
         move |by| {
-            pair.borrow_mut().step(by);
+            let mut p = pair.borrow_mut();
+            p.active(start.elapsed().as_secs_f32());
+            p.step(by);
             android::with(ring::tick);
         }
+    });
+    ui.global::<Toys>().on_call_hover({
+        let pair = pair.clone();
+        move |phase| {
+            let (mut p, now) = (pair.borrow_mut(), start.elapsed().as_secs_f32());
+            if phase == 2 { p.call_pressed(now) } else { p.hover_call(phase == 1, now) }
+        }
+    });
+    ui.global::<Chats>().on_typed({
+        let faces = faces.clone();
+        move |text| faces.borrow_mut().typed(&text, start.elapsed().as_secs_f32())
     });
     let touched = Rc::new(Cell::new(Instant::now()));
     ui.global::<Toys>().on_point({
@@ -303,13 +317,16 @@ pub fn open() -> Open {
                 ui.global::<Chats>().set_live(false);
             }
             let show = !s.failed && !ui.global::<Chats>().get_open() && kb == 0.0;
+            if show && !shown {
+                p.active(now);
+            }
             let sf = ui.window().scale_factor() * r;
             let mut any = false;
             let codex = home.get_caller() == "codex";
             let ease = 1.0 - (-(now - last_now) * LIGHT_EASE_RATE).exp();
             last_now = now;
             for (i, c) in [&p.clawd, &p.null].into_iter().enumerate() {
-                let want = if (i == 1) == codex { 1.0 } else { 0.5 };
+                let want = if (i == 1) == codex { 1.0 } else { 0.5 } * if p.dozing() { DOZE_LIGHT } else { 1.0 };
                 let dimming = (lit[i] - want).abs() > 0.002;
                 lit[i] = if dimming { lit[i] + (want - lit[i]) * ease } else { want };
                 if show && (!shown || dimming || alive::due(c, drawn[i], now)) {

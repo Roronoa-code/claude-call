@@ -154,7 +154,10 @@ export component HomeScreen inherits Window {
                 color: Home.requested || Home.no-answer ? T.fg2 : #ffffff;
                 align: center;
             }
-            call := TouchArea { clicked => { if (!Home.requested) { Home.call(Home.caller); } } }
+            call := TouchArea {
+                changed has-hover => { Toys.call-hover(self.has-hover ? 1 : 0); }
+                clicked => { if (!Home.requested) { Toys.call-hover(2); Home.call(Home.caller); } }
+            }
         }
     }
 
