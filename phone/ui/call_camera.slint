@@ -1,7 +1,8 @@
 import { T, Icon, Icons, SwapText } from "parts.slint";
 import { Call } from "call_data.slint";
 import { Sheets } from "call_kit.slint";
-import { Spot, SpotBack, SpotCap, Dots, Glyph, Pill, SpotCaller } from "call_spot.slint";
+import { Spot, SpotBack, Dots, Glyph, Pill, SpotCaller } from "call_spot.slint";
+import { SpotCap } from "call_rise.slint";
 
 export component CameraLook inherits Rectangle {
     property <string> phase: Call.phase;
@@ -66,9 +67,7 @@ export component CameraLook inherits Rectangle {
             hide: root.yours;
             small: root.keys;
             s0: 25px;
-            s1: 21px;
             s2: 18px;
-            align: left;
             rest-opacity: 0.55;
         }
         Text {

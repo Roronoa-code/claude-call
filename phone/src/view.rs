@@ -1,3 +1,6 @@
+const PHRASE_CHARS: usize = 42;
+const CLAUSE_ENDS: [char; 5] = [',', ';', ':', '—', '–'];
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Phase {
     Incoming,
@@ -12,7 +15,7 @@ pub enum Phase {
 
 #[derive(Clone, Copy, Default, Debug, PartialEq)]
 pub struct Spoken {
-    pub sentence: usize,
+    pub phrase: usize,
     pub words: usize,
 }
 
@@ -62,7 +65,7 @@ pub fn words(t: &str) -> Vec<&str> {
     t.split_whitespace().collect()
 }
 
-pub fn sentences(text: &str) -> Vec<String> {
+fn sentences(text: &str) -> Vec<String> {
     let mut out = vec![];
     let mut cur = String::new();
     let chars: Vec<char> = text.chars().collect();
@@ -79,8 +82,53 @@ pub fn sentences(text: &str) -> Vec<String> {
         i += 1;
     }
     out.push(cur);
-    let out: Vec<String> = out.iter().map(|s| words(s).join(" ")).filter(|s| !s.is_empty()).collect();
+    out.iter().map(|s| words(s).join(" ")).filter(|s| !s.is_empty()).collect()
+}
+
+pub fn phrases(text: &str) -> Vec<String> {
+    let out: Vec<String> = sentences(text).iter().flat_map(|s| clauses(s)).collect();
     if out.is_empty() { vec![text.trim().to_string()] } else { out }
+}
+
+fn span(ws: &[&str]) -> usize {
+    ws.iter().map(|w| w.chars().count()).sum::<usize>() + ws.len().saturating_sub(1)
+}
+
+fn clauses(sentence: &str) -> Vec<String> {
+    let ws = words(sentence);
+    let ends = (1..=ws.len()).filter(|&e| e == ws.len() || ws[e - 1].ends_with(CLAUSE_ENDS) || ws[e - 1] == "-");
+    let mut out = vec![];
+    let (mut start, mut prev) = (0, 0);
+    for e in ends {
+        if prev > start && span(&ws[start..e]) > PHRASE_CHARS {
+            out.extend(balanced(&ws[start..prev]));
+            start = prev;
+        }
+        prev = e;
+    }
+    out.extend(balanced(&ws[start..]));
+    out
+}
+
+fn balanced(ws: &[&str]) -> Vec<String> {
+    let total = span(ws);
+    let pieces = total.div_ceil(PHRASE_CHARS).max(1);
+    let mut out = vec![];
+    let mut cur: Vec<&str> = vec![];
+    for &w in ws {
+        let n = w.chars().count();
+        let fits = span(&cur) + 1 + n <= PHRASE_CHARS;
+        let past_goal = (span(&cur) + 1 + n / 2) * pieces > total;
+        if !cur.is_empty() && (!fits || (out.len() + 1 < pieces && past_goal)) {
+            out.push(cur.join(" "));
+            cur.clear();
+        }
+        cur.push(w);
+    }
+    if !cur.is_empty() {
+        out.push(cur.join(" "));
+    }
+    out
 }
 
 fn spoken_at(parts: &[String], shown: &str) -> Spoken {
@@ -88,11 +136,11 @@ fn spoken_at(parts: &[String], shown: &str) -> Spoken {
     for (i, p) in parts.iter().enumerate() {
         let w = words(p).len();
         if n < w {
-            return Spoken { sentence: i, words: n };
+            return Spoken { phrase: i, words: n };
         }
         n -= w;
     }
-    Spoken { sentence: parts.len(), words: 0 }
+    Spoken { phrase: parts.len(), words: 0 }
 }
 
 impl View {
@@ -165,7 +213,7 @@ impl View {
     pub fn claude(&mut self, id: u64, text: &str) {
         self.hold_after = false;
         self.voice = Voice::Claude;
-        self.msgs.push(Msg { id: id.to_string(), me: false, text: String::new(), parts: sentences(text), spoken: Spoken::default(), cut: false, live: true });
+        self.msgs.push(Msg { id: id.to_string(), me: false, text: String::new(), parts: phrases(text), spoken: Spoken::default(), cut: false, live: true });
         (self.phase, self.transcribing, self.notice) = (Phase::Talking, false, String::new());
         self.partial.clear();
     }
@@ -174,7 +222,7 @@ impl View {
         let id = id.to_string();
         let Some(m) = self.msgs.iter_mut().find(|m| m.id == id) else { return };
         if m.parts.join(" ") != words(text).join(" ") {
-            m.parts = sentences(text);
+            m.parts = phrases(text);
         }
         m.spoken = spoken_at(&m.parts, shown);
     }
@@ -185,7 +233,7 @@ impl View {
             m.live = false;
             m.cut = cut;
             if !cut {
-                m.spoken = Spoken { sentence: m.parts.len(), words: 0 };
+                m.spoken = Spoken { phrase: m.parts.len(), words: 0 };
             }
         }
         if self.voice == Voice::Claude {
@@ -227,7 +275,7 @@ pub fn clock(ms: f64) -> String {
 }
 
 pub fn lit(m: &Msg, only: Option<usize>) -> (String, String) {
-    let Spoken { sentence: p, words: w } = m.spoken;
+    let Spoken { phrase: p, words: w } = m.spoken;
     let mut text = vec![];
     let mut lit = vec![];
     for (i, part) in m.parts.iter().enumerate() {
@@ -244,11 +292,6 @@ pub fn lit(m: &Msg, only: Option<usize>) -> (String, String) {
     (text.join(" "), lit.join(" "))
 }
 
-pub fn split_lit(text: &str, lit: &str) -> (String, String, String) {
-    let (t, l) = (words(text), words(lit));
-    let n = l.len().min(t.len());
-    let said = if n > 1 { t[..n - 1].join(" ") + " " } else { String::new() };
-    let fresh = if n > 0 { t[n - 1].to_string() } else { String::new() };
-    let rest = if n < t.len() { if n > 0 { " " } else { "" }.to_string() + &t[n..].join(" ") } else { String::new() };
-    (said, fresh, rest)
-}
+#[cfg(test)]
+#[path = "view_tests.rs"]
+mod tests;

@@ -37,50 +37,40 @@ fn hash(s: &str) -> i32 {
 
 fn caption(v: &View, now: f64) -> Cap {
     let last_claude = v.msgs.iter().rev().find(|m| !m.me);
-    let part = |m: &Msg| m.spoken.sentence.min(m.parts.len().saturating_sub(1));
-    let size = |m: &Msg| {
-        let n = m.parts.get(part(m)).map_or(0, |p| view::words(p).len());
-        if n > 30 { 2 } else if n > 18 { 1 } else { 0 }
-    };
-    let plain = |key: &str, label: String, text: &str, tone: &str, orb: bool| Cap {
+    let part = |m: &Msg| m.spoken.phrase.min(m.parts.len().saturating_sub(1));
+    let plain = |key: &str, label: String, text: &str, tone: &str| Cap {
         key: hash(key),
         label: label.into(),
         text: text.into(),
-        lit: text.into(),
-        size: 0,
+        lit: view::words(text).len() as i32,
         tone: tone.into(),
-        orb,
-        said: text.into(),
+        rise: false,
         ..Default::default()
     };
     let spoken = |m: &Msg, tone: &str| {
         let (text, lit) = view::lit(m, Some(part(m)));
-        let (said, fresh, rest) = view::split_lit(&text, &lit);
         Cap {
             key: hash(&format!("c{}-{}", m.id, part(m))),
             label: v.agent.clone().into(),
             text: text.into(),
-            lit: lit.into(),
-            size: size(m),
+            lit: view::words(&lit).len() as i32,
             tone: tone.into(),
-            orb: false,
-            said: said.into(),
-            fresh: fresh.into(),
-            rest: rest.into(),
+            rise: true,
+            ..Default::default()
         }
     };
     match v.phase {
-        Phase::Incoming => plain("inc", "Calling now".into(), &format!("{} would like to talk.", v.agent), "", false),
-        Phase::Connecting => plain("con", "Connecting".into(), "One moment…", "dim", false),
+        Phase::Incoming => plain("inc", "Calling now".into(), &format!("{} would like to talk.", v.agent), ""),
+        Phase::Connecting => plain("con", "Connecting".into(), "One moment…", "dim"),
         Phase::Talking => match v.msgs.iter().find(|m| m.live).or(last_claude) {
             Some(m) => spoken(m, if m.spoken == view::Spoken::default() { "pre" } else { "" }),
-            None => plain("turn", "Your turn".into(), &format!("Go ahead, {} is listening.", v.agent), "dim", false),
+            None => plain("turn", "Your turn".into(), &format!("Go ahead, {} is listening.", v.agent), "dim"),
         },
-        Phase::Hold => plain("hold", format!("On hold · {}", clock(now - v.hold_start)), &format!("{}.", v.hold_label), "hold", true),
-        Phase::Ended => plain("end", clock(v.ended_at - v.call_start), "Call ended.", "dim", false),
+        Phase::Hold => plain("hold", format!("On hold · {}", clock(now - v.hold_start)), &format!("{}.", v.hold_label), "hold"),
+        Phase::Ended => plain("end", clock(v.ended_at - v.call_start), "Call ended.", "dim"),
         _ => match last_claude {
             Some(m) => spoken(m, "rest"),
-            None => plain("turn", "Your turn".into(), &format!("Go ahead, {} is listening.", v.agent), "dim", false),
+            None => plain("turn", "Your turn".into(), &format!("Go ahead, {} is listening.", v.agent), "dim"),
         },
     }
 }
@@ -168,12 +158,11 @@ fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activi
         .iter()
         .map(|m| {
             if m.me {
-                UiMsg { me: true, text: m.text.clone().into(), lit: m.text.clone().into(), said: m.text.clone().into(), ..Default::default() }
+                UiMsg { me: true, text: m.text.clone().into(), lit: m.text.clone().into() }
             } else {
                 let (text, lit) = view::lit(m, None);
                 let shown = if m.cut { lit.clone() } else { text };
-                let (said, fresh, rest) = view::split_lit(&shown, &lit);
-                UiMsg { me: false, text: shown.into(), lit: lit.into(), said: said.into(), fresh: fresh.into(), rest: rest.into() }
+                UiMsg { me: false, text: shown.into(), lit: lit.into() }
             }
         })
         .collect();
@@ -195,8 +184,10 @@ fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activi
     set_if(ui.global::<Call>().get_time_text(), time, |t| ui.global::<Call>().set_time_text(t));
     set_if(ui.global::<Call>().get_notice(), notice, |t| ui.global::<Call>().set_notice(t));
     set_if(ui.global::<Call>().get_agent(), agent, |t| ui.global::<Call>().set_agent(t));
-    let cap = f.cap.clone().unwrap();
-    if ui.global::<Call>().get_cap() != cap {
+    let mut cap = f.cap.clone().unwrap();
+    let shown = ui.global::<Call>().get_cap();
+    cap.words = if shown.key == cap.key && shown.text == cap.text { shown.words.clone() } else { letters(&cap.text) };
+    if shown != cap {
         ui.global::<Call>().set_cap(cap);
     }
     set_if(ui.global::<Call>().get_me_text(), f.held.me_text.clone().unwrap_or_default(), |t| ui.global::<Call>().set_me_text(t));
@@ -234,6 +225,11 @@ fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activi
     if ui.global::<Call>().get_level() != lv {
         ui.global::<Call>().set_level(lv);
     }
+}
+
+fn letters(text: &str) -> ModelRc<ModelRc<SharedString>> {
+    let word = |w: &str| ModelRc::new(VecModel::from(w.chars().map(|c| SharedString::from(c.to_string())).collect::<Vec<_>>()));
+    ModelRc::new(VecModel::from(view::words(text).into_iter().map(word).collect::<Vec<_>>()))
 }
 
 fn set_if(cur: SharedString, new: String, set: impl FnOnce(SharedString)) {
