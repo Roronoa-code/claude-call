@@ -4,7 +4,8 @@ use windows::Win32::{
     Graphics::Gdi::{MONITOR_DEFAULTTONULL, MonitorFromPoint},
     Media::Audio::{PlaySoundW, SND_ASYNC, SND_FILENAME, SND_LOOP, SND_NODEFAULT},
     System::{Registry::{HKEY_CURRENT_USER, REG_SZ, RegSetKeyValueW}, Threading::CreateMutexW},
-    UI::WindowsAndMessaging::{FLASHW_ALL, FLASHW_TIMERNOFG, FLASHWINFO, FindWindowW, FlashWindowEx, SW_RESTORE, SetForegroundWindow, ShowWindow},
+    UI::Shell::ShellExecuteW,
+    UI::WindowsAndMessaging::{SW_SHOWNORMAL, FLASHW_ALL, FLASHW_TIMERNOFG, FLASHWINFO, FindWindowW, FlashWindowEx, SW_RESTORE, SetForegroundWindow, ShowWindow},
 };
 use windows::core::{HSTRING, PCWSTR, w};
 
@@ -62,5 +63,11 @@ pub fn ringtone(on: bool) {
         } else {
             let _ = PlaySoundW(PCWSTR::null(), None, SND_ASYNC);
         }
+    }
+}
+
+pub fn open(target: &str) {
+    unsafe {
+        ShellExecuteW(None, w!("open"), &HSTRING::from(target), PCWSTR::null(), PCWSTR::null(), SW_SHOWNORMAL);
     }
 }

@@ -16,6 +16,7 @@ pub fn copy(_: &mut JNIEnv, _: &JObject, _: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn open_link(_: &mut JNIEnv, _: &JObject, _: &str) -> Result<()> {
+pub fn open_link(_: &mut JNIEnv, _: &JObject, url: &str) -> Result<()> {
+    crate::desk_os::open(url);
     Ok(())
 }

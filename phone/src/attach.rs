@@ -1,11 +1,14 @@
 //! Samsung may close the app while its Gallery is open, so the chat being picked for is kept in the store.
 use crate::{
-    Chats, HomeScreen, android,
-    chats::{MEDIA_MAX, Media},
+    Chats, HomeScreen,
+    chats::Media,
     inbox,
-    jx::{self, s},
-    settings,
 };
+#[cfg(target_os = "android")]
+use crate::{android, chats::MEDIA_MAX, jx::{self, s}, settings};
+#[cfg(windows)]
+pub use crate::desk_attach::{open, picture, play};
+#[cfg(target_os = "android")]
 use jni::{
     JNIEnv,
     errors::Result,
@@ -25,18 +28,25 @@ enum Pick {
 }
 static PICK: Mutex<Option<(String, Pick)>> = Mutex::new(None);
 static FOR: Mutex<String> = Mutex::new(String::new());
+#[cfg(target_os = "android")]
 const REQUEST: i32 = 7;
 
+#[cfg(target_os = "android")]
 const GALLERY: &str = "com.sec.android.gallery3d";
+#[cfg(target_os = "android")]
 const IN_GALLERY: &str = "inGallery";
+#[cfg(target_os = "android")]
 const GALLERY_FAILED: &str = "galleryFailedAt";
+#[cfg(target_os = "android")]
 const GALLERY_OFF: i64 = 24 * 3600 * 1000;
 
+#[cfg(target_os = "android")]
 fn gallery_off(env: &mut JNIEnv, act: &JObject) -> Result<bool> {
     let at = settings::stamp(env, act, GALLERY_FAILED)?;
     Ok(at > 0 && at > settings::updated_at(env, act)? && (0..GALLERY_OFF).contains(&(jx::now_ms() - at)))
 }
 
+#[cfg(target_os = "android")]
 pub fn open(env: &mut JNIEnv, act: &JObject, chat: &str) -> Result<()> {
     *FOR.lock().unwrap() = chat.to_string();
     inbox::path(env, act)?;
@@ -51,6 +61,7 @@ pub fn open(env: &mut JNIEnv, act: &JObject, chat: &str) -> Result<()> {
     Ok(())
 }
 
+#[cfg(target_os = "android")]
 /// Android 10-12 have no photo picker: they get "choose a file" limited to photos and videos.
 fn system<'a>(env: &mut JNIEnv<'a>) -> Result<JObject<'a>> {
     let pick_images = jx::sdk(env)? >= 33;
@@ -63,6 +74,7 @@ fn system<'a>(env: &mut JNIEnv<'a>) -> Result<JObject<'a>> {
     Ok(i)
 }
 
+#[cfg(target_os = "android")]
 fn instead(env: &mut JNIEnv, act: &JObject, chat: &str) -> Result<()> {
     android::log("attach: the Gallery's pick couldn't be read; the system picker instead");
     settings::set_stamp(env, act, GALLERY_FAILED, jx::now_ms())?;
@@ -79,6 +91,7 @@ fn instead(env: &mut JNIEnv, act: &JObject, chat: &str) -> Result<()> {
     Ok(())
 }
 
+#[cfg(target_os = "android")]
 /// Samsung's Gallery PICK offers photos and videos only with "*/*" plus both types in EXTRA_MIME_TYPES.
 fn gallery<'a>(env: &mut JNIEnv<'a>, act: &JObject) -> Result<Option<JObject<'a>>> {
     let i = new_intent(env, "android.intent.action.PICK")?;
@@ -90,11 +103,13 @@ fn gallery<'a>(env: &mut JNIEnv<'a>, act: &JObject) -> Result<Option<JObject<'a>
     Ok((!found.is_null()).then_some(i))
 }
 
+#[cfg(target_os = "android")]
 fn new_intent<'a>(env: &mut JNIEnv<'a>, action: &str) -> Result<JObject<'a>> {
     let action = s(env, action)?;
     env.new_object("android/content/Intent", "(Ljava/lang/String;)V", &[JValue::Object(&action)])
 }
 
+#[cfg(target_os = "android")]
 fn media_types(env: &mut JNIEnv, i: &JObject) -> Result<()> {
     let any = s(env, "*/*")?;
     env.call_method(i, "setType", "(Ljava/lang/String;)Landroid/content/Intent;", &[JValue::Object(&any)])?;
@@ -109,6 +124,7 @@ fn media_types(env: &mut JNIEnv, i: &JObject) -> Result<()> {
     Ok(())
 }
 
+#[cfg(target_os = "android")]
 pub fn picked(env: &mut JNIEnv, act: &JObject, data: &JObject) -> Result<()> {
     inbox::path(env, act)?;
     let gallery = settings::flag(env, act, IN_GALLERY)?;
@@ -154,7 +170,7 @@ pub fn picked(env: &mut JNIEnv, act: &JObject, data: &JObject) -> Result<()> {
     Ok(())
 }
 
-fn keep(dir: &std::path::Path, bytes: &[u8], mime: &str) -> std::result::Result<Media, String> {
+pub fn keep(dir: &std::path::Path, bytes: &[u8], mime: &str) -> std::result::Result<Media, String> {
     let m = Media::picked(bytes, mime)?;
     let file = dir.join(m.file_name());
     let tmp = file.with_extension("part");
@@ -162,6 +178,7 @@ fn keep(dir: &std::path::Path, bytes: &[u8], mime: &str) -> std::result::Result<
     Ok(Media { path: file.to_string_lossy().into_owned(), ..m })
 }
 
+#[cfg(target_os = "android")]
 /// The PC and the agents take no HEIC / HEIF. None: Android couldn't decode it.
 fn jpeg(env: &mut JNIEnv, bytes: &[u8]) -> Result<Option<Vec<u8>>> {
     let arr = env.byte_array_from_slice(bytes)?;
@@ -193,6 +210,7 @@ fn jpeg(env: &mut JNIEnv, bytes: &[u8]) -> Result<Option<Vec<u8>>> {
     Ok(Some(env.convert_byte_array(JByteArray::from(b))?))
 }
 
+#[cfg(target_os = "android")]
 fn read(env: &mut JNIEnv, ctx: &JObject, uri: &JObject) -> Result<Option<(Vec<u8>, String)>> {
     let cr = env.call_method(ctx, "getContentResolver", "()Landroid/content/ContentResolver;", &[])?.l()?;
     let t = env.call_method(&cr, "getType", "(Landroid/net/Uri;)Ljava/lang/String;", &[JValue::Object(uri)])?.l()?;
@@ -289,12 +307,14 @@ thread_local! {
     static THUMBS: RefCell<HashMap<String, Option<(slint::Image, f32)>>> = RefCell::new(HashMap::new());
 }
 
+#[cfg(target_os = "android")]
 pub fn picture(path: &str, video: bool, max: i32) -> Option<(slint::Image, f32)> {
     let (w, h, px) = android::with(|env, _| env.with_local_frame(16, |env| bitmap(env, path, video, max))).flatten()?;
     let buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(&px, w, h);
     Some((slint::Image::from_rgba8_premultiplied(buf), h as f32 / w as f32))
 }
 
+#[cfg(target_os = "android")]
 fn bitmap(env: &mut JNIEnv, path: &str, video: bool, max: i32) -> Result<Option<(u32, u32, Vec<u8>)>> {
     let p = s(env, path)?;
     let bmp = if video {
@@ -336,6 +356,7 @@ fn bitmap(env: &mut JNIEnv, path: &str, video: bool, max: i32) -> Result<Option<
     Ok(Some((w as u32, h as u32, env.convert_byte_array(JByteArray::from(bytes))?)))
 }
 
+#[cfg(target_os = "android")]
 pub fn play(env: &mut JNIEnv, act: &JObject, path: &str) -> Result<()> {
     let name = std::path::Path::new(path).file_name().and_then(|n| n.to_str()).unwrap_or("");
     let mime = match name.rsplit('.').next() {

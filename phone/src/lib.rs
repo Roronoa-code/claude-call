@@ -2,7 +2,6 @@
 #[cfg_attr(windows, path = "desk/android.rs")]
 mod android;
 #[cfg(any(target_os = "android", windows))]
-#[cfg_attr(windows, path = "desk/attach.rs")]
 mod attach;
 #[cfg(any(target_os = "android", windows))]
 mod audio;
@@ -72,6 +71,9 @@ mod desk_app;
 #[cfg(windows)]
 #[path = "desk/os.rs"]
 mod desk_os;
+#[cfg(windows)]
+#[path = "desk/attach.rs"]
+mod desk_attach;
 #[cfg(windows)]
 #[path = "desk/wasapi.rs"]
 mod desk_wasapi;
