@@ -66,6 +66,7 @@ pub fn desktop_main() {
         EventResult::Propagate
     });
     crate::desk_os::start_at_login();
+    crate::chat_alert::register();
     crate::service::start();
     let _ = home.ui.run();
 }
