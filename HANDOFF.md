@@ -1,5 +1,7 @@
 # Claude Call: handoff (2026-10-17)
 
+**Claude: read `CLAUDE_HANDOFF.md` first.** It is the current consolidated handoff requested by Abdul and overrides stale snapshots below. Scope is PC-only; new motion is not approved.
+
 Written for whoever carries on (GPT/Codex). Read this all before touching anything.
 
 ## Continuation status (2026-10-17, Codex)
