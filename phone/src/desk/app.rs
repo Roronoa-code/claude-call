@@ -1,7 +1,7 @@
 use crate::{HomeScreen, android, screen};
 use slint::winit_030::{EventResult, WinitWindowAccessor, winit::event::{ElementState, MouseButton, WindowEvent}, winit::keyboard::{Key, NamedKey}};
 use slint::{BackendSelector, CloseRequestResponse, ComponentHandle, LogicalSize, PhysicalPosition};
-use std::{cell::RefCell, sync::atomic::Ordering};
+use std::{cell::{Cell, RefCell}, sync::atomic::Ordering};
 
 thread_local! {
     static HOME: RefCell<Option<slint::Weak<HomeScreen>>> = const { RefCell::new(None) };
@@ -35,7 +35,7 @@ fn fonts() {
 pub fn desktop_main() {
     fonts();
     let select = |gl: fn(BackendSelector) -> BackendSelector| gl(BackendSelector::new().backend_name("winit".into()).renderer_name("skia-opengl".into())
-        .with_winit_window_attributes_hook(|attributes| attributes.with_window_icon(Some(
+        .with_winit_window_attributes_hook(|attributes| attributes.with_active(std::env::var_os("CALLME_DESK_DATA").is_none()).with_window_icon(Some(
             slint::winit_030::winit::window::Icon::from_rgba(include_bytes!("../../ui/icon/claude-call.rgba").to_vec(), 64, 64).expect("64x64 window icon")
         )))).select();
     if select(|b| b.require_opengl_es_with_version(3, 0)).is_err() {
@@ -53,8 +53,18 @@ pub fn desktop_main() {
         minimize();
         CloseRequestResponse::KeepWindowShown
     });
-    w.on_winit_window_event(|w, e| {
+    let modifiers = Cell::new(slint::winit_030::winit::keyboard::ModifiersState::empty());
+    w.on_winit_window_event(move |w, e| {
         match e {
+            WindowEvent::ModifiersChanged(m) => modifiers.set(m.state()),
+            WindowEvent::DroppedFile(path) => {
+                if let Some(chat) = attachment_chat() { crate::desk_attach::dropped(&chat, path.clone()); }
+            }
+            WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed && !event.repeat
+                && modifiers.get().control_key() && !modifiers.get().alt_key() && !modifiers.get().shift_key() && !modifiers.get().super_key()
+                && matches!(&event.logical_key, Key::Character(key) if key.eq_ignore_ascii_case("v")) => {
+                if attachment_chat().is_some_and(|chat| crate::desk_attach::paste(&chat)) { return EventResult::PreventDefault }
+            }
             WindowEvent::Occluded(o) => {
                 android::SHOWN.store(!o, Ordering::Relaxed);
                 if *o {
@@ -78,6 +88,16 @@ pub fn desktop_main() {
     crate::chat_alert::register();
     crate::service::start();
     let _ = home.ui.run();
+}
+
+fn attachment_chat() -> Option<String> {
+    HOME.with(|h| {
+        let ui = h.borrow().as_ref()?.upgrade()?;
+        let chats = ui.global::<crate::Chats>();
+        (chats.get_open() && chats.get_ready() && !chats.get_readonly() && !chats.get_viewing() && !chats.get_picker()
+            && !chats.get_current().is_empty() && chats.get_pick() != "loading")
+            .then(|| chats.get_current().to_string())
+    })
 }
 
 fn back() {

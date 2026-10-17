@@ -8,6 +8,8 @@ import { Sheet } from "chats/open.slint";
 import { StageBack } from "stage.slint";
 
 export component HomeScreen inherits Window {
+    min-width: Home.desktop ? 412px : 0px;
+    min-height: Home.desktop ? 600px : 0px;
     background: #010101;
     title: "Claude Call";
     property <length> row-y: self.height - Home.sab - 20px - 56px;

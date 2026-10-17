@@ -2,6 +2,32 @@
 
 Written for whoever carries on (GPT/Codex). Read this all before touching anything.
 
+## Continuation status (2026-10-17, Codex)
+
+This section overrides the older snapshot below.
+
+- Latest user direction: **work on the PC only; leave the phone alone. Keep features and animation behavior shared between platforms.** He is watching a video: no repeated questions, calls, pop-ups, focus changes or physical input. Do not ask again about the completed approvals below.
+- Shared client remains one `callme-phone` crate: `home`, `screen`, chat/store, attachment state, `alive`, `cast`, `faces`, Slint UI and shaders serve both targets. Native OS input, notifications, audio and image decoding stay in `phone/src/desk/`. No new animation, expression or refresh-rate changes in this continuation.
+- Phone install was completed earlier with explicit permission, using `install -r`; no launch or tests. APK SHA-256 `BD7D4AF644C567468B8C34FBFFEBDE61E305EF2652B7E62FED5A44963A870EED`. Private topic restored to the dummy afterward, built APK removed, Gradle stopped. **No further phone work is authorized now.**
+- Server ring state/wakeup fix deployed from main commit `e21f60e` and pushed. Integration coverage includes answer/decline waking ring long-polls, auth rejection and watcher accounting; seven server tests passed. Installed server hash `30C60013D5F5F89079B1586A34A67D3C7ABB2A80D7630B7D5B05457BBC1823FA`. Gateway/tunnel healthy and a fresh stdio MCP initialize/contact-mode check passed. Old MCP sessions disconnected by the approved restart need reconnecting; do not restart Codex. No actual call made.
+- Icon option 3 (close-up Clawd) was explicitly approved through Discord. Commit `86cddba` pushed: multi-size exe icon, window/taskbar icon, toast registration and Start menu icon. Actual window and extracted exe icon inspected. No toast was displayed.
+- Windows file drop and Ctrl+V photo/file paste now use the shared attachment loading/result/store flow. Text-only clipboard paste remains with Slint; attachments are accepted only in an editable open chat. One attachment at a time; existing 10 MiB limit remains. Picker, drop and file paste share `read_file`.
+- HEIC/HEIF now converts through Windows image decoding to JPEG quality 90 with the same 4096-edge sampling policy as Android. EXIF orientation and sRGB conversion are applied. Requires installed Windows HEIF/HEVC support; errors are shown in the existing attachment UI. Both extensions exist on this PC. Tested against `strukturag/libheif`'s public `examples/example.heic` (SHA-256 `7F8B363E4936C0666A25F64F3A92FDA10BD8E5453BE4592530B65A55DD98F3F2`), plus synthetic scale/orientation, malformed input, clipboard RGBA and file-size cases. Fixture is in `B:\Projects\CallMe-work`, not committed.
+- Windows suite before HEIC: 41 passed. Focused suite after HEIC: all five passed including the normally ignored native-codec fixture test. Final release built successfully and installed; source and installed SHA-256 both `A757ADE15E1785B50C9847D432C04A5E66A97000E765EABC56CCD81C26E9D2AD` (36,897,792 bytes). Native Explorer drop / Ctrl+V end-to-end remain unchecked to avoid changing the user's clipboard or using real input.
+- Resize check found clipping/overlap at 320x480 outer size. Added desktop-only minimum 412x600 logical client size in the shared UI. Verified Windows min-track bounds 428x639 outer; home screenshots at 428x639, 760x639 and 428x931 are usable. Chat/call resizing remains unchecked. One initial resize-test launch briefly became foreground despite `Start-Process -WindowStyle Hidden`; stopped it and corrected the Windows attributes hook to open isolated `CALLME_DESK_DATA` runs without activation. Retest confirmed foreground unchanged both on launch and throughout resizing. Do not rely on the shell Hidden option alone.
+- Repeatable resource sampler: `scripts/bench-desktop.ps1 -AppProcessId <pid> -Scenario <name> -Seconds 60`. CSVs in `D:\Outputs\CallMe\bench`. Offline isolated test app on monitor 2, never foreground: home (60 s) 106.71 MiB working set / 110.88 MiB private / 5.81% of one core; chat open (60 s) 188.89 / 224.15 / 3.64%; minimized (15 s) 1.35 / 222.83 / 0.10%. Working-set trimming does not free the private allocation. These are passive resource readings, not frame pacing or a thermal verdict.
+- Temperature reader returned unavailable; existing elevated HWiNFO has shared memory off. Did not restart it or trigger UAC. Builds limited to two Cargo jobs. No stress test, PresentMon capture or phone benchmark.
+- Contrary to the old snapshot, default `%LOCALAPPDATA%\ClaudeCall` and the startup registry entry were absent when checked. Install now seeds only home/call positions on monitor 2 in default prefs and registers the installed executable at login. Start menu target/icon and matching installed bytes verified; toast IconUri restored to `B:\Projects\CallMe\bin\claude-call.png`. App left stopped. Test runs used isolated data/config; no personal chat history was copied or deleted.
+- Missing motion notes were not found in the named path or usual project/output/backup locations. The six-behavior approval still exists at `D:\Inspiration\Alive-2026-10-17\README.md`. No replacement notes were invented.
+- Remaining: real call/audio/ring and toast-click acceptance when interruption is welcome; native drop/paste interaction acceptance; frame pacing/high-refresh assessment; shared expression previews and approval; high-resolution wheel accumulation; history synchronization; deliberate branch/cache cleanup. The 21 refactors require phone acceptance, so leave them deferred. Existing worktrees/data remain preserved.
+
+Native codec check (no phone, no UI):
+```powershell
+$env:CARGO_TARGET_DIR='B:\Projects\CallMe\target-desk'
+$env:CALLME_HEIC_FIXTURE='B:\Projects\CallMe-work\example.heic'
+cargo test -p callme-phone --lib --release --target x86_64-pc-windows-msvc -j 2 desk_attach::tests -- --include-ignored
+```
+
 ## 1. Where things are
 
 | What | Where |
