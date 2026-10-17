@@ -159,6 +159,7 @@ impl Caller {
             self.cast.set_state(state);
         }
         self.cast.attend(matches!(phase, Phase::Incoming | Phase::Connecting | Phase::Listening | Phase::Hearing));
+        self.cast.set_wide(if phase == Phase::Hearing { 0.06 } else { 0.0 });
         self.cast.set_voice((phase == Phase::Talking).then_some(voice));
         if phase == Phase::Incoming && now >= self.next_ring {
             if self.shown_at.is_some() {

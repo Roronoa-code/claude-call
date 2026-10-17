@@ -47,7 +47,11 @@ The live server health endpoint is `http://127.0.0.1:47810/health`; it responded
 
 Core `home`, `screen`, `alive`, `cast`, `faces`, chat/store, Slint screens and shaders remain shared. Windows OS adapters live in `phone/src/desk`. Existing scheduler remains 60 fps moving / 20 idle / 10 asleep. No new native motion was applied.
 
-## Motion previews: next review, not approved work
+## Expressions: approved and built (Claude, 17 Oct, after this handoff)
+
+Mani saw the six previews and said to implement them in the app's style. Built at Subtle strength in shared code: `art/live3d/clawd_cast.frag` (wide eyes, worried lids/tilt via `uMood.z`, yawn mouth via `uMood.w`), `art/live3d/null.frag` (new `uFace`: worry, scan, rebuild; wide LEDs), `phone/src/cast.rs` (surprise, worry, yawn, wipe scan, pleased lift, set_wide), hooks in `alive.rs`, `home.rs`, `faces.rs`, `caller.rs`. Verified with offscreen GPU renders (`D:\Outputs\CallMe\expressions`), host tests (42) and a native PC launch on monitor 2. Not checked on the phone. Approval record: `D:\Inspiration\Alive-2026-10-17\README.md`.
+
+## Motion previews (historical)
 
 User-facing output directory contains:
 

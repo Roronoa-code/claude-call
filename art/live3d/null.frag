@@ -7,6 +7,7 @@ uniform vec4 uAnt;
 uniform vec4 uEyes;
 uniform vec4 uMood;
 uniform vec4 uHands;
+uniform vec4 uFace;
 uniform vec4 uStage;
 uniform vec4 uKey;
 uniform vec4 uKeyCol;
@@ -213,12 +214,19 @@ vec2 glyphs(vec2 s) {
     vec2 look = uEyes.xy * vec2(0.1, 0.065);
     float sleepy = uEyes.w;
     float keep = max((1.0 - think) * (1.0 - talk), 1e-3);
-    float w = mix(0.125, 0.15, happy) * mix(1.0, 0.75, sleepy);
-    float hgt = mix(0.13, 0.17, happy) * max(clamp(uEyes.z, 0.0, 1.0), happy) * (1.0 - sleepy);
+    float wide = max(uEyes.z - 1.0, 0.0);
+    float w = mix(0.125, 0.15, happy) * mix(1.0, 0.75, sleepy) * (1.0 + 0.4 * wide);
+    float hgt = mix(0.13, 0.17, happy) * max(clamp(uEyes.z, 0.0, 1.3), happy) * (1.0 - sleepy);
     float th = mix(0.025, 0.031, happy) * mix(1.0, 0.65, sleepy);
     float ey = (s.y - look.y + 0.03 + 0.02 * sleepy) / keep;
     float dl = sdSeg(vec2(abs((s.x - look.x + 0.2) / keep), ey), vec2(w, -hgt * 0.5), vec2(0.0, hgt * 0.5), th) * keep;
     float dr = sdSeg(vec2(abs((s.x - look.x - 0.2) / keep), ey), vec2(w, -hgt * 0.5), vec2(0.0, hgt * 0.5), th) * keep;
+    float worry = uFace.x;
+    if (worry > 0.01) {
+        vec2 k = vec2(0.125, 0.05);
+        dl = mix(dl, sdSeg(vec2(s.x - look.x + 0.2, ey), -k, k, th), worry);
+        dr = mix(dr, sdSeg(vec2(s.x - look.x - 0.2, ey), vec2(-k.x, k.y), vec2(k.x, -k.y), th), worry);
+    }
     float d = min(dl, dr);
     float g = exp(-max(dl, 0.0) / GLOW) + exp(-max(dr, 0.0) / GLOW);
     if (think > 0.01) {
@@ -263,7 +271,14 @@ vec3 screenCol(vec3 h, vec3 n, vec3 v, float occ, float foot) {
     float wide = exp(-length(c - vec2(0.2, 0.0)) / 0.1) + exp(-length(c + vec2(0.2, 0.0)) / 0.1);
     float glow = min(dg.y, 1.5) * 0.45 + wide * 0.02;
     vec3 red = vec3(1.0, 0.09, 0.03);
-    col += (red * (core + glow) + vec3(1.0, 0.45, 0.3) * hot * 0.6) * uHands.w * rolled;
+    float shown = 1.0;
+    if (uFace.y >= 0.0) {
+        float ys = mix(SCREEN.y * 0.8, -SCREEN.y * 0.8, uFace.y);
+        shown = uFace.y < 1.0 ? step(h.y, ys) : uFace.z;
+        float on = step(abs(h.x), SCREEN.x - 0.06) * step(uFace.y, 0.999);
+        col += vec3(1.0, 0.47, 0.29) * (smoothstep(0.012, 0.0, abs(h.y - ys)) * 0.9 + smoothstep(0.08, 0.0, h.y - ys) * step(ys, h.y) * 0.12) * on * uHands.w;
+    }
+    col += (red * (core + glow) + vec3(1.0, 0.45, 0.3) * hot * 0.6) * uHands.w * rolled * shown;
     return col * (1.0 - 0.6 * smoothstep(0.3, 0.5, max(abs(h.x) - SCREEN.x + 0.45, abs(h.y) - SCREEN.y + 0.45)));
 }
 

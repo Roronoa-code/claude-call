@@ -277,6 +277,7 @@ pub fn open() -> Open {
                     if !rang {
                         no_answer.set(Some(Instant::now()));
                         home.set_no_answer(true);
+                        pair.borrow_mut().worry(start.elapsed().as_secs_f32());
                     }
                 }
             }

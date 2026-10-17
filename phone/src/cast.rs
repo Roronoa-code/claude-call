@@ -136,6 +136,13 @@ fn feel(who: Who) -> Feel {
 }
 
 const GRAVITY: f32 = 54.0;
+const WIPE_S: (f32, f32, f32) = (1.8, 2.1, 2.8);
+const YAWN_S: f32 = 5.4;
+
+fn smooth(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
 
 pub struct Cast {
     pub who: Who,
@@ -166,7 +173,14 @@ pub struct Cast {
     finger_up: Option<f32>,
     glance: Option<(f32, f32, f32)>,
     stretch_until: f32,
-    wipe_until: f32,
+    wipe_at: f32,
+    wide_to: f32,
+    wide_until: f32,
+    widen: Spring,
+    worry_until: f32,
+    worry: Spring,
+    yawn_at: f32,
+    hop_k: f32,
     happy: Spring,
     happy_until: f32,
     think: Spring,
@@ -228,7 +242,14 @@ impl Cast {
             finger_up: None,
             glance: None,
             stretch_until: 0.0,
-            wipe_until: 0.0,
+            wipe_at: f32::MIN,
+            wide_to: 0.0,
+            wide_until: 0.0,
+            widen: Spring::default(),
+            worry_until: 0.0,
+            worry: Spring::default(),
+            yawn_at: f32::MIN,
+            hop_k: 1.0,
             happy: Spring::default(),
             happy_until: 0.0,
             think: Spring::default(),
@@ -357,10 +378,48 @@ impl Cast {
         self.happy_until = self.happy_until.max(now + for_s);
     }
 
-    pub fn wipe(&mut self, now: f32, for_s: f32) {
-        self.wipe_until = now + for_s;
-        self.blink_until = now + for_s * 0.6;
-        self.head.roll.v += 1.5;
+    pub fn wipe(&mut self, now: f32) {
+        self.wipe_at = now;
+    }
+
+    fn scan(&self) -> (f32, f32) {
+        let t = self.t - self.wipe_at;
+        match t {
+            t if !(0.0..WIPE_S.2).contains(&t) => (-1.0, 1.0),
+            t if t < WIPE_S.0 => (t / WIPE_S.0, 0.0),
+            t if t < WIPE_S.1 => (1.0, 0.0),
+            t => (1.0, smooth((t - WIPE_S.1) / (WIPE_S.2 - WIPE_S.1))),
+        }
+    }
+
+    pub fn set_wide(&mut self, k: f32) {
+        self.wide_to = k;
+    }
+
+    pub fn surprise(&mut self, now: f32) {
+        self.wide_until = now + 0.9;
+    }
+
+    pub fn worry(&mut self, now: f32, for_s: f32) {
+        self.worry_until = now + for_s;
+        self.next_saccade = now + 0.05;
+    }
+
+    pub fn yawn(&mut self, now: f32) {
+        self.yawn_at = now;
+    }
+
+    fn yawning(&self) -> f32 {
+        let t = (self.t - self.yawn_at) / YAWN_S;
+        smooth((t - 0.12) / 0.28) * (1.0 - smooth((t - 0.63) / 0.31))
+    }
+
+    pub fn pleased(&mut self, now: f32) {
+        self.happy_until = self.happy_until.max(now + 1.8);
+        if self.y <= 0.0 && self.launch_at.is_none() {
+            self.hop_k = 0.3;
+            self.launch_at = Some(now + 0.08);
+        }
     }
 
     fn schedule(&mut self, now: f32) {
@@ -457,7 +516,6 @@ impl Cast {
         }
         if null && now >= self.next_tap && now >= self.tap_until {
             let typing = match st {
-                _ if now < self.wipe_until => 1.0,
                 State::Think => 1.0,
                 State::Idle => 0.12,
                 _ => 0.0,
@@ -498,6 +556,9 @@ impl Cast {
         }
         let happy = self.happy_until > now || st == State::Happy;
         let open_to = if now < self.blink_until { 0.0 } else { 1.0 };
+        let wide_to = if now < self.wide_until { 0.22 } else { self.wide_to };
+        let worry_to = if now < self.worry_until { 1.0 } else { 0.0 };
+        let yawn = self.yawning();
         let lid_to = match (st, self.asleep_for > 4.0) {
             (State::Sleep, false) => 0.55,
             (State::Sleep, true) => 1.0,
@@ -508,7 +569,7 @@ impl Cast {
             _ => self.syllable.level,
         };
         let nod = self.nod.x;
-        gy -= 0.35 * nod;
+        gy -= 0.35 * nod + 0.45 * self.worry.x;
         let arm_up = 0.5;
         let (mut arm_l, mut arm_r) = (f.arm_rest, f.arm_rest);
         match st {
@@ -532,7 +593,7 @@ impl Cast {
             State::Idle => 3.2,
         } * (1.0 + 0.12 * (now * 0.23).sin() * (now * 0.071 + 1.3).cos());
         let sway = 0.012 * (now * 0.9).sin() + 0.008 * (now * 0.37 + 1.0).sin() + 0.005 * (now * 1.71 + 2.0).sin();
-        let squash_to = if self.launch_at.is_some() { 0.86 } else if self.y > 0.0 { 1.06 } else if stretching { 1.09 } else { 1.0 + 0.025 * speaking - 0.03 * nod };
+        let squash_to = if self.launch_at.is_some() { 0.86 } else if self.y > 0.0 { 1.06 } else if stretching { 1.09 } else { 1.0 + 0.025 * speaking - 0.03 * nod + 0.045 * yawn };
         let (head_roll_to, head_nod_to) = match st {
             State::Think => (0.1 * gx.signum(), if gy < 0.0 { 0.22 } else { -0.08 }),
             State::Sleep => (0.06, 0.2),
@@ -549,7 +610,8 @@ impl Cast {
         for _ in 0..steps as usize {
             if let Some(at) = self.launch_at {
                 if self.t >= at {
-                    self.vy = (2.0 * GRAVITY * f.hop).sqrt();
+                    self.vy = (2.0 * GRAVITY * f.hop * self.hop_k).sqrt();
+                    self.hop_k = 1.0;
                     self.y = 1e-4;
                     self.launch_at = None;
                     self.arms.0.v += 2.0;
@@ -569,7 +631,9 @@ impl Cast {
                 }
             }
             self.squash.step(squash_to, f.squash.hz, f.squash.zeta, h);
-            self.lean.step(self.lean_to + gx * 0.03 + sway, f.lean.hz * 0.6, f.lean.zeta, h);
+            self.lean.step(self.lean_to + gx * 0.03 + sway - 0.04 * yawn + 0.025 * self.worry.x, f.lean.hz * 0.6, f.lean.zeta, h);
+            self.widen.step(wide_to, 2.4, 0.9, h);
+            self.worry.step(worry_to, 1.4, 1.0, h);
             let work = self.hold.work.map_or(0.0, |w| w.0 * 0.3);
             self.turn.step(gx * 0.22 + work + 0.04 * (now * 0.21).sin(), 1.3, 0.75, h);
             self.look.0.step(gx, 7.0, 0.92, h);
@@ -615,7 +679,8 @@ impl Cast {
 
     pub fn moving(&self) -> bool {
         let springs = [&self.squash, &self.look.0, &self.look.1, &self.open, &self.happy, &self.arms.0, &self.arms.1, &self.ant.side, &self.voice, &self.nod];
-        self.y > 0.0 || self.finger.is_some() || self.glance.is_some() || self.t < self.stretch_until || self.t < self.wipe_until || self.state == State::Talk || self.roll != 0.0 || springs.iter().any(|s| s.v.abs() > 0.05)
+        self.y > 0.0 || self.finger.is_some() || self.glance.is_some() || self.t < self.stretch_until || self.scan().0 >= 0.0 || self.yawning() > 0.0
+            || self.t < self.wide_until.max(self.worry_until) || self.widen.v.abs() > 0.01 || self.worry.v.abs() > 0.01 || self.state == State::Talk || self.roll != 0.0 || springs.iter().any(|s| s.v.abs() > 0.05)
     }
 
     pub fn uniforms(&self) -> Uniforms {
@@ -623,7 +688,9 @@ impl Cast {
         let breath = self.breath.sin() * self.f.breath * deep;
         let lag = (self.breath - 0.6).sin() * 0.05;
         let body = [self.squash.x.clamp(0.8, 1.12) * (1.0 + breath), self.y, self.lean.x, self.turn.x];
-        let eyes = [self.look.0.x, self.look.1.x, self.open.x.clamp(0.0, 1.0), self.lid.x.clamp(0.0, 1.0)];
+        let (yawn, worry) = (self.yawning(), self.worry.x.clamp(0.0, 1.0));
+        let open = self.open.x.clamp(0.0, 1.0) * (1.0 + self.widen.x - 0.22 * worry) * (1.0 - yawn);
+        let eyes = [self.look.0.x, self.look.1.x, open.clamp(0.0, 1.3), self.lid.x.clamp(0.0, 1.0)];
         let happy = self.happy.x.clamp(0.0, 1.0);
         match self.who {
             Who::Null => vec![
@@ -633,12 +700,13 @@ impl Cast {
                 ("uEyes", eyes),
                 ("uMood", [happy, self.think.x.clamp(0.0, 1.0), self.talk.x.clamp(0.0, 1.0), self.t % 120.0]),
                 ("uHands", [self.taps.0.x.clamp(-0.3, 1.2), self.taps.1.x.clamp(-0.3, 1.2), self.voice.x.clamp(0.0, 1.0), self.bright.x]),
+                ("uFace", { let (scan, back) = self.scan(); [worry, scan, back, 0.0] }),
             ],
             Who::Clawd(m) => vec![
                 ("uBody", body),
                 ("uArms", [self.arms.0.x + lag, self.arms.1.x + lag, 0.0, 0.0]),
                 ("uEyes", eyes),
-                ("uMood", [happy, (self.voice.x * self.talk.x).clamp(0.0, 1.0), 0.0, 0.0]),
+                ("uMood", [happy, (self.voice.x * self.talk.x).clamp(0.0, 1.0), worry, yawn]),
                 ("uMat", [m as i32 as f32, 0.0, 0.0, 0.0]),
             ],
         }

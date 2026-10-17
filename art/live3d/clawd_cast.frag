@@ -123,12 +123,16 @@ float sdArc(vec2 p, float ap, float ra, float rb) {
     return ((sc.y * p.x > sc.x * p.y) ? length(p - sc * ra) : abs(length(p) - ra)) - rb;
 }
 float sdSeg(vec2 p, vec2 a, vec2 b, float r) { vec2 pa = p - a, ba = b - a; float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0); return length(pa - ba * h) - r; }
-float eye(vec2 p) {
+float eyeW(float open) { return 0.14 * (open > 1.0 ? 1.0 + (open - 1.0) * 0.55 : mix(1.12, 1.0, open)); }
+float eye(vec2 p, float side) {
     p /= ES * vec2(ESX, 1.0);
+    float tilt = 0.12 * uMood.z * side, c = cos(tilt), s = sin(tilt);
+    p = mat2(c, -s, s, c) * p;
     float happy = uMood.x, open = uEyes.z * clamp(1.0 - 2.0 * happy, 0.0, 1.0);
     float ry = 0.29 * mix(0.12, 1.0, open);
-    float e = sdEllipse(p, vec2(0.14 * mix(1.12, 1.0, open), ry));
-    e = max(e, p.y - 0.29 * (1.0 - 2.0 * uEyes.w));
+    float e = sdEllipse(p, vec2(eyeW(open), ry));
+    e = max(e, p.y - max(0.29, ry) * (1.0 - 2.0 * uEyes.w));
+    e = mix(e, max(e, p.y - ry * (1.0 - 0.35 * uMood.z) + 0.6 * uMood.z * p.x * side), step(0.001, uMood.z));
     e = mix(sdArc(p + vec2(0.0, 0.12), 1.0, 0.17, 0.032), e, smoothstep(0.0, 0.4, open));
     e = mix(e, sdArc(vec2(p.x, -p.y) + vec2(0.0, 0.02), 1.0, 0.17, 0.03), smoothstep(0.75, 1.0, uEyes.w));
     float chev = min(sdSeg(p, vec2(-0.14, -0.07), vec2(0.0, 0.08), 0.05), sdSeg(p, vec2(0.14, -0.07), vec2(0.0, 0.08), 0.05));
@@ -137,13 +141,17 @@ float eye(vec2 p) {
 vec2 lookOffset() { return uEyes.xy * vec2(0.17, 0.09); }
 float face(vec2 f, out vec2 ep) {
     vec2 look = lookOffset();
-    vec2 c = vec2(f.x > look.x ? EYE.x : -EYE.x, BODY_Y + EYE.y) + look;
+    float side = f.x > look.x ? 1.0 : -1.0;
+    vec2 c = vec2(side * EYE.x, BODY_Y + EYE.y) + look;
     ep = (f - c) / ES;
-    float d = eye(f - c);
-    float talk = uMood.y;
+    float d = eye(f - c, side);
+    float talk = uMood.y, yawn = uMood.w;
+    vec2 m = f - vec2(look.x * 0.6, BODY_Y + EYE.y - 0.36 * ES + look.y * 0.5);
     if (talk > 0.01) {
-        vec2 m = f - vec2(look.x * 0.6, BODY_Y + EYE.y - 0.36 * ES + look.y * 0.5);
         d = min(d, sdEllipse(m, vec2(0.05 + 0.045 * talk, 0.012 + 0.085 * talk)) + 0.006 * (1.0 - smoothstep(0.0, 0.15, talk)));
+    }
+    if (yawn > 0.01) {
+        d = min(d, sdEllipse(m + vec2(0.0, 0.02 * yawn), vec2(0.03 + 0.012 * yawn, 0.012 + 0.09 * yawn)) + 0.006 * (1.0 - smoothstep(0.0, 0.15, yawn)));
     }
     return d;
 }
@@ -395,7 +403,7 @@ vec3 shade(vec3 p, vec3 rd, float foot, out float ink) {
             vec3 ne = normalize(n + out2 * slope);
             if (MAT == 2) {
                 float open = uEyes.z * clamp(1.0 - 2.0 * uMood.x, 0.0, 1.0);
-                vec2 r = ES * vec2(0.14 * ESX * mix(1.12, 1.0, open), 0.29 * mix(0.12, 1.0, open));
+                vec2 r = ES * vec2(eyeW(open) * ESX, 0.29 * mix(0.12, 1.0, open));
                 vec2 u = ep * ES / r;
                 vec3 nb = worldDir(normalize(vec3(u / r, sqrt(max(1.0 - dot(u, u), 0.0)) / 0.1)));
                 ne = normalize(mix(ne, nb, smoothstep(0.3, 0.7, open) * (1.0 - smoothstep(0.2, 0.6, uEyes.w)) * step(dot(u, u), 1.1)));

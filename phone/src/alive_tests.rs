@@ -132,3 +132,27 @@ fn idle_life_plays_while_awake_but_not_while_hovering_call() {
     }
     assert!(played);
 }
+
+fn uniform(c: &Cast, name: &str) -> [f32; 4] {
+    c.uniforms().into_iter().find(|(n, _)| *n == name).unwrap().1
+}
+
+#[test]
+fn expressions_reach_the_shaders_and_settle_back() {
+    let (mut p, mut now) = settled_at(2);
+    p.clawd.yawn(now);
+    p.null.wipe(now);
+    p.worry(now);
+    let at = |p: &mut Pair, now: &mut f32, until: f32| while *now < until { *now += FRAME; p.tick(*now, 2); };
+    let start = now;
+    at(&mut p, &mut now, start + 1.0);
+    let scan = uniform(&p.null, "uFace")[1];
+    assert!((0.0..1.0).contains(&scan));
+    at(&mut p, &mut now, start + 2.6);
+    assert!(uniform(&p.clawd, "uMood")[3] > 0.8);
+    assert!(uniform(&p.clawd, "uMood")[2] > 0.8);
+    at(&mut p, &mut now, start + 9.0);
+    assert_eq!(uniform(&p.clawd, "uMood")[3], 0.0);
+    assert!(uniform(&p.clawd, "uMood")[2] < 0.05);
+    assert_eq!(uniform(&p.null, "uFace")[1], -1.0);
+}

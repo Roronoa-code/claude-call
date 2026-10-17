@@ -26,12 +26,13 @@ pub struct Faces {
     list_talk: Option<String>,
     list_who: Option<Who>,
     quiet_from: f32,
+    pleased_at: Option<f32>,
 }
 
 impl Faces {
     pub fn new() -> Self {
         let c = || Cast::new(Who::Null, 1);
-        Faces { who: None, casts: [c(), c()], drawn: [-1.0; 2], replies: 0, talk_until: 0.0, big_until: 0.0, seed: 0x2545_f491, list_busy: None, list_talk: None, list_who: None, quiet_from: 0.0 }
+        Faces { who: None, casts: [c(), c()], drawn: [-1.0; 2], replies: 0, talk_until: 0.0, big_until: 0.0, seed: 0x2545_f491, list_busy: None, list_talk: None, list_who: None, quiet_from: 0.0, pleased_at: None }
     }
 
     pub fn poke(&mut self, now: f32) {
@@ -85,6 +86,12 @@ impl Faces {
         }
         if replies > self.replies {
             self.talk_until = now + TALK_FOR;
+            self.pleased_at = Some(self.talk_until + 0.2);
+        }
+        if self.pleased_at.is_some_and(|t| now >= t) && !c.get_waiting() {
+            self.pleased_at = None;
+            self.casts.iter_mut().for_each(|c| c.pleased(now));
+            self.quiet_from = now + 2.4;
         }
         self.replies = replies;
         let state = if now < self.talk_until {
@@ -129,6 +136,7 @@ impl Faces {
         if let Some(prev) = self.list_busy.take() {
             if busy.as_ref() != Some(&prev) && rows.iter().any(|r| r.id == prev.as_str() && !r.busy) {
                 (self.list_talk, self.talk_until) = (Some(prev), now + TALK_FOR);
+                self.pleased_at = Some(now + TALK_FOR + 0.2);
             }
         }
         self.list_busy = busy.clone();
@@ -162,6 +170,10 @@ impl Faces {
         }
         let (i, k) = (1, HERO_K);
         let cast = &mut self.casts[i];
+        if self.pleased_at.is_some_and(|t| now >= t) {
+            self.pleased_at = None;
+            cast.pleased(now);
+        }
         cast.set_state(state);
         cast.tick(now);
         if self.drawn[i] < 0.0 || alive::due(cast, self.drawn[i], now) {

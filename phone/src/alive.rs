@@ -43,6 +43,7 @@ pub fn due(c: &Cast, last: f32, now: f32) -> bool {
 
 const WAKE_FOR: f32 = 8.0;
 const DOZE_AFTER: f32 = 120.0;
+const YAWN_LEAD: f32 = 4.0;
 const NOTICE_EVERY: (f32, f32) = (45.0, 90.0);
 const BEAT_EVERY: (f32, f32) = (150.0, 300.0);
 
@@ -53,7 +54,7 @@ enum Beat {
     Hop(bool),
     Sway(bool, f32),
     Stretch(f32),
-    Wipe(f32),
+    Wipe,
 }
 
 pub const STEP: f32 = 48.0;
@@ -133,6 +134,7 @@ pub struct Pair {
     last: f32,
     active_at: f32,
     dozing: bool,
+    yawned: bool,
     hovering: bool,
     script: Vec<(f32, Beat)>,
     next_notice: f32,
@@ -162,6 +164,7 @@ impl Pair {
             last: 0.0,
             active_at: 0.0,
             dozing: false,
+            yawned: false,
             hovering: false,
             script: Vec::new(),
             next_notice: 30.0,
@@ -179,12 +182,14 @@ impl Pair {
 
     pub fn active(&mut self, now: f32) {
         self.active_at = now;
+        self.yawned = false;
         if self.dozing {
             self.dozing = false;
             self.script.clear();
             for c in [&mut self.clawd, &mut self.null] {
                 c.set_state(State::Idle);
                 c.hop(now);
+                c.surprise(now);
             }
         }
     }
@@ -209,6 +214,15 @@ impl Pair {
             self.clawd.unglance();
             self.null.unglance();
         }
+        for c in [&mut self.clawd, &mut self.null] {
+            c.set_wide(if on { 0.18 } else { 0.0 });
+        }
+    }
+
+    pub fn worry(&mut self, now: f32) {
+        self.script.clear();
+        self.clawd.worry(now, 3.8);
+        self.null.worry(now, 3.8);
     }
 
     pub fn call_pressed(&mut self, now: f32) {
@@ -231,7 +245,7 @@ impl Pair {
                 Beat::Hop(n) => self.cast(n).hop(now),
                 Beat::Sway(n, v) => self.cast(n).sway(v),
                 Beat::Stretch(for_s) => self.clawd.stretch(now, for_s),
-                Beat::Wipe(for_s) => self.null.wipe(now, for_s),
+                Beat::Wipe => self.null.wipe(now),
             }
         }
     }
@@ -247,7 +261,7 @@ impl Pair {
             self.beats += 1;
             self.script = match self.beats % 3 {
                 1 => vec![(now, Beat::Stretch(1.2))],
-                2 => vec![(now, Beat::Wipe(0.7)), (now + 0.75, Beat::Beam(true, 1.0))],
+                2 => vec![(now, Beat::Wipe), (now + 0.3, Beat::Glance(false, 0.95, 0.05, 1.6)), (now + 2.9, Beat::Beam(true, 1.0))],
                 _ => (0..6).map(|i| (now + i as f32 * 0.09, Beat::Sway(false, if i % 2 == 0 { -2.4 } else { 2.4 }))).collect(),
             };
         } else if now >= self.next_notice {
@@ -352,7 +366,14 @@ impl Pair {
         }
         self.null.roll = (self.roll.place - self.shown as f32).clamp(-0.5, 0.5);
         let settled = now - self.shown_at >= DWELL;
-        if !self.dozing && self.shown < 5 && self.dial.is_none() && !self.hovering && now - self.active_at > DOZE_AFTER {
+        let idle = !self.dozing && self.shown < 5 && self.dial.is_none() && !self.hovering;
+        if idle && !self.yawned && now - self.active_at > DOZE_AFTER - YAWN_LEAD {
+            self.yawned = true;
+            self.script.clear();
+            self.clawd.yawn(now);
+            self.null.yawn(now);
+        }
+        if idle && now - self.active_at > DOZE_AFTER {
             self.dozing = true;
             self.script.clear();
         }
