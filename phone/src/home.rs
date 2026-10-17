@@ -207,6 +207,13 @@ pub fn open() -> Open {
     let mut last_refresh = Instant::now();
     let mut warmed = false;
     let mut voted = (0.0f32, Instant::now());
+    ui.global::<Toys>().on_step({
+        let pair = pair.clone();
+        move |by| {
+            pair.borrow_mut().step(by);
+            android::with(ring::tick);
+        }
+    });
     let touched = Rc::new(Cell::new(Instant::now()));
     ui.global::<Toys>().on_point({
         let (pair, ui, touched) = (pair.clone(), ui.as_weak(), touched.clone());

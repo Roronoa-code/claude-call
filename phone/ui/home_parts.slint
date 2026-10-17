@@ -3,6 +3,7 @@ import { T, Icon } from "parts.slint";
 export struct Mode { id: string, title: string }
 
 export global Home {
+    in property <bool> desktop;
     in property <bool> ready: true;
     in property <string> setup-text: "Finish setting up";
     in property <string> ask-chat;

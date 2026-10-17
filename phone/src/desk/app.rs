@@ -42,6 +42,7 @@ pub fn desktop_main() {
         return;
     }
     let home = crate::home::open();
+    home.ui.global::<crate::Home>().set_desktop(true);
     let w = home.ui.window();
     place(w, "home");
     HOME.with(|h| *h.borrow_mut() = Some(home.ui.as_weak()));

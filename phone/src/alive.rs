@@ -189,6 +189,13 @@ impl Pair {
         }
     }
 
+    pub fn step(&mut self, by: i32) {
+        if self.dial.is_none() {
+            let from = if self.pending { self.target } else { nearest(self.roll.place) };
+            (self.target, self.pending) = ((from as i32 + by).clamp(0, LAST as i32) as usize, true);
+        }
+    }
+
     pub fn drum(&self) -> (f32, f32) {
         (self.roll.place, self.spread.place)
     }

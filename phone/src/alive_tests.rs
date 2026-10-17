@@ -82,3 +82,16 @@ fn a_mode_changed_elsewhere_turns_the_drum() {
     assert!(peak > 4.0, "small overshoot");
     assert_eq!(p.drum(), (4.0, 0.0));
 }
+
+#[test]
+fn wheel_steps_one_mode_per_notch_and_stops_at_the_ends() {
+    let (mut p, mut now) = settled_at(4);
+    p.step(1);
+    p.step(1);
+    let mut chosen = None;
+    for _ in 0..180 {
+        now += FRAME;
+        chosen = p.tick(now, 4).or(chosen);
+    }
+    assert_eq!(chosen, Some(5));
+}

@@ -177,6 +177,13 @@ export component Composer inherits Rectangle {
                 if (e.text == Key.Back && Chats.back()) { return accept; }
                 reject
             }
+            capture-key-pressed(e) => {
+                if (Home.desktop && e.text == Key.Return && !e.modifiers.shift && input.preedit-text == "") {
+                    input.send-all();
+                    return accept;
+                }
+                reject
+            }
             window := Rectangle {
                 y: root.pad;
                 height: parent.height - 2 * root.pad;

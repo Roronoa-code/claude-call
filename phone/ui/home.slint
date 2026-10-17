@@ -21,7 +21,7 @@ export component HomeScreen inherits Window {
         function point(down: bool) {
             Toys.point(self.mouse-x - clawd.absolute-position.x - clawd.width / 2, self.mouse-y - clawd.absolute-position.y - clawd.height * 0.4, down);
         }
-        pointer-event(e) => { self.point(e.kind == PointerEventKind.down || e.kind == PointerEventKind.move); }
+        pointer-event(e) => { self.point(e.kind == PointerEventKind.down || (e.kind == PointerEventKind.move && self.pressed)); }
         moved => { self.point(true); }
     }
     StageBack {

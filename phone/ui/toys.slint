@@ -8,6 +8,7 @@ export global Toys {
     in property <length> clawd-below;
     in property <length> null-below;
     callback roll(length, int);
+    callback step(int);
     out property <length> null-dx: (230px / 2 + 4px + 96px / 2) * k;
 }
 
@@ -54,7 +55,7 @@ export component Clawd inherits Rectangle {
     }
     TouchArea {
         pointer-event(e) => {
-            Toys.point(self.mouse-x - self.width / 2, self.mouse-y - self.height * 0.4, e.kind == PointerEventKind.down || e.kind == PointerEventKind.move);
+            Toys.point(self.mouse-x - self.width / 2, self.mouse-y - self.height * 0.4, e.kind == PointerEventKind.down || (e.kind == PointerEventKind.move && self.pressed));
         }
         moved => { Toys.point(self.mouse-x - self.width / 2, self.mouse-y - self.height * 0.4, true); }
         clicked => { root.tapped(); }
@@ -86,12 +87,17 @@ export component Null inherits Rectangle {
         function point(down: bool) {
             Toys.point(self.mouse-x - self.width / 2 + Toys.null-dx, self.mouse-y - self.height * 0.4, down);
         }
+        scroll-event(e) => {
+            if (e.delta-y == 0) { return reject; }
+            Toys.step(e.delta-y < 0 ? 1 : -1);
+            accept
+        }
         pointer-event(e) => {
             if (e.kind == PointerEventKind.down) {
                 root.moved-off = false;
                 root.rolling = false;
             }
-            self.point(e.kind == PointerEventKind.down || e.kind == PointerEventKind.move);
+            self.point(e.kind == PointerEventKind.down || (e.kind == PointerEventKind.move && self.pressed));
             if (root.rolling && e.kind == PointerEventKind.up) {
                 Toys.roll(self.mouse-y - root.from-y, 1);
             }
