@@ -65,6 +65,7 @@ export component HomeScreen inherits Window {
         Rectangle { height: root.under; }
         Drum {
             height: 34px;
+            stepped(by) => { Toys.step(by); }
             font-size: clamp(root.width * 0.084, 26px, 33px);
         }
         if !Home.ready: Rectangle {
@@ -87,7 +88,7 @@ export component HomeScreen inherits Window {
         y: stage.y + stage.height;
         width: parent.width - 48px;
         height: 30px;
-        opacity: root.asking ? root.rest : 0;
+        opacity: root.asking ? root.rest * (1 - Home.spread) : 0;
         animate opacity { duration: 260ms; easing: T.out; }
         Text {
             width: parent.width;
@@ -150,7 +151,7 @@ export component HomeScreen inherits Window {
                 x: 0;
                 width: parent.width;
                 height: parent.height;
-                text: Home.requested ? "Calling you…" : Home.no-answer ? "No answer from the PC" : Home.caller == "codex" ? "Call Codex" : "Call Claude";
+                text: Home.requested ? "Calling you… · Cancel" : Home.no-answer ? "No answer from the PC" : Home.caller == "codex" ? "Call Codex" : "Call Claude";
                 font-size: 16px;
                 weight: 600;
                 color: Home.requested || Home.no-answer ? T.fg2 : #ffffff;
@@ -158,7 +159,7 @@ export component HomeScreen inherits Window {
             }
             call := TouchArea {
                 changed has-hover => { Toys.call-hover(self.has-hover ? 1 : 0); }
-                clicked => { if (!Home.requested) { Toys.call-hover(2); Home.call(Home.caller); } }
+                clicked => { if (Home.requested) { Home.cancel-call(); } else { Toys.call-hover(2); Home.call(Home.caller); } }
             }
         }
     }

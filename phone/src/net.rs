@@ -144,6 +144,10 @@ pub fn request_call(topic: String, agent: String) {
     publish(topic, "Call request", agent);
 }
 
+pub fn cancel_call(topic: String) {
+    publish(topic, "Call cancel", String::new());
+}
+
 pub fn latest_mode_blocking(topic: &str) -> Option<(String, i64)> {
     RT.block_on(async {
         let r = HTTP.get(format!("https://ntfy.sh/{topic}/json?poll=1&since=12h")).timeout(Duration::from_secs(8)).send().await.ok()?;

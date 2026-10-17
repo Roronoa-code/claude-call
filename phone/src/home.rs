@@ -123,6 +123,18 @@ pub fn open() -> Open {
             }
         }
     });
+    home.on_cancel_call({
+        let (ui, requested_at) = (ui.as_weak(), requested_at.clone());
+        move || {
+            if let Some(topic) = android::with(|env, act| settings::topic(env, act)) {
+                crate::net::cancel_call(topic);
+            }
+            requested_at.set(None);
+            if let Some(ui) = ui.upgrade() {
+                ui.global::<Home>().set_requested(false);
+            }
+        }
+    });
     // finish() makes the next open cold; the launcher leaves the task warm in the background.
     home.on_leave(|| {
         android::leave();

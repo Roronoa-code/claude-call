@@ -88,9 +88,14 @@ export component Null inherits Rectangle {
         function point(down: bool) {
             Toys.point(self.mouse-x - self.width / 2 + Toys.null-dx, self.mouse-y - self.height * 0.4, down);
         }
+        property <length> wheel;
         scroll-event(e) => {
             if (e.delta-y == 0) { return reject; }
-            Toys.step(e.delta-y < 0 ? 1 : -1);
+            self.wheel = (self.wheel > 0 && e.delta-y < 0) || (self.wheel < 0 && e.delta-y > 0) ? e.delta-y : self.wheel + e.delta-y;
+            if (Math.abs(self.wheel) >= 40px) {
+                Toys.step(self.wheel < 0 ? 1 : -1);
+                self.wheel = 0;
+            }
             accept
         }
         pointer-event(e) => {

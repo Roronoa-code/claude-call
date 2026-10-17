@@ -19,6 +19,7 @@ export global Home {
     callback set-mode(string);
     callback set-up();
     callback call(string);
+    callback cancel-call();
     callback leave();
     callback backable(bool);
     in property <int> shown: -1;
@@ -38,6 +39,21 @@ export global Home {
 
 export component Drum {
     in property <length> font-size;
+    callback stepped(int);
+    TouchArea {
+        y: -root.radius / 2;
+        height: root.height + root.radius;
+        property <length> wheel;
+        scroll-event(e) => {
+            if (e.delta-y == 0) { return reject; }
+            self.wheel = (self.wheel > 0 && e.delta-y < 0) || (self.wheel < 0 && e.delta-y > 0) ? e.delta-y : self.wheel + e.delta-y;
+            if (Math.abs(self.wheel) >= 40px) {
+                root.stepped(self.wheel < 0 ? 1 : -1);
+                self.wheel = 0;
+            }
+            accept
+        }
+    }
     property <length> radius: 78px;
     property <length> eye: 520px;
     property <angle> pitch: 36deg;

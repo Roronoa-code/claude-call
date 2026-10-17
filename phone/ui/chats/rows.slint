@@ -55,8 +55,9 @@ export component SlideRow inherits Rectangle {
             }
         }
         moved => {
-            if (!root.slid && !root.held && Math.abs(self.mouse-x - self.pressed-x) > 10px
+            if (!root.slid && Math.abs(self.mouse-x - self.pressed-x) > 10px
                 && Math.abs(self.mouse-x - self.pressed-x) > 1.3 * Math.abs(self.mouse-y - self.pressed-y)) {
+                if (root.held) { root.from = -root.reveal; }
                 root.slid = true;
                 root.drag = root.from;
                 root.sliding = true;
