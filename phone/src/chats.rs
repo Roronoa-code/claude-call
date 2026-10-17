@@ -392,6 +392,13 @@ pub fn ask_state(c: &Chat, now: i64) -> Ask {
     }
 }
 
+pub fn open_choices(c: &Chat, now: i64) -> &[String] {
+    match c.lines.iter().find(|l| !l.me) {
+        Some(l) if ask_state(c, now) == Ask::Waiting => &l.choices,
+        _ => &[],
+    }
+}
+
 pub fn ended(ask: Ask) -> &'static str {
     match ask {
         Ask::Sending => "Waiting for the PC to take your answer…",
@@ -542,7 +549,7 @@ pub fn quick_answers(c: &Chat, now: i64) -> QuickAnswers {
     let (choices, reply, open) = match c.kind {
         Kind::Chat => (vec![], true, false),
         Kind::Ask if ask_state(c, now) == Ask::Waiting => {
-            let choices = c.lines.iter().find(|l| !l.me).map_or(vec![], |l| l.choices.clone());
+            let choices = open_choices(c, now).to_vec();
             match choices.len() {
                 0..=2 => (choices, true, false),
                 3 => (choices, false, false),

@@ -559,3 +559,17 @@ fn a_notification_reply_too_long_to_send_waits_whole_in_the_chat() {
     assert_eq!(s.get("ask-l").unwrap().draft, "");
 }
 
+
+#[test]
+fn ghost_answers_are_the_waiting_asks_choices_until_one_is_sent() {
+    let (mut s, mine, _) = store();
+    assert!(open_choices(s.get(&mine).unwrap(), now()).is_empty(), "a plain chat has no ghost");
+    let picks = ["Keep the phone's", "Keep the PC's", "Merge both"];
+    s.apply_note(&note("ask-g", "g1", "ask", &picks, "Which copy wins?", 1, 1), None);
+    assert_eq!(open_choices(s.get("ask-g").unwrap(), now()), picks, "the first choice is the default ghost");
+    let m = s.add_mine("ask-g", picks[1], None).unwrap();
+    let c = s.get("ask-g").unwrap();
+    assert_eq!(c.lines.iter().find(|l| l.id == m).map(|l| l.text.as_str()), Some(picks[1]), "the shown ghost is what goes");
+    assert_eq!(ask_state(c, now()), Ask::Sending);
+    assert!(open_choices(c, now()).is_empty(), "the composer gives way once the answer is sending");
+}

@@ -15,6 +15,8 @@ export component Composer inherits Rectangle {
     changed draft => { Chats.keep-draft(root.chat, root.draft); }
     property <string> now-chat: Chats.current;
     changed now-chat => {
+        root.ghost-at = 0;
+        root.filled = false;
         if (self.now-chat != "" && self.now-chat != self.chat) {
             input.clear-focus();
             self.chat = self.now-chat;
@@ -26,7 +28,70 @@ export component Composer inherits Rectangle {
     property <bool> picked-media: Chats.pick == "image" || Chats.pick == "video";
     property <bool> has-pick: Chats.pick != "" && Chats.ready;
     property <bool> composing;
-    property <bool> can-send: Chats.pick != "loading" && (draft != "" || composing || picked-media) && left >= 0;
+    property <color> ghost-ink: #6e6c76;
+    property <color> fill-warm: #ffb489;
+    property <color> fill-glow: #ff9d6a88;
+    property <length> swipe-past: 28px;
+    property <length> slide: 18px;
+    property <length> haze-most: 3px;
+    property <duration> letter-gap: 22ms;
+    property <duration> letter-fill: 550ms;
+    property <duration> two-frames: 34ms;
+    property <float> half-warm: 1.1;
+    property <float> warm-from: 3.2;
+    property <float> warm-to: 8.7;
+    property <float> half-white: 10.9;
+    property <float> white-from: 14.8;
+    out property <int> ghost-at;
+    property <int> ghost-go: 1;
+    property <int> ghost-step;
+    property <bool> filled;
+    property <bool> filling;
+    property <duration> fill-t;
+    property <bool> swiped;
+    property <bool> blank: draft == "" && input.preedit-text == "";
+    changed blank => { if (!self.blank) { self.filled = false; } }
+    property <bool> ghost-on: Chats.ready && Chats.pick == "" && Chats.ghosts.length > 0 && blank;
+    property <bool> chosen: ghost-on && filled;
+    out property <bool> offering: ghost-on && !chosen;
+    property <string> ghost: Chats.ghosts[ghost-at];
+    property <length> ghost-x: ghost-step == 1 ? -slide * ghost-go : ghost-step == 2 ? slide * ghost-go : 0px;
+    animate ghost-x { duration: ghost-step == 2 ? 0ms : 320ms; easing: cubic-bezier(0.22, 0.9, 0.24, 1); }
+    property <float> ghost-seen: ghost-step == 0 ? 1 : 0;
+    animate ghost-seen { duration: ghost-step == 2 ? 0ms : 220ms; easing: ease; }
+    property <color> warm-white: fill-warm.mix(#fff, 0.5);
+    property <color> grey-warm: ghost-ink.mix(fill-warm, 0.5);
+    property <float> front: filling ? (animation-tick() - fill-t) / letter-gap : 0;
+    property <length> per: ghost-text.preferred-width / max(1, ghost.character-count);
+    pure function stop(behind: float) -> float {
+        return clamp((root.front - behind) * root.per / max(1px, ghost-text.width), 0, 1);
+    }
+    function cycle(dir: int) {
+        if (root.offering && root.ghost-step == 0 && Chats.ghosts.length > 1) {
+            root.ghost-go = dir;
+            root.ghost-step = 1;
+        }
+    }
+    function accept-ghost() {
+        root.filled = true;
+        root.fill-t = animation-tick();
+        root.filling = true;
+    }
+    Timer {
+        interval: 170ms;
+        running: root.ghost-step == 1;
+        triggered => {
+            root.ghost-at = Math.mod(root.ghost-at + root.ghost-go + Chats.ghosts.length, Chats.ghosts.length);
+            root.ghost-step = 2;
+        }
+    }
+    Timer { interval: root.two-frames; running: root.ghost-step == 2; triggered => { root.ghost-step = 0; } }
+    Timer {
+        interval: root.letter-fill + root.letter-gap * max(0, root.ghost.character-count - 1);
+        running: root.filling;
+        triggered => { root.filling = false; }
+    }
+    property <bool> can-send: Chats.pick != "loading" && (draft != "" || composing || picked-media || chosen) && left >= 0;
     property <bool> can-stop: Chats.action == "stop" && !can-send;
     property <length> pick-h: has-pick ? (picked-media ? 76px : 48px) : 0px;
     animate pick-h { duration: 300ms; easing: T.out; }
@@ -153,7 +218,7 @@ export component Composer inherits Rectangle {
                     }
                 }
                 Text {
-                    visible: root.draft == "" && input.preedit-text == "";
+                    visible: root.blank && !root.ghost-on;
                     x: 2px;
                     text: Chats.hint;
                     font-size: 16.5px;
@@ -164,6 +229,80 @@ export component Composer inherits Rectangle {
                     vertical-alignment: center;
                     overflow: elide;
                 }
+            }
+            Rectangle {
+                visible: root.ghost-on;
+                x: 4px + root.ghost-x;
+                y: window.y + window.height - root.line;
+                width: parent.width - 4px;
+                height: root.line;
+                opacity: root.ghost-seen;
+                Rectangle {
+                    visible: root.filling;
+                    property <length> back-x: clamp((root.front - root.half-white) * root.per, 0px, ghost-text.width);
+                    property <length> fore-x: clamp((root.front - root.half-warm) * root.per, 0px, ghost-text.width);
+                    x: self.back-x;
+                    y: (parent.height - self.height) / 2;
+                    width: self.fore-x - self.back-x;
+                    height: parent.height / 2;
+                    border-radius: self.height / 2;
+                    drop-shadow-blur: 12px;
+                    drop-shadow-color: root.fill-glow;
+                    opacity: self.width / max(1px, (root.half-white - root.half-warm) * root.per);
+                }
+                for side in [-1, 1]: Text {
+                    visible: root.ghost-seen < 0.99;
+                    x: side * (1 - root.ghost-seen) * root.haze-most;
+                    width: ghost-text.width;
+                    height: parent.height;
+                    text: root.ghost;
+                    font-size: 16.5px;
+                    color: root.ghost-ink;
+                    opacity: (1 - root.ghost-seen) / 2;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+                ghost-text := Text {
+                    x: 0px;
+                    width: min(self.preferred-width, parent.width - (root.chosen ? 0px : chip.width + 6px));
+                    height: parent.height;
+                    text: root.ghost;
+                    font-size: 16.5px;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    color: !root.filling ? (root.chosen ? #fff : root.ghost-ink) : @linear-gradient(90deg,
+                        #fff root.stop(root.white-from) * 100%,
+                        root.warm-white root.stop(root.half-white) * 100%,
+                        root.fill-warm root.stop(root.warm-to) * 100%,
+                        root.fill-warm root.stop(root.warm-from) * 100%,
+                        root.grey-warm root.stop(root.half-warm) * 100%,
+                        root.ghost-ink root.stop(0) * 100%);
+                }
+                chip := Rectangle {
+                    visible: !root.chosen;
+                    x: ghost-text.width + 6px;
+                    y: (parent.height - self.height) / 2;
+                    width: tap-word.preferred-width + 12px;
+                    height: tap-word.preferred-height + 4px;
+                    border-radius: 6px;
+                    background: #2a2930;
+                    tap-word := Text { text: "tap"; font-size: 10px; font-family: "JetBrains Mono NL"; color: #b9b7bf; }
+                }
+            }
+            if root.offering: TouchArea {
+                accessible-role: button;
+                accessible-label: root.ghost;
+                accessible-action-default => { root.accept-ghost(); }
+                accessible-action-increment => { root.cycle(1); }
+                accessible-action-decrement => { root.cycle(-1); }
+                changed pressed => { if (self.pressed) { root.swiped = false; } }
+                moved => {
+                    if (self.pressed && !root.swiped && abs(self.mouse-x - self.pressed-x) > root.swipe-past) {
+                        root.swiped = true;
+                        root.cycle(self.mouse-x < self.pressed-x ? 1 : -1);
+                    }
+                }
+                clicked => { if (!root.swiped) { root.accept-ghost(); } }
             }
         }
         Rectangle {
@@ -215,7 +354,7 @@ export component Composer inherits Rectangle {
                 accessible-role: button;
                 accessible-label: root.can-stop ? "Stop" : "Send";
                 clicked => {
-                    if (root.can-stop) { Chats.stop(); } else { input.send-all(); }
+                    if (root.can-stop) { Chats.stop(); } else if (root.chosen) { Chats.choose(root.ghost); } else { input.send-all(); }
                 }
             }
         }

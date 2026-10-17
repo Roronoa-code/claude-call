@@ -7,10 +7,7 @@ use crate::{
 const LINK_FOR: i64 = chats::NTFY_FILE_TTL - 10 * 60_000;
 
 pub fn choices(c: &chats::Chat, now: i64) -> Vec<slint::SharedString> {
-    if chats::ask_state(c, now) != chats::Ask::Waiting {
-        return vec![];
-    }
-    c.lines.iter().find(|l| !l.me).map_or(vec![], |l| l.choices.iter().map(|s| s.into()).collect())
+    chats::open_choices(c, now).iter().map(|s| s.into()).collect()
 }
 
 pub fn topic(c: &chats::Chat) -> String {

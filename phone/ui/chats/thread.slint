@@ -245,6 +245,26 @@ export component ChatThread inherits Rectangle {
         width: parent.width - 20px - root.pal;
         y: root.bottom - self.height;
     }
+    if !root.bare: Rectangle {
+        x: field.x + 4px;
+        property <length> below: 11px;
+        y: field.y + field.height + min(self.below, (root.height - root.kb - field.y - field.height - self.height) / 2);
+        width: dots.preferred-width;
+        height: 5px;
+        opacity: field.offering ? 1 : 0;
+        visible: self.opacity > 0.01;
+        animate opacity { duration: 250ms; easing: ease; }
+        dots := HorizontalLayout {
+            spacing: 6px;
+            for c[i] in Chats.ghosts: Rectangle {
+                property <bool> on: i == field.ghost-at;
+                width: on ? 14px : 5px;
+                border-radius: 2.5px;
+                background: on ? Ink.warm : #4a4950;
+                animate width, background { duration: 250ms; easing: ease; }
+            }
+        }
+    }
     if !Chats.readonly: Rectangle {
         property <bool> show: log.far && !Chats.viewing;
         x: parent.width - 12px - 48px;
