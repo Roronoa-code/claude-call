@@ -31,7 +31,41 @@ export global Home {
         { id: "sleep", title: "Asleep" },
     ];
     out property <int> index: mode == "call" ? 0 : mode == "text" ? 1 : mode == "both" ? 2 : mode == "none" ? 3 : mode == "wake" ? 4 : 5;
-    out property <Mode> current: modes[shown >= 0 ? shown : index];
+    in property <float> drum: index;
+    in property <float> spread;
+}
+
+export component Drum {
+    in property <length> font-size;
+    property <length> radius: 78px;
+    property <length> eye: 520px;
+    property <angle> pitch: 36deg;
+    property <length> face: 52px;
+    property <float> fade-power: 1.6;
+    property <float> front-falloff: 2.2;
+    property <float> back-tint: 0.3;
+    for m[i] in Home.modes: Text {
+        property <float> off: i - Home.drum;
+        property <angle> turn: self.off * root.pitch;
+        property <float> facing: max(0, Math.cos(self.turn));
+        property <float> near: root.eye / (root.eye + root.radius * (1 - Math.cos(self.turn)));
+        property <float> front: max(0, 1 - Math.abs(self.off) * root.front-falloff);
+        visible: self.facing > 0 && (self.front > 0 || Home.spread > 0);
+        y: (root.height - root.face) / 2 - root.radius * Math.sin(self.turn) * self.near;
+        width: root.width;
+        height: root.face;
+        transform-origin: { x: self.width / 2, y: self.height / 2 };
+        transform-scale-x: self.near;
+        transform-scale-y: self.facing * self.near;
+        text: m.title.to-uppercase();
+        font-size: root.font-size;
+        font-weight: 900;
+        font-italic: true;
+        letter-spacing: -0.01 * root.font-size;
+        color: T.fg.with-alpha(Math.pow(self.facing, root.fade-power) * (self.front + (1 - self.front) * Home.spread) * (root.back-tint + (1 - root.back-tint) * self.front));
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
 }
 
 export component RoundIcon {

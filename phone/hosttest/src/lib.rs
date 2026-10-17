@@ -3,3 +3,5 @@
 mod chats;
 #[path = "../../src/cast.rs"]
 mod cast;
+#[path = "../../src/alive.rs"]
+mod alive;

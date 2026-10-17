@@ -47,9 +47,24 @@ pub const STEP: f32 = 48.0;
 const LAST: f32 = 5.0;
 const LATE: f32 = 0.22;
 const DWELL: f32 = 0.3;
+const FLING_S: f32 = 0.12;
+const FLING_FRESH_S: f32 = 0.1;
+const MIN_MOVE_DT: f32 = 0.008;
+const DRUM_K: f32 = 9.0;
+const DRUM_ZETA: f32 = 0.55;
+const SETTLE_GAP: f32 = 0.015;
+const SETTLE_SPEED: f32 = 0.04;
+const SPREAD_IN_K: f32 = 22.0;
+const SPREAD_OUT_K: f32 = 5.5;
+const REST_GAP: f32 = 0.002;
+const REST_SPEED: f32 = 0.02;
 
 fn nearest(p: f32) -> usize {
     p.round().clamp(0.0, LAST) as usize
+}
+
+pub fn snap(place: f32, speed: f32) -> usize {
+    nearest(place + speed * FLING_S)
 }
 
 struct Acted {
@@ -59,13 +74,30 @@ struct Acted {
 
 #[derive(Clone, Copy)]
 struct Dial {
-    from: usize,
+    from: f32,
     at: f32,
+    speed: f32,
+    t: f32,
 }
 
+#[derive(Clone, Copy)]
 struct Roll {
     place: f32,
     speed: f32,
+}
+
+impl Roll {
+    fn still(place: f32) -> Self {
+        Roll { place, speed: 0.0 }
+    }
+
+    fn pull(&mut self, to: f32, k: f32, zeta: f32, dt: f32) {
+        self.speed += (k * k * (to - self.place) - 2.0 * zeta * k * self.speed) * dt;
+        self.place += self.speed * dt;
+        if (self.place - to).abs() < REST_GAP && self.speed.abs() < REST_SPEED {
+            *self = Roll::still(to);
+        }
+    }
 }
 
 pub struct Pair {
@@ -82,6 +114,9 @@ pub struct Pair {
     talk_until: f32,
     dial: Option<Dial>,
     roll: Roll,
+    target: usize,
+    pending: bool,
+    spread: Roll,
     last: f32,
 }
 
@@ -100,7 +135,10 @@ impl Pair {
             copy: 5,
             talk_until: 0.0,
             dial: None,
-            roll: Roll { place: 0.0, speed: 0.0 },
+            roll: Roll::still(0.0),
+            target: 0,
+            pending: false,
+            spread: Roll::still(0.0),
             last: 0.0,
         }
     }
@@ -127,26 +165,36 @@ impl Pair {
         self.null.point(x - null_dx, y, down, now);
     }
 
-    pub fn drag(&mut self, dy: f32) -> usize {
-        let from = self.dial.map_or(self.shown.min(5), |d| d.from);
-        let mut p = from as f32 + dy / STEP;
+    pub fn drag(&mut self, dy: f32, now: f32) -> usize {
+        let from = self.dial.map_or(self.roll.place, |d| d.from);
+        let mut p = from + dy / STEP;
         let give = |x: f32| 0.3 * (1.0 - (-x / 0.3).exp());
         if p < 0.0 {
             p = -give(-p);
         } else if p > LAST {
             p = LAST + give(p - LAST);
         }
-        self.dial = Some(Dial { from, at: p });
-        self.roll = Roll { place: p, speed: 0.0 };
+        let speed = self.dial.map_or(0.0, |d| (p - d.at) / (now - d.t).max(MIN_MOVE_DT));
+        self.dial = Some(Dial { from, at: p, speed, t: now });
+        self.roll = Roll::still(p);
         nearest(p)
     }
 
-    pub fn release(&mut self, keep: bool) -> usize {
-        match self.dial.take() {
-            Some(d) if keep => nearest(d.at),
-            Some(d) => d.from,
-            None => self.shown,
+    pub fn release(&mut self, keep: bool, now: f32) {
+        let Some(d) = self.dial.take() else { return };
+        let speed = if now - d.t < FLING_FRESH_S { d.speed } else { 0.0 };
+        self.roll.speed = speed;
+        if keep {
+            (self.target, self.pending) = (snap(d.at, speed), true);
         }
+    }
+
+    pub fn drum(&self) -> (f32, f32) {
+        (self.roll.place, self.spread.place)
+    }
+
+    pub fn turning(&self) -> bool {
+        self.spread.place > 0.0
     }
 
     pub fn nudge(&mut self, t: f32) {
@@ -156,26 +204,30 @@ impl Pair {
         }
     }
 
-    pub fn tick(&mut self, now: f32, mode: usize) {
+    pub fn tick(&mut self, now: f32, mode: usize) -> Option<usize> {
         let dt = (now - self.last).clamp(0.0, 0.05);
         self.last = now;
-        let m = self.dial.map_or(mode.min(5), |d| nearest(d.at));
+        let mode = mode.min(5);
         if self.shown > 5 {
-            (self.shown, self.shown_at, self.acted, self.copy, self.roll) = (m, now - DWELL, Acted { clawd: m, null: m }, m, Roll { place: m as f32, speed: 0.0 });
-        }
-        if m != self.shown {
-            if self.dial.is_none() {
-                self.roll = Roll { place: m as f32, speed: 0.0 };
-            }
-            (self.shown, self.shown_at) = (m, now);
+            (self.shown, self.shown_at, self.acted, self.copy) = (mode, now - DWELL, Acted { clawd: mode, null: mode }, mode);
+            (self.roll, self.target) = (Roll::still(mode as f32), mode);
         }
         if self.dial.is_none() {
-            let (to, w) = (self.shown as f32, std::f32::consts::TAU * 2.2);
-            self.roll.speed += (w * w * (to - self.roll.place) - 2.0 * 0.62 * w * self.roll.speed) * dt;
-            self.roll.place += self.roll.speed * dt;
-            if (self.roll.place - to).abs() < 0.002 && self.roll.speed.abs() < 0.02 {
-                self.roll = Roll { place: to, speed: 0.0 };
+            if !self.pending {
+                self.target = mode;
             }
+            self.roll.pull(self.target as f32, DRUM_K, DRUM_ZETA, dt);
+        }
+        let moving = self.dial.is_some() || self.roll.speed.abs() > SETTLE_SPEED || (self.target as f32 - self.roll.place).abs() > SETTLE_GAP;
+        let chosen = (self.pending && !moving).then(|| {
+            self.pending = false;
+            self.target
+        });
+        let k = if moving { SPREAD_IN_K } else { SPREAD_OUT_K };
+        self.spread.pull(if moving { 1.0 } else { 0.0 }, k, 1.0, dt);
+        let m = nearest(self.roll.place);
+        if m != self.shown {
+            (self.shown, self.shown_at) = (m, now);
         }
         self.null.roll = (self.roll.place - self.shown as f32).clamp(-0.5, 0.5);
         let settled = now - self.shown_at >= DWELL;
@@ -186,6 +238,7 @@ impl Pair {
         self.act_clawd(now, self.copy, settled);
         self.clawd.tick(now);
         self.null.tick(now);
+        chosen
     }
 
     fn act_null(&mut self, now: f32, settled: bool) {
@@ -249,3 +302,7 @@ impl Pair {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "alive_tests.rs"]
+mod tests;

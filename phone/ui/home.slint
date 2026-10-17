@@ -1,5 +1,5 @@
 import { T, Icon, Icons, Morph, SwapText } from "parts.slint";
-import { Home, RoundIcon } from "home_parts.slint";
+import { Home, RoundIcon, Drum } from "home_parts.slint";
 import { Toys, Clawd, Null } from "toys.slint";
 import { Chats, NewChat, Ink } from "chat.slint";
 import { ChatList } from "chats/list.slint";
@@ -61,13 +61,9 @@ export component HomeScreen inherits Window {
             }
         }
         Rectangle { height: root.under; }
-        SwapText {
+        Drum {
             height: 34px;
-            text: Home.current.title;
-            font-size: 24px;
-            weight: 600;
-            color: T.fg;
-            align: center;
+            font-size: clamp(root.width * 0.084, 26px, 33px);
         }
         if !Home.ready: Rectangle {
             height: 30px;

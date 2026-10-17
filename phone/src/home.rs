@@ -134,8 +134,9 @@ pub fn run(app: android_activity::AndroidApp) {
         move |dy, phase| {
             let Some(ui) = ui.upgrade() else { return };
             let home = ui.global::<Home>();
+            let now = start.elapsed().as_secs_f32();
             if phase == 0 {
-                let m = pair.borrow_mut().drag(dy) as i32;
+                let m = pair.borrow_mut().drag(dy, now) as i32;
                 if m != home.get_shown() {
                     if home.get_shown() >= 0 {
                         android::with(ring::tick);
@@ -144,9 +145,8 @@ pub fn run(app: android_activity::AndroidApp) {
                 }
                 return;
             }
-            let m = pair.borrow_mut().release(phase == 1);
+            pair.borrow_mut().release(phase == 1, now);
             home.set_shown(-1);
-            home.invoke_set_mode(settings::MODES[m].into());
             if phase == 1 && hint.get().is_some() {
                 hint.set(Some(-1.0));
             }
@@ -272,7 +272,14 @@ pub fn run(app: android_activity::AndroidApp) {
                 }
             }
             let mode = settings::MODES.iter().position(|m| *m == home.get_mode().as_str()).unwrap_or(2);
-            p.tick(now, mode);
+            if let Some(m) = p.tick(now, mode).filter(|m| *m != mode) {
+                home.invoke_set_mode(settings::MODES[m].into());
+            }
+            let (at, spread) = p.drum();
+            if home.get_drum() != at || home.get_spread() != spread {
+                home.set_drum(at);
+                home.set_spread(spread);
+            }
             let mut s = scene.borrow_mut();
             if s.failed && ui.global::<Toys>().get_live() {
                 ui.global::<Toys>().set_live(false);
@@ -312,7 +319,7 @@ pub fn run(app: android_activity::AndroidApp) {
             }
             let rest = show
                 && hint.get().is_none()
-                && !p.clawd.moving() && !p.null.moving()
+                && !p.clawd.moving() && !p.null.moving() && !p.turning()
                 && touched.get().elapsed() > Duration::from_secs(2)
                 && !ui.window().has_active_animations();
             let want = if !rest { 0.0 } else if p.clawd.state() == cast::State::Sleep && p.null.state() == cast::State::Sleep { 10.0 } else { 20.0 };
