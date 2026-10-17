@@ -1,7 +1,7 @@
 use crate::{HomeScreen, android, screen};
 use slint::winit_030::{EventResult, WinitWindowAccessor, winit::event::{ElementState, MouseButton, WindowEvent}, winit::keyboard::{Key, NamedKey}};
 use slint::{BackendSelector, CloseRequestResponse, ComponentHandle, LogicalSize, PhysicalPosition};
-use std::{cell::RefCell, rc::Rc, sync::atomic::Ordering};
+use std::{cell::RefCell, sync::atomic::Ordering};
 
 thread_local! {
     static HOME: RefCell<Option<slint::Weak<HomeScreen>>> = const { RefCell::new(None) };
@@ -128,17 +128,15 @@ fn hang_up() {
 
 pub fn close_call() {
     crate::desk_os::ringtone(false);
+    crate::service::ended();
     if let Some(call) = CALL.with(|c| c.borrow_mut().take()) {
         let _ = call.ui.hide();
     }
 }
 
 pub fn stop_ringing() {
+    crate::service::answered_here();
     crate::desk_os::ringtone(false);
-}
-
-pub fn ringing_link() -> Option<String> {
-    crate::service::active_link()
 }
 
 fn local(link: &str) -> String {
@@ -148,14 +146,3 @@ fn local(link: &str) -> String {
         _ => link.to_string(),
     }
 }
-
-pub fn with_home(f: impl FnOnce(&HomeScreen)) {
-    HOME.with(|h| {
-        if let Some(ui) = h.borrow().as_ref().and_then(|w| w.upgrade()) {
-            f(&ui);
-        }
-    });
-}
-
-#[allow(dead_code)]
-fn _keep(_: Rc<()>) {}

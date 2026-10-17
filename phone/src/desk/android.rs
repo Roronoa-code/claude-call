@@ -1,5 +1,8 @@
 use crate::jx::{JNIEnv, JObject, Result};
-use std::{marker::PhantomData, path::PathBuf};
+use std::{marker::PhantomData, path::PathBuf, sync::atomic::{AtomicBool, Ordering}};
+
+pub static SHOWN: AtomicBool = AtomicBool::new(true);
+pub static FOCUSED: AtomicBool = AtomicBool::new(true);
 
 pub fn with<R>(f: impl FnOnce(&mut JNIEnv, &JObject) -> Result<R>) -> Option<R> {
     let (mut env, act) = (JNIEnv(PhantomData), JObject(PhantomData));
@@ -11,7 +14,7 @@ pub fn log(msg: &str) {
 }
 
 pub fn home_shown() -> bool {
-    true
+    SHOWN.load(Ordering::Relaxed)
 }
 
 pub fn kb() -> f32 {
@@ -24,9 +27,17 @@ pub fn insets() -> Option<(f32, f32)> {
 
 pub fn route(_: bool) {}
 pub fn release() {}
-pub fn call_began() {}
-pub fn finish() {}
-pub fn leave() {}
+pub fn call_began() {
+    crate::desk_app::stop_ringing();
+}
+
+pub fn finish() {
+    crate::desk_app::close_call();
+}
+
+pub fn leave() {
+    crate::desk_app::minimize();
+}
 pub fn backable(_: bool) {}
 pub fn rate(_: f32) {}
 pub fn clear_field() {}
@@ -37,7 +48,7 @@ pub fn keep_home(_: &mut JNIEnv, _: &JObject) -> Result<()> {
 }
 
 pub fn focused(_: &mut JNIEnv) -> bool {
-    true
+    FOCUSED.load(Ordering::Relaxed) && SHOWN.load(Ordering::Relaxed)
 }
 
 pub fn vote_60() -> bool {
@@ -49,7 +60,11 @@ pub fn density(window: &slint::Window) -> f32 {
 }
 
 pub fn files_dir(_: &mut JNIEnv, _: &JObject) -> Result<PathBuf> {
-    let dir = PathBuf::from(r"B:\Projects\CallMe\desk-data");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    Ok(dir)
+    Ok(data_dir())
+}
+
+pub fn data_dir() -> PathBuf {
+    let dir = std::env::var_os("CALLME_DESK_DATA").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(std::env::var_os("LOCALAPPDATA").unwrap_or_default()).join("ClaudeCall"));
+    let _ = std::fs::create_dir_all(&dir);
+    dir
 }
