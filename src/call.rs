@@ -1,5 +1,8 @@
 //! The call: its state, Claude's voice for each line, and the web server the phone talks to (through the shared
 //! tunnel).
+#[cfg(test)]
+mod tests;
+
 use crate::speech::{UTTS, final_transcript, partial, take_audio};
 use crate::voice::{self, Audio};
 use crate::{cfg, debug_on, log, log_line};
@@ -354,7 +357,7 @@ async fn handle(req: Request) -> Result<Response, String> {
     Ok(match path.as_str() {
         "/state" => {
             let want = q("v").and_then(|v| v.parse::<i64>().ok()).unwrap_or(-1);
-            let _watching = Watching::new();
+            let _watching = q("ring").is_none().then(Watching::new);
             let mut rx = CHANGED.subscribe();
             if (call().v as i64) <= want {
                 let _ = timeout(Duration::from_secs(20), rx.wait_for(|v| *v as i64 > want)).await;
@@ -362,7 +365,7 @@ async fn handle(req: Request) -> Result<Response, String> {
             let c = call();
             json_res(json!({ "v": c.v, "seq": c.seq, "say": c.say, "end": c.end, "hold": c.hold,
                 "holdLabel": if c.hold { c.say.as_str() } else { "" }, "mode": c.mode, "parts": c.parts,
-                "ready": c.audio.len(), "debug": debug_on(), "agent": cfg().agent, "usage": c.usage }))
+                "ready": c.audio.len(), "answered": c.answered, "declined": c.declined, "debug": debug_on(), "agent": cfg().agent, "usage": c.usage }))
         }
         "/stream" => {
             // Claude's line as 16-bit PCM while it is being made, in rolling pieces: each request returns the audio made
@@ -433,12 +436,15 @@ async fn handle(req: Request) -> Result<Response, String> {
             no_content()
         }
         "/answer" if post => {
-            call().answered = true;
+            let mut c = call();
+            c.answered = true;
+            changed(&mut c);
             no_content()
         }
         "/decline" if post => {
             let mut c = call();
             c.declined = true;
+            changed(&mut c);
             if let Some(m) = num("back") {
                 c.call_back = Some(Instant::now() + Duration::from_secs(m * 60));
             }
