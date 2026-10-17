@@ -264,6 +264,10 @@ fn show(ui: &HomeScreen) {
                 _ => "From your PC".into(),
             });
             c.set_ask(ask.as_str().into());
+            let ghosts = chat_view::choices(chat, now);
+            if !c.get_ghosts().iter().eq(ghosts.iter().cloned()) {
+                c.set_ghosts(ModelRc::new(VecModel::from(ghosts)));
+            }
             c.set_readonly(chat.kind == chats::Kind::Note);
             c.set_ended(chats::ended(ask).into());
             c.set_draft(chat.draft.clone().into());
