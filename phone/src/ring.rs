@@ -138,6 +138,7 @@ pub fn ring(env: &mut JNIEnv, ctx: &JObject, link: &str, reason: &str) -> Result
     }
 
     let (vm, ctx, link) = (env.get_java_vm()?, env.new_global_ref(ctx)?, link.to_string());
+    watch(env.get_java_vm()?, ctx.clone(), link.clone());
     std::thread::spawn(move || {
         std::thread::sleep(RING_FOR);
         let still = STATE.lock().unwrap().as_ref().is_some_and(|s| s.current.as_deref() == Some(link.as_str()));
@@ -148,6 +149,38 @@ pub fn ring(env: &mut JNIEnv, ctx: &JObject, link: &str, reason: &str) -> Result
         }
     });
     Ok(())
+}
+
+fn is_current(link: &str) -> bool {
+    STATE.lock().unwrap().as_ref().is_some_and(|s| s.current.as_deref() == Some(link))
+}
+
+fn watch(vm: jni::JavaVM, ctx: GlobalRef, link: String) {
+    crate::net::RT.spawn(async move {
+        let (mut v, mut backoff) = (-1i64, 2u64);
+        while is_current(&link) {
+            let Some(url) = crate::ringwatch::state_url(&link, v) else { return };
+            let st = match crate::net::HTTP.get(url).timeout(Duration::from_secs(30)).send().await {
+                Ok(r) => r.json::<serde_json::Value>().await.ok(),
+                Err(_) => None,
+            };
+            let Some(st) = st else {
+                tokio::time::sleep(Duration::from_secs(backoff)).await;
+                backoff = (backoff * 2).min(30);
+                continue;
+            };
+            backoff = 2;
+            if crate::ringwatch::taken(&st) {
+                if is_current(&link) {
+                    if let Ok(mut env) = vm.attach_current_thread() {
+                        let _ = crate::service::taken_elsewhere(&mut env, ctx.as_obj(), &link);
+                    }
+                }
+                return;
+            }
+            v = st["v"].as_i64().unwrap_or(v);
+        }
+    });
 }
 
 pub fn tick(env: &mut JNIEnv, ctx: &JObject) -> Result<()> {

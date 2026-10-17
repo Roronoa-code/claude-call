@@ -7,3 +7,5 @@ mod cast;
 mod alive;
 #[path = "../../src/view.rs"]
 mod view;
+#[path = "../../src/ringwatch.rs"]
+mod ringwatch;

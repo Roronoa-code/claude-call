@@ -30,6 +30,7 @@ mod net;
 #[cfg(any(target_os = "android", windows))]
 #[cfg_attr(windows, path = "desk/ring.rs")]
 mod ring;
+mod ringwatch;
 #[cfg(any(target_os = "android", windows))]
 #[cfg_attr(windows, path = "desk/service.rs")]
 mod service;
@@ -69,5 +70,8 @@ fn android_main(app: android_activity::AndroidApp) {
 #[cfg(windows)]
 #[path = "desk/app.rs"]
 mod desk_app;
+#[cfg(windows)]
+#[path = "desk/os.rs"]
+mod desk_os;
 #[cfg(windows)]
 pub use desk_app::desktop_main;
