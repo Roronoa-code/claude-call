@@ -8,7 +8,7 @@ use std::{cell::RefCell, num::NonZeroU32, rc::Rc};
 
 const CLAWD_FRAG: &str = include_str!("../../art/live3d/clawd_cast.frag");
 const NULL_FRAG: &str = include_str!("../../art/live3d/null.frag");
-const VERT: &str = "#version 300 es
+const VERT: &str = "
 void main() { vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2)); gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }";
 
 pub struct Slot {
@@ -76,10 +76,12 @@ unsafe fn compile(gl: &glow::Context, who: Who) -> Result<glow::Program, String>
         Who::Clawd(m) => (CLAWD_FRAG, format!("#define MAT_ID {}", m as i32)),
     };
     let (version, rest) = frag.split_once('\n').ok_or("empty shader")?;
-    let frag = format!("{}\n{define}\n{rest}", version.trim_end());
+    let version = if gl.version().is_embedded { version.trim_end() } else { "#version 330 core" };
+    let frag = format!("{version}\n{define}\n{rest}");
+    let vert = format!("{version}{VERT}");
     unsafe {
         let program = gl.create_program()?;
-        for (kind, src) in [(glow::VERTEX_SHADER, VERT), (glow::FRAGMENT_SHADER, frag.as_str())] {
+        for (kind, src) in [(glow::VERTEX_SHADER, vert.as_str()), (glow::FRAGMENT_SHADER, frag.as_str())] {
             let s = gl.create_shader(kind)?;
             gl.shader_source(s, src);
             gl.compile_shader(s);
@@ -289,12 +291,7 @@ pub fn attach<C: ComponentHandle + 'static>(ui: &C, scene: Rc<RefCell<Scene>>, s
             }
             // Android keeps its starting window up until a frame is drawn into a new surface.
             RenderingState::AfterRendering => {
-                crate::android::with(|env, act| {
-                    if env.get_field(act, "waiting", "Z")?.z()? {
-                        env.call_method(act, "drawn", "()V", &[])?;
-                    }
-                    Ok(())
-                });
+                crate::android::drawn();
             }
             RenderingState::RenderingTeardown => {
                 if let Some(g) = gl.take() {

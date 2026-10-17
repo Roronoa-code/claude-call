@@ -8,6 +8,7 @@ use std::{cell::OnceCell, sync::Mutex};
 struct Ctx {
     vm: JavaVM,
     activity: GlobalRef,
+    app: android_activity::AndroidApp,
 }
 thread_local! {
     static CTX: OnceCell<Ctx> = const { OnceCell::new() };
@@ -42,7 +43,7 @@ pub fn init(app: &android_activity::AndroidApp) {
         env.new_global_ref(obj).expect("activity ref")
     };
     CTX.with(|c| {
-        let _ = c.set(Ctx { vm, activity });
+        let _ = c.set(Ctx { vm, activity, app: app.clone() });
     });
 }
 
@@ -155,6 +156,61 @@ pub fn call_began() {
 }
 pub fn finish() {
     with(|env, act| env.call_method(act, "finish", "()V", &[]).map(drop));
+}
+
+pub fn drawn() {
+    with(|env, act| {
+        if env.get_field(act, "waiting", "Z")?.z()? {
+            env.call_method(act, "drawn", "()V", &[])?;
+        }
+        Ok(())
+    });
+}
+
+pub fn leave() {
+    with(|env, act| env.call_method(act, "moveTaskToBack", "(Z)Z", &[JValue::Bool(1)]).map(drop));
+}
+
+pub fn backable(on: bool) {
+    with(|env, act| env.call_method(act, "backable", "(Z)V", &[JValue::Bool(on as u8)]).map(drop));
+}
+
+pub fn rate(fps: f32) {
+    with(|env, act| env.call_method(act, "rate", "(F)V", &[fps.into()]).map(drop));
+}
+
+pub fn clear_field() {
+    with(|env, act| env.call_method(act, "clearField", "()V", &[]).map(drop));
+}
+
+static HOME: Mutex<Option<GlobalRef>> = Mutex::new(None);
+
+pub fn keep_home(env: &mut JNIEnv, act: &JObject) -> jni::errors::Result<()> {
+    *HOME.lock().unwrap() = Some(env.new_global_ref(act)?);
+    Ok(())
+}
+
+pub fn focused(env: &mut JNIEnv) -> bool {
+    let home = HOME.lock().unwrap().clone();
+    home.is_some_and(|h| env.call_method(&h, "hasWindowFocus", "()Z", &[]).and_then(|v| v.z()).unwrap_or(false))
+}
+
+pub fn files_dir(env: &mut JNIEnv, ctx: &JObject) -> jni::errors::Result<std::path::PathBuf> {
+    let dir = env.call_method(ctx, "getFilesDir", "()Ljava/io/File;", &[])?.l()?;
+    let dir = env.call_method(&dir, "getAbsolutePath", "()Ljava/lang/String;", &[])?.l()?;
+    Ok(std::path::PathBuf::from(crate::jx::string(env, dir)?.unwrap_or_default()))
+}
+
+pub fn density(_: &slint::Window) -> f32 {
+    CTX.with(|c| c.get().and_then(|c| c.app.config().density())).map_or(1.0, |dpi| dpi as f32 / 160.0)
+}
+
+/// True once the native window exists and has been asked for 60 fps.
+pub fn vote_60() -> bool {
+    CTX.with(|c| c.get().and_then(|c| c.app.native_window())).is_some_and(|w| {
+        set_frame_rate(w.ptr().as_ptr().cast(), 60.0);
+        true
+    })
 }
 
 /// `ANativeWindow_setFrameRate` (libandroid, Android 11+) is missing from the ndk bindings, so it is looked up at run time.

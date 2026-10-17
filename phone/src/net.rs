@@ -1,5 +1,5 @@
 use crate::settings::MODES;
-use jni::{JNIEnv, objects::JObject};
+use crate::jx::{JNIEnv, JObject};
 use serde_json::Value;
 use std::{
     sync::{

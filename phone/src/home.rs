@@ -77,7 +77,17 @@ fn follow_fast(fast: &Rc<slint::Timer>, ui: &HomeScreen, swiping: &Rc<Cell<bool>
 const MAX_PAIR_PX_PER_DP: f32 = 2.75;
 const LIGHT_EASE_RATE: f32 = 12.0;
 
-pub fn run(app: android_activity::AndroidApp) {
+pub struct Open {
+    pub ui: HomeScreen,
+    _timer: Rc<slint::Timer>,
+}
+
+#[cfg(target_os = "android")]
+pub fn run() {
+    let _ = open().ui.run();
+}
+
+pub fn open() -> Open {
     let ui = HomeScreen::new().expect("home screen");
     let home = ui.global::<Home>();
     home.on_set_mode({
@@ -114,10 +124,10 @@ pub fn run(app: android_activity::AndroidApp) {
     });
     // finish() makes the next open cold; the launcher leaves the task warm in the background.
     home.on_leave(|| {
-        android::with(|env, act| env.call_method(act, "moveTaskToBack", "(Z)Z", &[jni::objects::JValue::Bool(1)]).map(drop));
+        android::leave();
     });
     home.on_backable(|on| {
-        android::with(|env, act| env.call_method(act, "backable", "(Z)V", &[jni::objects::JValue::Bool(on as u8)]).map(drop));
+        android::backable(on);
     });
     refresh(&ui);
     let mut chats = crate::inbox::wire(&ui);
@@ -168,7 +178,7 @@ pub fn run(app: android_activity::AndroidApp) {
         t.set_clawd_below(below[0]);
         t.set_null_below(below[1]);
     }
-    let screen_sf = app.config().density().map_or(1.0, |dpi| dpi as f32 / 160.0);
+    let screen_sf = android::density(ui.window());
     let r = (MAX_PAIR_PX_PER_DP / screen_sf).min(1.0);
     let home_size = |i: usize, extra: f32| {
         let (w, h) = [alive::CLAWD_SIZE, alive::NULL_SIZE][i];
@@ -325,9 +335,9 @@ pub fn run(app: android_activity::AndroidApp) {
             let want = if !rest { 0.0 } else if p.clawd.state() == cast::State::Sleep && p.null.state() == cast::State::Sleep { 10.0 } else { 20.0 };
             if want != voted.0 || (want > 0.0 && voted.1.elapsed() > Duration::from_secs(1)) {
                 voted = (want, Instant::now());
-                android::with(|env, act| env.call_method(act, "rate", "(F)V", &[want.into()]).map(drop));
+                android::rate(want);
             }
         }
     });
-    let _ = ui.run();
+    Open { ui, _timer: timer }
 }

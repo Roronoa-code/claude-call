@@ -1,9 +1,6 @@
 //! Threads started from Rust only see the system's classes with FindClass, so app classes are named by string.
-use jni::{
-    JNIEnv,
-    errors::Result,
-    objects::{JObject, JString, JValue},
-};
+pub use jni::{JNIEnv, errors::Result, objects::JObject};
+use jni::objects::{JString, JValue};
 
 pub const PKG: &str = "fyi.mani.callme";
 pub const FLAGS: i32 = 0x0400_0000 | 0x0800_0000;
@@ -113,6 +110,11 @@ pub fn view_intent<'a>(env: &mut JNIEnv<'a>, action: &str, uri: &str) -> Result<
     let (a, u) = (s(env, action)?, s(env, uri)?);
     let uri = env.call_static_method("android/net/Uri", "parse", "(Ljava/lang/String;)Landroid/net/Uri;", &[JValue::Object(&u)])?.l()?;
     env.new_object("android/content/Intent", "(Ljava/lang/String;Landroid/net/Uri;)V", &[JValue::Object(&a), JValue::Object(&uri)])
+}
+
+pub fn open_link(env: &mut JNIEnv, ctx: &JObject, url: &str) -> Result<()> {
+    let i = view_intent(env, "android.intent.action.VIEW", url)?;
+    start_activity(env, ctx, &i)
 }
 
 pub fn start_activity(env: &mut JNIEnv, ctx: &JObject, i: &JObject) -> Result<()> {

@@ -75,13 +75,10 @@ fn caption(v: &View, now: f64) -> Cap {
     }
 }
 
-fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame, app: &android_activity::AndroidApp) {
+fn present(ui: &CallScreen, e: &Arc<Engine>, f: &mut Frame) {
     let now = e.now();
     if !f.rate_set {
-        if let Some(w) = app.native_window() {
-            android::set_frame_rate(w.ptr().as_ptr().cast(), 60.0);
-            f.rate_set = true;
-        }
+        f.rate_set = android::vote_60();
     }
     if !ui.global::<Call>().get_placed() {
         if let Some((top, bottom)) = android::insets() {
@@ -278,17 +275,31 @@ pub fn back() -> bool {
     true
 }
 
+pub struct Open {
+    pub ui: CallScreen,
+    pub engine: Arc<Engine>,
+    _timers: [slint::Timer; 2],
+}
+
+#[cfg(target_os = "android")]
 pub fn run(app: android_activity::AndroidApp) {
-    OVERLAYS.store(false, std::sync::atomic::Ordering::Relaxed);
-    CLOSE.store(false, std::sync::atomic::Ordering::Relaxed);
     app.set_window_flags(android_activity::WindowManagerFlags::KEEP_SCREEN_ON, android_activity::WindowManagerFlags::empty());
     let (link, answer) = android::intent();
     let Some(link) = link else {
         android::finish();
         return;
     };
+    let call = open(&link, answer);
+    let _ = call.ui.run();
+    call.engine.hang_up();
+    android::release();
+}
+
+pub fn open(link: &str, answer: bool) -> Open {
+    OVERLAYS.store(false, std::sync::atomic::Ordering::Relaxed);
+    CLOSE.store(false, std::sync::atomic::Ordering::Relaxed);
     let ui = CallScreen::new().expect("call screen");
-    let e = Engine::new(&link);
+    let e = Engine::new(link);
     e.peek();
     ui.global::<Call>().on_answer({
         let e = e.clone();
@@ -328,7 +339,7 @@ pub fn run(app: android_activity::AndroidApp) {
         }
     });
     ui.global::<Call>().on_clear_field(|| {
-        android::with(|env, act| env.call_method(act, "clearField", "()V", &[]).map(drop));
+        android::clear_field();
     });
     ui.on_overlays(|on| OVERLAYS.store(on, std::sync::atomic::Ordering::Relaxed));
     let now = e.now();
@@ -419,17 +430,15 @@ pub fn run(app: android_activity::AndroidApp) {
     });
     let timer = slint::Timer::default();
     timer.start(slint::TimerMode::Repeated, Duration::from_millis(33), {
-        let (ui, e, f, app) = (ui.as_weak(), e.clone(), frame.clone(), app.clone());
+        let (ui, e, f) = (ui.as_weak(), e.clone(), frame.clone());
         move || {
             if let Some(ui) = ui.upgrade() {
-                present(&ui, &e, &mut f.borrow_mut(), &app);
+                present(&ui, &e, &mut f.borrow_mut());
             }
         }
     });
     if answer {
         e.answer();
     }
-    let _ = ui.run();
-    e.hang_up();
-    android::release();
+    Open { ui, engine: e, _timers: [face_timer, timer] }
 }

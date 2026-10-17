@@ -5,20 +5,27 @@ edition = "2024"
 description = "The Claude Call screen and call audio for Android, drawn natively (Slint) instead of in a WebView."
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 glow = "0.18"
-android-activity = { version = "0.6", features = ["native-activity"] }
-jni = "0.21"
-ndk = { version = "0.9", features = ["audio", "nativewindow", "api-level-28"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "json"] }
 hmac = "0.12"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
-slint = { version = "1.18", default-features = false, features = ["std", "compat-1-2", "backend-android-activity-06"] }
+slint = { version = "1.18", default-features = false, features = ["std", "compat-1-2"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+android-activity = { version = "0.6", features = ["native-activity"] }
+jni = "0.21"
+ndk = { version = "0.9", features = ["audio", "nativewindow", "api-level-28"] }
+slint = { version = "1.18", default-features = false, features = ["backend-android-activity-06"] }
+
+[target.'cfg(windows)'.dependencies]
+slint = { version = "1.18", default-features = false, features = ["backend-winit", "renderer-skia-opengl", "unstable-winit-030"] }
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_Graphics_Imaging", "Win32_Media_Audio", "Win32_System_Com", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_Power", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 [build-dependencies]
 slint-build = "1.18"

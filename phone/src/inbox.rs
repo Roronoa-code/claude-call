@@ -1,13 +1,8 @@
 use crate::{
     ChatMsg, ChatRow, Chats, HomeScreen, android, attach, chat_alert, chat_view,
     chats::{self, Store},
-    jx,
+    jx::{self, JNIEnv, JObject, Result},
     net, settings,
-};
-use jni::{
-    JNIEnv,
-    errors::Result,
-    objects::{GlobalRef, JObject},
 };
 use serde_json::Value;
 use slint::{ComponentHandle, Model, ModelRc, VecModel};
@@ -26,7 +21,6 @@ static VIEWING: Mutex<Option<String>> = Mutex::new(None);
 static VERSION: AtomicU64 = AtomicU64::new(0);
 static PATH: OnceLock<PathBuf> = OnceLock::new();
 static STORE: Mutex<Option<Store>> = Mutex::new(None);
-static HOME: Mutex<Option<GlobalRef>> = Mutex::new(None);
 #[path = "inbox_send.rs"]
 mod send;
 pub(crate) use send::{auto, post};
@@ -55,9 +49,7 @@ pub fn media_dir() -> Option<PathBuf> {
 
 pub(crate) fn path(env: &mut JNIEnv, ctx: &JObject) -> Result<()> {
     if PATH.get().is_none() {
-        let dir = env.call_method(ctx, "getFilesDir", "()Ljava/io/File;", &[])?.l()?;
-        let dir = env.call_method(&dir, "getAbsolutePath", "()Ljava/lang/String;", &[])?.l()?;
-        let _ = PATH.set(PathBuf::from(jx::string(env, dir)?.unwrap_or_default()).join("chats.json"));
+        let _ = PATH.set(android::files_dir(env, ctx)?.join("chats.json"));
     }
     Ok(())
 }
@@ -108,11 +100,6 @@ pub(crate) fn saved_draft(chat: &str) -> Option<String> {
 }
 
 
-fn focused(env: &mut JNIEnv) -> bool {
-    let home = HOME.lock().unwrap().clone();
-    home.is_some_and(|h| env.call_method(&h, "hasWindowFocus", "()Z", &[]).and_then(|v| v.z()).unwrap_or(false))
-}
-
 pub fn reply_arrived(env: &mut JNIEnv, ctx: &JObject, body: &str) -> Result<()> {
     arrived(env, ctx, body, "reply", chats::reply_signed, Store::apply_reply)
 }
@@ -138,7 +125,7 @@ fn arrived(env: &mut JNIEnv, ctx: &JObject, body: &str, what: &str, signed: fn(&
         android::log(&format!("chats: {what} with a missing or wrong signature dropped"));
         return Ok(());
     }
-    let open = if focused(env) { VIEWING.lock().unwrap().clone() } else { None };
+    let open = if android::focused(env) { VIEWING.lock().unwrap().clone() } else { None };
     let note = update(|s| apply(s, &v, open.as_deref())).flatten();
     changed();
     fetch_media();
@@ -168,7 +155,7 @@ fn show(ui: &HomeScreen) {
     let cur = c.get_current().to_string();
     *VIEWING.lock().unwrap() = (c.get_open() && !cur.is_empty()).then(|| cur.clone());
     let seen = android::with(|env, act| {
-        let f = focused(env);
+        let f = android::focused(env);
         if f && !cur.is_empty() {
             chat_alert::cancel(env, act, &cur)?;
         }
@@ -358,7 +345,7 @@ impl Tracker {
         }
         let version = VERSION.load(Relaxed);
         let second = self.last.is_none_or(|t| t.elapsed() > Duration::from_secs(1));
-        let focus = second && android::with(|env, _| Ok(focused(env))).unwrap_or(false);
+        let focus = second && android::with(|env, _| Ok(android::focused(env))).unwrap_or(false);
         let back = focus && !self.focus;
         if back || self.last.is_none() {
             ready(ui);
@@ -381,8 +368,7 @@ impl Tracker {
 pub fn wire(ui: &HomeScreen) -> Tracker {
     android::with(|env, act| {
         path(env, act)?;
-        *HOME.lock().unwrap() = Some(env.new_global_ref(act)?);
-        Ok(())
+        android::keep_home(env, act)
     });
     forget(chats::now() - UNDO_FOR.as_millis() as i64);
     if read(|s| s.undoable().is_some()).unwrap_or(false) {
@@ -449,10 +435,7 @@ pub fn wire(ui: &HomeScreen) -> Tracker {
     c.on_room(|text| chats::room(&text).clamp(i32::MIN as i64, i32::MAX as i64) as i32);
     c.on_open_link(|link| {
         if link.starts_with("https://") || link.starts_with("http://") {
-            android::with(|env, act| {
-                let i = jx::view_intent(env, "android.intent.action.VIEW", &link)?;
-                jx::start_activity(env, act, &i)
-            });
+            android::with(|env, act| jx::open_link(env, act, &link));
         }
     });
     c.on_tick(tick);
@@ -510,7 +493,7 @@ pub fn wire(ui: &HomeScreen) -> Tracker {
         }
     });
     c.on_clear_field(|| {
-        android::with(|env, act| env.call_method(act, "clearField", "()V", &[]).map(drop));
+        android::clear_field();
     });
     c.on_attach({
         let ui = ui.as_weak();
