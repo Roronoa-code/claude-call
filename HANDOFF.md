@@ -6,6 +6,15 @@ Written for whoever carries on (GPT/Codex). Read this all before touching anythi
 
 This section overrides the older snapshot below.
 
+### Performance and cleanup audit
+
+- Confirmed both targets compile the same `alive`, `cast`, `home`, `screen`, chat logic, Slint UI and shaders. `alive::due` retains 60 fps while moving, 20 idle and 10 asleep. This is shared implementation, not verified equal device performance.
+- PresentMon 2.6.0 from the official release was downloaded to `B:\Projects\CallMe-work\PresentMon-2.6.0-x64.exe`; SHA-256 matches the published digest `B2A706BC6AD475749E3B7E3409263AA1E6906D45BDCF993F6DBC0F660188F1AF`. Its one-second privilege probe failed: `failed to start trace session: access denied`. No frame capture, elevation, UAC prompt, group change or app launch occurred. A future capture needs an already authorized/elevated environment or Performance Log Users membership.
+- Wheel diagnosis: `phone/ui/toys.slint` steps a mode on every nonzero vertical scroll event, regardless of delta size. The existing test covers discrete steps, not high-resolution input. Accumulation would change interaction behavior; it remains unapplied pending a preview and approval.
+- Removed only `B:\Projects\CallMe-server-deploy`, the clean temporary staging checkout made during this continuation. Verified no untracked/ignored files and identical stable patch IDs for staging commit `9d2ad65` and deployed main commit `e21f60e` before `git worktree remove`. Branch retained.
+- Other worktrees remain: `CallMe-controls2` contains three unmerged preview commits; `CallMe-ship` has untracked `build.log`; the remaining old merged worktrees contain ignored native libraries, topic/local configuration and/or other build output. Preserve or classify those before removal. Main/desktop merge remains deferred with device acceptance and motion decisions.
+- No phone access, real calls, notifications, clipboard changes, new motion or heavy benchmarks during this audit. Installed PC hash remains `605996DB49F49196FDF82DCEB8F8146723713DE3D272CEB9D3A305CB7FCDCFC3`; app is stopped.
+
 ### Expression preview prepared (not approved or applied)
 
 - Self-contained preview: `C:\Users\abdul\Documents\Codex\2026-10-17\i-ve-written-the-handoff-to\outputs\callme-expression-preview.html` (SHA-256 `1EFB325318FA27AE703A485949869ECBAF4B66B44037A0BE21C073493C9B138D`). Static overview beside it: `callme-expression-options.png`.
@@ -38,7 +47,7 @@ This section overrides the older snapshot below.
 - Temperature reader returned unavailable; existing elevated HWiNFO has shared memory off. Did not restart it or trigger UAC. Builds limited to two Cargo jobs. No stress test, PresentMon capture or phone benchmark.
 - Contrary to the old snapshot, default `%LOCALAPPDATA%\ClaudeCall` and the startup registry entry were absent when checked. Install now seeds only home/call positions on monitor 2 in default prefs and registers the installed executable at login. Start menu target/icon and matching installed bytes verified; toast IconUri restored to `B:\Projects\CallMe\bin\claude-call.png`. App left stopped. Test runs used isolated data/config; no personal chat history was copied or deleted.
 - Missing motion notes were not found in the named path or usual project/output/backup locations. The six-behavior approval still exists at `D:\Inspiration\Alive-2026-10-17\README.md`. No replacement notes were invented.
-- Remaining: real call/audio/ring and toast-click acceptance when interruption is welcome; native drop/paste interaction acceptance; frame pacing/high-refresh assessment; shared expression previews and approval; high-resolution wheel accumulation; history synchronization; deliberate branch/cache cleanup. The 21 refactors require phone acceptance, so leave them deferred. Existing worktrees/data remain preserved.
+- Remaining: real call/audio/ring and toast-click acceptance when interruption is welcome; native drop/paste interaction acceptance; frame pacing/high-refresh assessment; approval of prepared expression previews; high-resolution wheel accumulation; history older than the relay cache; deliberate branch/cache cleanup. The 21 refactors require phone acceptance, so leave them deferred. Existing worktrees/data remain preserved except the verified temporary server staging checkout described above.
 
 Native codec check (no phone, no UI):
 ```powershell
