@@ -6,6 +6,15 @@ Written for whoever carries on (GPT/Codex). Read this all before touching anythi
 
 This section overrides the older snapshot below.
 
+### Expression preview prepared (not approved or applied)
+
+- Self-contained preview: `C:\Users\abdul\Documents\Codex\2026-10-17\i-ve-written-the-handoff-to\outputs\callme-expression-preview.html` (SHA-256 `1EFB325318FA27AE703A485949869ECBAF4B66B44037A0BE21C073493C9B138D`). Static overview beside it: `callme-expression-options.png`.
+- Six proposals using the actual `phone/ui/toys` sprites and the existing approved preview's eye-lifting method: surprised/wide eyes, worried, listening, sleepy yawn, a proper downward screen wipe for Null, and pleased. Each has subtle/expressive variants, play/pause/reset, neutral comparison and a frame scrubber. The yawn proposal explicitly adds a small mouth; it is not an approved character change.
+- No autoplay; playback stops when hidden or finished. Continuous eye shapes avoid threshold jumps. Nothing was added to the approved Alive collection, native shaders, shared animation scheduler or installed app.
+- `B:\Projects\CallMe-work\check-expression-preview.cjs` runs the exact preview script offline with the installed `@napi-rs/canvas` package. All 12 variants, 48 intermediate-frame checks, neutral end-state equality, and control handlers passed. The rendered overview was visually inspected.
+- Browser verification remains incomplete: the browser security policy rejected the local `file:` URL and explicitly prohibited workarounds. No alternate protocol/server/browser was used to bypass that decision. Offline rendering is not a claim of browser layout or native motion acceptance.
+- User has not approved these new proposals. Keep them separate; the handoff's explicit approval-before-motion rule still applies. Do not send repeated Discord questions while he is watching a video.
+
 ### Shared chat receive continuation
 
 - Found the history gap at the shared receive boundary: `net::listen` ignored signed `Chat` messages, while replies required the corresponding outgoing line locally.
