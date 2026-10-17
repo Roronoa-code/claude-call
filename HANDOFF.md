@@ -6,10 +6,30 @@ Written for whoever carries on (GPT/Codex). Read this all before touching anythi
 
 This section overrides the older snapshot below.
 
+### Latest acceptance audit
+
+- Latest shared client passed the cached Android ARM64 compile check: `cargo ndk -t arm64-v8a -P 29 check -p callme-phone --lib --release --locked -j 2`, using `target-desk-android` and the existing Android 36 jar. Completed in 18.73 seconds; one dead-code warning for the test-used `apply_reply` wrapper. No APK build, Gradle run, phone connection, install or emulator. This supersedes the earlier statement that the latest shared changes had not been Android compile-checked.
+- Installed PC source is delivered; core chat, UI and motion code is shared, with target-specific OS adapters. Android compilation plus Windows checks does not establish equal runtime smoothness or update the installed phone.
+- PC client remains stopped. Server health responds and reports a tunnel URL; no live call or notification was triggered. The expression preview and six-behavior approval README still exist; the named original motion-notes file remains absent.
+
+| Handoff item | Current result / remaining gate |
+| --- | --- |
+| 1. Phone | Earlier authorized install completed; latest instruction prohibits further phone work. Device acceptance deferred. |
+| 2. Stop other ringing | Server patch deployed and integration-tested; two-device real acceptance still needs permitted device use. |
+| 3. Real PC call | Not done: would interrupt the user's video; no new permission to call. Audio, echo, latency, typed reply, mute/hang-up and toast-click checks remain. |
+| 4. Icons | Approved option installed and inspected for exe/window/shortcut; toast registration set, actual notification appearance/click deferred. |
+| 5. Expressions | Six previews prepared and offline-checked; no approval to change native motion/shaders. |
+| 6. Speed | Quiet PC CPU/memory samples saved. Frame timing blocked by trace privileges; thermal telemetry unavailable. Phone benchmark prohibited. |
+| 7. Smoothness | Home/chat minimum and wide layouts checked. Call resizing, real high-resolution wheel behavior and frame pacing remain. Existing shared 60 fps active cap unchanged. |
+| 8. PC gaps | Drop/paste and HEIC implemented; codec/unit checks passed. Native drop/paste interaction still needs acceptance. Signed recent-history mirroring verified with synthetic data; full old phone history requires a separate transfer/device access. |
+| 9. Cleanup | Eleven merged worktrees and fourteen old caches archived/cleared, about 43 GB recovered. Main merge is gated on device acceptance. Unmerged previews/local changes kept. The 21 listed refactors explicitly require phone checks, so remain deferred. |
+
+No new question was sent: the user explicitly asked to stop repeated questions while watching a video. Remaining acceptance requires a change in that interruption/device boundary, motion approval, or trace/thermal availability. Do not repeat unchanged successful checks or treat compile results as runtime acceptance.
+
 ### Performance and cleanup audit
 
 - Cleared fourteen retired Cargo cache directories after preserving 542 custom files/final binaries in `D:\Backups\CallMe\old-cache-extras-20261017\preserved.tar` (SHA-256 `d62624d9e84a8ff011656995c7497e31407b0da0a08463a88929938def1a9f6d`). Retired names: target-bugs, call2, caps, chats2, chatstest, chatstest-b2, drum, ghost, nullface, qol3, qol3test, receipts, ring-android and typing (each with the `target-` prefix). Custom APKs, scripts, screenshots/recordings/logs and direct release/debug EXE/DLL/SO/APK outputs are preserved. Regenerable compiler output was deliberately discarded. Manifest records original file inventories and preserved hashes; source inventory, archive and preserved source hashes were rechecked before native PowerShell deletion, with path/reparse/process guards. About 40 GB more free space on B:; no phone/emulator or active build was used.
-- Retained current/shared `target`, `target-desk`, `target-desk-android`, `target-ring`, plus the unmerged-preview `target-controls2` and retained-checkout `target-ship`. The installed PC executable still matches its retained release build. No existing GitHub Actions workflows are available for a remote Android build check; latest shared receive changes retain host/Windows test evidence, not new Android build/device evidence.
+- Retained current/shared `target`, `target-desk`, `target-desk-android`, `target-ring`, plus the unmerged-preview `target-controls2` and retained-checkout `target-ship`. The installed PC executable still matches its retained release build. No existing GitHub Actions workflows are available; the subsequent cached local Android compile check is recorded above.
 - Archived and removed eleven old merged worktrees: bugs, call2, caps, chats2, drum, ghost, nullface, qol3, receipts, ring and typing. Full backup is `D:\Backups\CallMe\merged-worktrees-20261017\checkouts.tar`, SHA-256 `202e2c153d7fb9e926c8cc9b1b4956373c129399bffcfa169f7515393a3d87ca`. All 7,610 files (3,136,969,589 source bytes), including ignored configuration and binaries, were hash-verified against the archive and rechecked before removal. Manifest and restore instructions are beside it. Git branches remain. About 3 GB was recovered on B:.
 - Registered worktrees now: main, desktop, controls2 and ship. `CallMe-chats2` has no files or Git registration left, but Windows denies removing its empty directory; leave it until the external handle is released. No processes were stopped for cleanup. `CallMe-controls2` keeps three unmerged preview commits and `CallMe-ship` keeps its untracked build log. Retained build caches are listed above.
 - Confirmed both targets compile the same `alive`, `cast`, `home`, `screen`, chat logic, Slint UI and shaders. `alive::due` retains 60 fps while moving, 20 idle and 10 asleep. This is shared implementation, not verified equal device performance.
