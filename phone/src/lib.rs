@@ -5,7 +5,6 @@ mod android;
 #[cfg_attr(windows, path = "desk/attach.rs")]
 mod attach;
 #[cfg(any(target_os = "android", windows))]
-#[cfg_attr(windows, path = "desk/audio.rs")]
 mod audio;
 #[cfg(any(target_os = "android", windows))]
 mod caller;
@@ -73,5 +72,8 @@ mod desk_app;
 #[cfg(windows)]
 #[path = "desk/os.rs"]
 mod desk_os;
+#[cfg(windows)]
+#[path = "desk/wasapi.rs"]
+mod desk_wasapi;
 #[cfg(windows)]
 pub use desk_app::desktop_main;

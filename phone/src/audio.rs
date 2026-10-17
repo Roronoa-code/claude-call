@@ -1,4 +1,5 @@
 //! Both streams use the voice-call path, so the earpiece and echo handling apply.
+#[cfg(target_os = "android")]
 use ndk::audio::{
     AudioCallbackResult, AudioContentType, AudioDirection, AudioFormat, AudioInputPreset, AudioPerformanceMode, AudioStream,
     AudioStreamBuilder, AudioUsage,
@@ -7,6 +8,8 @@ use std::{
     collections::VecDeque,
     sync::{Arc, Mutex},
 };
+#[cfg(windows)]
+use crate::desk_wasapi::{Stream, input, output};
 
 pub const MIC_RATE: usize = 16_000;
 pub const FRAME_MS: usize = 40;
@@ -14,10 +17,70 @@ pub const FRAME: usize = MIC_RATE * FRAME_MS / 1000;
 pub const CUSHION_MS: usize = 250;
 
 /// AAudio streams may be used from any thread.
+#[cfg(target_os = "android")]
 struct Stream {
     _stream: AudioStream,
 }
+#[cfg(target_os = "android")]
 unsafe impl Send for Stream {}
+
+#[cfg(target_os = "android")]
+fn output(rate: u32, mut fill: impl FnMut(&mut [i16]) + Send + 'static) -> Option<(Stream, u32)> {
+    let cb = Box::new(move |_: &AudioStream, data: *mut std::ffi::c_void, frames: i32| {
+        fill(unsafe { std::slice::from_raw_parts_mut(data.cast::<i16>(), frames as usize) });
+        AudioCallbackResult::Continue
+    });
+    let stream = AudioStreamBuilder::new().and_then(|b| {
+        b.direction(AudioDirection::Output)
+            .channel_count(1)
+            .format(AudioFormat::PCM_I16)
+            .sample_rate(rate as i32)
+            .usage(AudioUsage::VoiceCommunication)
+            .content_type(AudioContentType::Speech)
+            .performance_mode(AudioPerformanceMode::None)
+            .data_callback(cb)
+            .open_stream()
+    });
+    match stream {
+        Ok(s) => {
+            let actual = s.sample_rate() as u32;
+            let _ = s.request_start();
+            Some((Stream { _stream: s }, actual))
+        }
+        Err(e) => {
+            crate::android::log(&format!("speaker stream failed: {e:?}"));
+            None
+        }
+    }
+}
+
+#[cfg(target_os = "android")]
+fn input(rate: u32, opened: &std::sync::atomic::AtomicU32, mut take: impl FnMut(&[f32]) + Send + 'static) -> Option<Stream> {
+    let cb = Box::new(move |_: &AudioStream, data: *mut std::ffi::c_void, frames: i32| {
+        take(unsafe { std::slice::from_raw_parts(data.cast::<f32>(), frames as usize) });
+        AudioCallbackResult::Continue
+    });
+    let stream = AudioStreamBuilder::new()
+        .and_then(|b| {
+            b.direction(AudioDirection::Input)
+                .channel_count(1)
+                .format(AudioFormat::PCM_Float)
+                .sample_rate(rate as i32)
+                .input_preset(AudioInputPreset::VoiceCommunication)
+                .performance_mode(AudioPerformanceMode::None)
+                .data_callback(cb)
+                .open_stream()
+        })
+        .map_err(|e| crate::android::log(&format!("mic failed: {e:?}")))
+        .ok()?;
+    let actual = stream.sample_rate() as u32;
+    if actual != rate {
+        crate::android::log(&format!("mic opened at {actual} Hz: resampling to {rate}"));
+    }
+    opened.store(actual, std::sync::atomic::Ordering::Relaxed);
+    stream.request_start().ok()?;
+    Some(Stream { _stream: stream })
+}
 
 #[derive(Default)]
 struct Buf {
@@ -50,8 +113,7 @@ impl Player {
         }
         self.stream = None;
         let buf = self.buf.clone();
-        let cb = Box::new(move |_: &AudioStream, data: *mut std::ffi::c_void, frames: i32| {
-            let out = unsafe { std::slice::from_raw_parts_mut(data.cast::<i16>(), frames as usize) };
+        let fill = move |out: &mut [i16]| {
             let mut b = buf.lock().unwrap();
             if !b.primed && (b.data.len() >= b.cushion || (b.ending && !b.data.is_empty())) {
                 b.primed = true;
@@ -67,31 +129,15 @@ impl Player {
                 b.primed = false;
                 b.gaps += 1;
             }
-            AudioCallbackResult::Continue
-        });
-        let stream = AudioStreamBuilder::new().and_then(|b| {
-            b.direction(AudioDirection::Output)
-                .channel_count(1)
-                .format(AudioFormat::PCM_I16)
-                .sample_rate(rate as i32)
-                .usage(AudioUsage::VoiceCommunication)
-                .content_type(AudioContentType::Speech)
-                .performance_mode(AudioPerformanceMode::None)
-                .data_callback(cb)
-                .open_stream()
-        });
-        match stream {
-            Ok(s) => {
-                self.out_rate = s.sample_rate() as u32;
-                self.buf.lock().unwrap().cushion = self.out_rate as usize * CUSHION_MS / 1000;
-                if self.out_rate != rate {
-                    crate::android::log(&format!("speaker opened at {} Hz for a {rate} Hz voice: resampling", self.out_rate));
-                }
-                let _ = s.request_start();
-                self.stream = Some(Stream { _stream: s });
-                self.rate = rate;
+        };
+        if let Some((s, actual)) = output(rate, fill) {
+            self.out_rate = actual;
+            self.buf.lock().unwrap().cushion = self.out_rate as usize * CUSHION_MS / 1000;
+            if self.out_rate != rate {
+                crate::android::log(&format!("speaker opened at {} Hz for a {rate} Hz voice: resampling", self.out_rate));
             }
-            Err(e) => crate::android::log(&format!("speaker stream failed: {e:?}")),
+            self.stream = Some(s);
+            self.rate = rate;
         }
     }
 
@@ -184,34 +230,13 @@ impl Mic {
         let mut acc: Vec<f32> = Vec::with_capacity(FRAME * 2);
         let rate = Arc::new(std::sync::atomic::AtomicU32::new(MIC_RATE as u32));
         let opened = rate.clone();
-        let cb = Box::new(move |_: &AudioStream, data: *mut std::ffi::c_void, frames: i32| {
-            let input = unsafe { std::slice::from_raw_parts(data.cast::<f32>(), frames as usize) };
+        let take = move |input: &[f32]| {
             acc.extend(resample(input, opened.load(std::sync::atomic::Ordering::Relaxed), MIC_RATE as u32));
             while acc.len() >= FRAME {
                 on_frame(acc.drain(..FRAME).collect());
             }
-            AudioCallbackResult::Continue
-        });
-        let stream = AudioStreamBuilder::new()
-            .and_then(|b| {
-                b.direction(AudioDirection::Input)
-                    .channel_count(1)
-                    .format(AudioFormat::PCM_Float)
-                    .sample_rate(MIC_RATE as i32)
-                    .input_preset(AudioInputPreset::VoiceCommunication)
-                    .performance_mode(AudioPerformanceMode::None)
-                    .data_callback(cb)
-                    .open_stream()
-            })
-            .map_err(|e| crate::android::log(&format!("mic failed: {e:?}")))
-            .ok()?;
-        let actual = stream.sample_rate() as u32;
-        if actual != MIC_RATE as u32 {
-            crate::android::log(&format!("mic opened at {actual} Hz: resampling to {MIC_RATE}"));
-        }
-        rate.store(actual, std::sync::atomic::Ordering::Relaxed);
-        stream.request_start().ok()?;
-        Some(Mic { _stream: Stream { _stream: stream } })
+        };
+        Some(Mic { _stream: input(MIC_RATE as u32, &rate, take)? })
     }
 }
 
