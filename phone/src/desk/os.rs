@@ -3,7 +3,7 @@ use windows::Win32::{
     Foundation::{ERROR_ALREADY_EXISTS, GetLastError, HWND, POINT},
     Graphics::Gdi::{MONITOR_DEFAULTTONULL, MonitorFromPoint},
     Media::Audio::{PlaySoundW, SND_ASYNC, SND_FILENAME, SND_LOOP, SND_NODEFAULT},
-    System::{Registry::{HKEY_CURRENT_USER, REG_SZ, RegSetKeyValueW}, Threading::CreateMutexW},
+    System::{Registry::{HKEY_CURRENT_USER, REG_SZ, RegSetKeyValueW}, Threading::{CreateMutexW, GetCurrentProcess, SetProcessWorkingSetSize}},
     UI::Shell::ShellExecuteW,
     UI::WindowsAndMessaging::{SW_SHOWNORMAL, FLASHW_ALL, FLASHW_TIMERNOFG, FLASHWINFO, FindWindowW, FlashWindowEx, SW_RESTORE, SetForegroundWindow, ShowWindow},
 };
@@ -69,5 +69,12 @@ pub fn ringtone(on: bool) {
 pub fn open(target: &str) {
     unsafe {
         ShellExecuteW(None, w!("open"), &HSTRING::from(target), PCWSTR::null(), PCWSTR::null(), SW_SHOWNORMAL);
+    }
+}
+
+// Hidden, nothing needs to stay in RAM; Windows pages it back in when the window shows again.
+pub fn trim() {
+    unsafe {
+        let _ = SetProcessWorkingSetSize(GetCurrentProcess(), usize::MAX, usize::MAX);
     }
 }

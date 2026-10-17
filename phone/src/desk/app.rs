@@ -52,7 +52,12 @@ pub fn desktop_main() {
     });
     w.on_winit_window_event(|w, e| {
         match e {
-            WindowEvent::Occluded(o) => android::SHOWN.store(!o, Ordering::Relaxed),
+            WindowEvent::Occluded(o) => {
+                android::SHOWN.store(!o, Ordering::Relaxed);
+                if *o {
+                    crate::desk_os::trim();
+                }
+            }
             WindowEvent::Focused(f) => {
                 android::FOCUSED.store(*f, Ordering::Relaxed);
                 if *f {
@@ -81,6 +86,7 @@ pub fn minimize() {
         if let Some(ui) = h.borrow().as_ref().and_then(|w| w.upgrade()) {
             ui.window().set_minimized(true);
             android::SHOWN.store(false, Ordering::Relaxed);
+            crate::desk_os::trim();
         }
     });
 }
