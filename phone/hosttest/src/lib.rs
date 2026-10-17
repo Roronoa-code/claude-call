@@ -5,3 +5,5 @@ mod chats;
 mod cast;
 #[path = "../../src/alive.rs"]
 mod alive;
+#[path = "../../src/view.rs"]
+mod view;

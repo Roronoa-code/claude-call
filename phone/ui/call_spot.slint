@@ -1,4 +1,4 @@
-import { T, Icon, Icons, Cap } from "parts.slint";
+import { T, Icon, Icons } from "parts.slint";
 import { Call } from "call_data.slint";
 import { Actor } from "actor.slint";
 
@@ -52,79 +52,6 @@ export component SpotBack inherits Rectangle {
         background: @radial-gradient(circle, #ffd2a0a0 0%, #ffc88a40 38%, #ffc88a00 70%);
         opacity: root.phase == "talking" ? Math.min(1, Call.level * 1.4) * 0.55 : 0;
         animate opacity { duration: 140ms; }
-    }
-}
-
-export component Words inherits Rectangle {
-    in property <string> said;
-    in property <string> fresh;
-    in property <string> rest;
-    in property <length> size: 22px;
-    in property <color> ink: Spot.warm;
-    in property <color> unsaid: transparent;
-    in property <string> family;
-    in property <TextHorizontalAlignment> align: center;
-    property <float> start: -10;
-    property <bool> fading;
-    changed said => { self.start = Call.t; self.fading = true; }
-    changed fresh => { self.start = Call.t; self.fading = true; }
-    Timer { interval: 250ms; running: root.fading; triggered => { if (Call.t - root.start > 0.45) { root.fading = false; } } }
-    property <float> f: root.fading ? Math.min(1, Math.max(0, (Call.t - root.start) / 0.42)) : 1;
-    property <float> e: 1 - (1 - root.f) * (1 - root.f);
-    height: st.preferred-height;
-    st := StyledText {
-        width: root.width;
-        default-font-size: root.size;
-        default-color: root.ink;
-        default-font-family: root.family;
-        horizontal-alignment: root.align;
-        text: @markdown("\{root.said}<font color=\"\{root.ink.with-alpha(root.e)}\">\{root.fresh}</font><font color=\"\{root.unsaid}\">\{root.rest}</font>");
-    }
-}
-
-export component SpotCap inherits Rectangle {
-    in property <bool> hide;
-    in property <length> s0: 23px;
-    in property <length> s1: 20.5px;
-    in property <length> s2: 18px;
-    in property <bool> small;
-    in property <color> ink: Spot.warm;
-    in property <color> unsaid: transparent;
-    in property <string> family;
-    in property <TextHorizontalAlignment> align: center;
-    in property <bool> bottom;
-    in property <float> rest-opacity: 0.6;
-    in property <length> rise: 6px;
-    property <Cap> cap: Call.cap;
-    property <Cap> a;
-    property <Cap> b;
-    property <int> pa: 1;
-    property <int> pb: 0;
-    init => { self.a = self.cap; }
-    changed cap => {
-        if (self.pa == 1 && self.a.key != self.cap.key) { self.b = self.cap; self.pb = 0; self.pb = 1; self.pa = 2; }
-        else if (self.pb == 1 && self.b.key != self.cap.key) { self.a = self.cap; self.pa = 0; self.pa = 1; self.pb = 2; }
-        else if (self.pa == 1) { self.a = self.cap; } else { self.b = self.cap; }
-    }
-    for slot in [0, 1]: Rectangle {
-        property <Cap> c: slot == 0 ? root.a : root.b;
-        property <int> p: slot == 0 ? root.pa : root.pb;
-        opacity: (self.p == 1 ? 1 : 0) * (root.hide ? 0 : 1) * (self.c.tone == "rest" || self.c.tone == "dim" ? root.rest-opacity : 1);
-        y: (self.p == 0 ? root.rise : self.p == 1 ? 0 : -root.rise) + (root.hide ? -root.rise : 0);
-        animate opacity { duration: self.p == 0 ? 0ms : root.hide ? 220ms : self.p == 1 ? 340ms : 180ms; delay: self.p == 1 && !root.hide ? 140ms : 0ms; easing: T.out; }
-        animate y { duration: self.p == 0 ? 0ms : self.p == 1 ? 420ms : 220ms; delay: self.p == 1 && !root.hide ? 140ms : 0ms; easing: T.out; }
-        Words {
-            y: root.bottom ? parent.height - self.height : 0;
-            width: parent.width;
-            said: parent.c.said;
-            fresh: parent.c.fresh;
-            rest: parent.c.rest;
-            size: root.small || parent.c.size == 2 ? root.s2 : parent.c.size == 1 ? root.s1 : root.s0;
-            ink: parent.c.tone == "hold" ? Spot.hold : root.ink;
-            unsaid: root.unsaid;
-            family: root.family;
-            align: root.align;
-        }
     }
 }
 

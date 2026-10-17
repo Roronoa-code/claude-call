@@ -1,5 +1,5 @@
-export struct Cap { key: int, label: string, text: string, lit: string, size: int, tone: string, orb: bool, said: string, fresh: string, rest: string }
-export struct Msg { me: bool, text: string, lit: string, said: string, fresh: string, rest: string }
+export struct Cap { key: int, label: string, text: string, words: [[string]], lit: int, tone: string, rise: bool }
+export struct Msg { me: bool, text: string, lit: string }
 
 export global T {
     out property <color> bg: #111214;
