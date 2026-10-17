@@ -234,6 +234,18 @@ pub fn call_closed(env: &mut JNIEnv, act: &JObject) -> Result<()> {
     Ok(())
 }
 
+pub fn taken_elsewhere(env: &mut JNIEnv, ctx: &JObject, link: &str) -> Result<()> {
+    ring::stop(env, ctx, link, true)?;
+    let open = {
+        let mut sc = SCREEN.lock().unwrap();
+        if sc.as_ref().is_some_and(|s| s.1 == link && !s.2) { sc.take().map(|s| s.0) } else { None }
+    };
+    if let Some(act) = open {
+        env.call_method(act.as_obj(), "finish", "()V", &[])?;
+    }
+    Ok(())
+}
+
 pub fn declined(env: &mut JNIEnv, ctx: &JObject, intent: &JObject) -> Result<()> {
     let Some(link) = jx::extra(env, intent, "link")? else { return Ok(()) };
     ring::stop(env, ctx, &link, true)?;

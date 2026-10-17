@@ -24,6 +24,7 @@ mod live_gl;
 mod net;
 #[cfg(target_os = "android")]
 mod ring;
+mod ringwatch;
 #[cfg(target_os = "android")]
 mod service;
 #[cfg(target_os = "android")]
